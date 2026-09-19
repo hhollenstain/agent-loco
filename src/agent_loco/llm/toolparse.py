@@ -16,6 +16,7 @@ def parse_tool_calls(text: str | None, known_names: set[str]) -> list[ToolCall]:
         return []
     blobs = _candidate_blobs(text)
     calls: list[ToolCall] = []
+    seen: set[tuple[str, str]] = set()
     for index, blob in enumerate(blobs):
         parsed = _as_object(blob)
         if parsed is None:
@@ -23,18 +24,66 @@ def parse_tool_calls(text: str | None, known_names: set[str]) -> list[ToolCall]:
         items = parsed if isinstance(parsed, list) else [parsed]
         for item in items:
             call = _to_tool_call(item, known_names, f"parsed-{index}-{len(calls)}")
-            if call:
-                calls.append(call)
+            if not call:
+                continue
+            key = (call.name, json.dumps(call.arguments, sort_keys=True))
+            if key in seen:
+                continue
+            seen.add(key)
+            calls.append(call)
     return calls
 
 
 def _candidate_blobs(text: str) -> list[str]:
     blobs = [match.group(1) for match in _XML.finditer(text)]
     blobs.extend(match.group(1) for match in _FENCE.finditer(text))
+    blobs.extend(_embedded_json_objects(text))
     stripped = text.strip()
     if stripped.startswith("{") or stripped.startswith("["):
         blobs.append(stripped)
     return blobs
+
+
+def _embedded_json_objects(text: str) -> list[str]:
+    """Pull `{...}` objects out of prose so planned tool calls still execute."""
+    blobs: list[str] = []
+    index = 0
+    while index < len(text):
+        if text[index] != "{":
+            index += 1
+            continue
+        end = _match_json_object(text, index)
+        if end is None:
+            index += 1
+            continue
+        blobs.append(text[index:end])
+        index = end
+    return blobs
+
+
+def _match_json_object(text: str, start: int) -> int | None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
 
 
 def _as_object(blob: str) -> dict[str, Any] | list[Any] | None:

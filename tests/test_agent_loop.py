@@ -59,3 +59,39 @@ def test_agent_accepts_json_text_tool_calls(tmp_path: Path) -> None:
     result = CodingAgent(llm, tools, max_iterations=5).run("Write via.json")
     assert result.tool_calls == 1
     assert (tmp_path / "via.json").read_text(encoding="utf-8") == "ok\n"
+
+
+def test_agent_nudges_after_plan_only_turn(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="I will add a progress UI next."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={"path": "ui.txt", "content": "progress\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Added a progress UI."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=5).run("Add a progress UI")
+    assert result.tool_calls == 1
+    assert (tmp_path / "ui.txt").read_text(encoding="utf-8") == "progress\n"
+    contents = [
+        message["content"]
+        for message in llm.calls[-1]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("have not changed any files" in content for content in contents)

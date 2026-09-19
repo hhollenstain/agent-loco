@@ -11,6 +11,13 @@ from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
 
+MUTATING_TOOLS = {"write_file", "git_commit"}
+CONTINUE_NUDGE = (
+    "You have not changed any files yet. That reply was a plan, not a finish. "
+    "Call the next tool now and implement the goal. Do not summarize until the "
+    "workspace has actually changed."
+)
+
 
 @dataclass
 class AgentResult:
@@ -40,6 +47,8 @@ class CodingAgent:
         schemas = [tool.openai_schema() for tool in self.tools]
         known_names = {tool.name for tool in self.tools}
         tool_calls = 0
+        mutated = False
+        nudged = False
 
         for iteration in range(1, self.max_iterations + 1):
             turn = self.llm.complete(messages, schemas)
@@ -55,7 +64,16 @@ class CodingAgent:
                     result = execute_tool(self.tools, call.name, call.arguments)
                     log.info("tool %s ok=%s", call.name, result.ok)
                     log.debug("%s args=%s", call.name, call.arguments)
+                    if call.name in MUTATING_TOOLS and result.ok:
+                        mutated = True
                     messages.append(_tool_result_message(call, result.output, native=native))
+                continue
+
+            if not mutated and not nudged:
+                nudged = True
+                log.info("nudging agent to keep working after a plan-only turn")
+                messages.append({"role": "assistant", "content": turn.text or ""})
+                messages.append({"role": "user", "content": CONTINUE_NUDGE})
                 continue
 
             summary = (turn.text or "").strip() or "Agent finished without a summary."
