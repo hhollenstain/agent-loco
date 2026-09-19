@@ -1,0 +1,8 @@
+name: demo-project
+test_command: pytest -q
+max_repair_attempts: 1
+publish:
+  enabled: false
+  remote: origin
+  create_pr: false
+goals_file: goals.md

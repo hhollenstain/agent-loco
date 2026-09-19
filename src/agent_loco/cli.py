@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Annotated
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from agent_loco import __version__
+from agent_loco.config import Settings
+from agent_loco.hardware import command_available, detect_hardware
+from agent_loco.llm.client import OpenAICompatClient, check_model_endpoint
+from agent_loco.logging import setup_logging
+from agent_loco.runtime.improve import run_cycle
+from agent_loco.runtime.project import write_default_project_files
+from agent_loco.runtime.watch import watch as watch_loop
+
+app = typer.Typer(
+    name="loco",
+    help="Home-lab coding agent: improve a project, test locally, commit when green.",
+    no_args_is_help=True,
+)
+console = Console()
+
+
+def _settings(**overrides: object) -> Settings:
+    settings = Settings()
+    for key, value in overrides.items():
+        if value is not None:
+            setattr(settings, key, value)
+    setup_logging(settings.log_level)
+    return settings
+
+
+def _llm(settings: Settings) -> OpenAICompatClient:
+    return OpenAICompatClient(
+        model=settings.model_name,
+        base_url=settings.model_base_url,
+        api_key=settings.model_api_key,
+    )
+
+
+def _print_version(value: bool) -> None:
+    if value:
+        console.print(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Show the loco version and exit.",
+            callback=_print_version,
+            is_eager=True,
+        ),
+    ] = False,
+) -> None:
+    """Home-lab coding agent."""
+
+
+@app.command()
+def doctor() -> None:
+    """Report hardware, tooling, and model-endpoint health."""
+    settings = _settings()
+    hw = detect_hardware()
+
+    table = Table(title="agent-loco doctor")
+    table.add_column("Check")
+    table.add_column("Value")
+    table.add_row("os", f"{hw.os_name}/{hw.arch}")
+    table.add_row("apple silicon", "yes" if hw.is_apple_silicon else "no")
+    table.add_row("nvidia", hw.gpu_name or "no")
+    table.add_row("recommended backend", hw.recommended_backend)
+    table.add_row("recommended model", hw.recommended_model)
+    table.add_row("git", "yes" if command_available("git") else "missing")
+    table.add_row("docker", "yes" if command_available("docker") else "missing (optional)")
+    table.add_row("gh", "yes" if command_available("gh") else "missing (needed for PRs)")
+    table.add_row("model url", settings.model_base_url)
+    table.add_row("model name", settings.model_name)
+
+    ok, detail = check_model_endpoint(settings.model_base_url, settings.model_api_key)
+    table.add_row("model endpoint", detail if ok else f"DOWN — {detail}")
+    console.print(table)
+    for note in hw.notes:
+        console.print(f"[yellow]{note}[/yellow]")
+    if not ok:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def init(
+    workspace: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, resolve_path=True),
+    ] = Path("."),
+) -> None:
+    """Create .loco/config.yaml and .loco/goals.md in a project."""
+    created = write_default_project_files(workspace)
+    if created:
+        for path in created:
+            console.print(f"created {path}")
+    else:
+        console.print("project already has .loco config")
+
+
+@app.command()
+def run(
+    workspace: Annotated[
+        Path,
+        typer.Option("--workspace", "-w", exists=True, file_okay=False, resolve_path=True),
+    ] = Path("."),
+    goal: Annotated[str | None, typer.Option("--goal", "-g")] = None,
+    model_name: Annotated[str | None, typer.Option("--model")] = None,
+    publish: Annotated[bool | None, typer.Option("--publish/--no-publish")] = None,
+    auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
+) -> None:
+    """Run one improve → test → commit cycle against a project."""
+    settings = _settings(
+        model_name=model_name,
+        publish=publish,
+        auto_commit=auto_commit,
+    )
+    result = run_cycle(workspace, settings, _llm(settings), goal)
+    console.print(
+        f"[bold]{result.status}[/bold] committed={result.committed} "
+        f"published={result.published} tests={result.tests_passed}"
+    )
+    if result.goal:
+        console.print(f"goal: {result.goal.splitlines()[0]}")
+    if result.summary:
+        console.print(result.summary)
+    if result.reason and result.status != "success":
+        console.print(f"[yellow]{result.reason}[/yellow]")
+    if result.status in {"failed", "error"}:
+        raise typer.Exit(code=2)
+
+
+@app.command("watch")
+def watch_command(
+    workspace: Annotated[
+        Path,
+        typer.Option("--workspace", "-w", exists=True, file_okay=False, resolve_path=True),
+    ] = Path("."),
+    goal: Annotated[str | None, typer.Option("--goal", "-g")] = None,
+    interval: Annotated[
+        int | None,
+        typer.Option("--interval", help="Seconds between cycles."),
+    ] = None,
+    model_name: Annotated[str | None, typer.Option("--model")] = None,
+) -> None:
+    """Keep improving a project on an interval."""
+    settings = _settings(model_name=model_name, watch_interval_seconds=interval)
+    try:
+        watch_loop(workspace, settings, _llm(settings), goal)
+    except KeyboardInterrupt:
+        console.print("stopped")

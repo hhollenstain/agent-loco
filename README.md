@@ -1,0 +1,146 @@
+# agent-loco
+
+A home-lab coding agent that sits on a project, makes a change, runs that project's tests locally, and only then commits (and optionally publishes) the result.
+
+The agent process is the same on an Apple Silicon MacBook and on a Linux box with an NVIDIA GPU. Inference is a separate OpenAI-compatible server:
+
+| Machine | Model server | Why |
+| --- | --- | --- |
+| MacBook (Apple Silicon) | [Ollama](https://ollama.com) on the host | Docker Desktop cannot pass Metal into a Linux VM |
+| Home lab (NVIDIA, including RTX 5090) | Ollama or vLLM in Compose with GPU passthrough | Blackwell needs host driver **570+** and `nvidia-container-toolkit` |
+
+```
+  loco run / watch
+        │
+        ├─ read / write files in one workspace
+        ├─ run the project's own tests
+        ├─ commit only when tests are green
+        └─ optional git push / gh pr
+              │
+              ▼
+     OpenAI-compatible API
+     (Ollama Metal · Ollama CUDA · vLLM · cloud)
+```
+
+## Prerequisites
+
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/)
+- `git`
+- A model server. On a Mac, install Ollama and pull a coding model:
+
+```bash
+brew install ollama
+ollama serve
+ollama pull qwen2.5-coder:14b
+```
+
+Docker is optional. This repo's own tests do not need a model or a GPU.
+
+## Local MacBook
+
+```bash
+cd agent-loco
+cp .env.example .env
+uv sync --extra dev
+uv run pytest -q
+uv run loco doctor
+```
+
+`doctor` tells you whether you are on Apple Silicon or NVIDIA, which backend to use, and whether the model endpoint is reachable. `LOCO_MODEL_NAME` must match a name from `ollama list` (on this Mac that is `Qwen2.5-Coder:14b`, not the library alias).
+
+Point the agent at the bundled demo (it has a failing test on purpose):
+
+```bash
+cd examples/demo-project
+git init
+git add -A
+git commit -m "Initial demo project"
+cd ../..
+
+uv run loco init examples/demo-project
+uv run loco run --workspace examples/demo-project --goal "Make the test suite pass."
+```
+
+Continuous mode, using `.loco/goals.md` plus failing tests as the backlog:
+
+```bash
+uv run loco watch --workspace /path/to/your/project
+```
+
+Attach any local git checkout. The agent will not read or write outside that workspace.
+
+## Onboard a project
+
+```bash
+uv run loco init /path/to/your/project
+```
+
+That writes:
+
+```text
+.loco/config.yaml   # test command, publish settings
+.loco/goals.md      # checkbox backlog the watcher consumes
+.loco/runs/         # JSON logs written after every cycle
+```
+
+If `test_command` is omitted, loco infers one (`pytest`, `npm test`, `make test`, `cargo test`, `go test`).
+
+Publish is off until you turn it on in `.loco/config.yaml` or pass `--publish`. Commits still require a green test run when `LOCO_REQUIRE_TESTS=true`.
+
+## Containerized
+
+The agent image is multi-arch (`linux/arm64` and `linux/amd64`) and does **not** need a GPU. Mount the project and talk to a model server.
+
+### Mac + Docker Desktop
+
+Keep Ollama on the host (Metal), then:
+
+```bash
+export LOCO_WORKSPACE=/absolute/path/to/your/project
+docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent doctor
+docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
+  run --workspace /workspaces --goal "Make the test suite pass."
+```
+
+### NVIDIA home lab (5090 and similar)
+
+On the Linux host:
+
+1. NVIDIA driver **570 or newer** (Blackwell / RTX 50-series reports compute capability 12.0).
+2. [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+3. `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`.
+
+Then:
+
+```bash
+export LOCO_WORKSPACE=/absolute/path/to/your/project
+export LOCO_MODEL_NAME=qwen2.5-coder:32b
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up --build -d ollama
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml exec ollama ollama pull qwen2.5-coder:32b
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent doctor
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent \
+  watch --workspace /workspaces
+```
+
+A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LOCO_MODEL_NAME` if you prefer vLLM or a larger quant. Any server that speaks `/v1/chat/completions` works; set `LOCO_MODEL_BASE_URL` accordingly.
+
+## Safety
+
+- All file and shell tools are rooted in `--workspace`. Path escape is rejected.
+- Likely secrets (`.env`, keys, `credentials.json`) cannot be committed.
+- Force-push and `--no-verify` are not available.
+- Auto-commit is skipped when tests fail and `LOCO_REQUIRE_TESTS` is on.
+- Publish defaults to off.
+
+This is still a coding agent with a shell inside a trusted workspace. Do not point it at a tree you would not edit yourself.
+
+## CLI
+
+| Command | Purpose |
+| --- | --- |
+| `loco doctor` | Hardware, git/docker, model health |
+| `loco init [path]` | Write `.loco/` scaffolding |
+| `loco run -w PATH -g "..."` | One improve → test → commit cycle |
+| `loco watch -w PATH` | Repeat cycles on an interval |
+
+Environment variables are listed in `.env.example`.

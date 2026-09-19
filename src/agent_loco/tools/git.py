@@ -1,0 +1,248 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from agent_loco.sandbox import Workspace
+from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
+from agent_loco.tools.files import is_probably_secret_path
+
+SECRET_REFUSAL = "refusing to commit likely secrets: {paths}"
+
+
+def git_tools(
+    workspace: Workspace,
+    author_name: str | None,
+    author_email: str | None,
+) -> list[ToolSpec]:
+    env_extras = _git_identity_env(author_name, author_email)
+    return [
+        ToolSpec(
+            name="git_status",
+            description="Show git status and the current branch for the workspace.",
+            parameters=object_schema({}),
+            handler=lambda: _git_status(workspace),
+        ),
+        ToolSpec(
+            name="git_diff",
+            description="Show the unstaged and staged diff. Optionally limit to one path.",
+            parameters=object_schema(
+                {
+                    "path": {
+                        "type": "string",
+                        "description": "Optional workspace-relative path to diff.",
+                    }
+                }
+            ),
+            handler=lambda path=None: _git_diff(workspace, path),
+        ),
+        ToolSpec(
+            name="git_log",
+            description="Show recent commit subjects.",
+            parameters=object_schema(
+                {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of commits to show. Default 8.",
+                    }
+                }
+            ),
+            handler=lambda limit=8: _git_log(workspace, int(limit)),
+        ),
+        ToolSpec(
+            name="git_commit",
+            description=(
+                "Stage workspace changes and create a commit. Refuses secrets and empty commits. "
+                "Do not use this until tests have passed if the project has a test command."
+            ),
+            parameters=object_schema(
+                {
+                    "message": {
+                        "type": "string",
+                        "description": "Concise commit message explaining why the change exists.",
+                    }
+                },
+                ["message"],
+            ),
+            handler=lambda message: commit_changes(workspace, message, env_extras),
+        ),
+        ToolSpec(
+            name="git_push",
+            description="Push the current HEAD to the given remote. Never force-pushes.",
+            parameters=object_schema(
+                {
+                    "remote": {
+                        "type": "string",
+                        "description": "Remote name. Default origin.",
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Optional remote branch. Defaults to the current branch.",
+                    },
+                }
+            ),
+            handler=lambda remote="origin", branch=None: push_changes(workspace, remote, branch),
+        ),
+    ]
+
+
+def _git_identity_env(name: str | None, email: str | None) -> dict[str, str]:
+    env: dict[str, str] = {}
+    if name:
+        env["GIT_AUTHOR_NAME"] = name
+        env["GIT_COMMITTER_NAME"] = name
+    if email:
+        env["GIT_AUTHOR_EMAIL"] = email
+        env["GIT_COMMITTER_EMAIL"] = email
+    return env
+
+
+def run_git(
+    workspace: Workspace,
+    args: list[str],
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=workspace.root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_merged_env(env),
+    )
+
+
+def _merged_env(extra: dict[str, str] | None) -> dict[str, str] | None:
+    if not extra:
+        return None
+    import os
+
+    merged = os.environ.copy()
+    merged.update(extra)
+    return merged
+
+
+def _output(result: subprocess.CompletedProcess[str]) -> str:
+    text = (result.stdout or "").strip()
+    err = (result.stderr or "").strip()
+    if result.returncode != 0:
+        return err or text or f"git exited {result.returncode}"
+    return text or "(clean)"
+
+
+def _git_status(workspace: Workspace) -> ToolResult:
+    if not (workspace.root / ".git").exists():
+        return ToolResult(False, "not a git repository")
+    result = run_git(workspace, ["status", "--short", "--branch"])
+    return ToolResult(result.returncode == 0, _output(result))
+
+
+def _git_diff(workspace: Workspace, path: str | None) -> ToolResult:
+    args = ["diff", "HEAD"]
+    if path:
+        args.extend(["--", str(workspace.resolve(path))])
+    result = run_git(workspace, args)
+    return ToolResult(result.returncode == 0, _output(result) or "(no diff)")
+
+
+def _git_log(workspace: Workspace, limit: int) -> ToolResult:
+    result = run_git(workspace, ["log", f"-{max(1, min(limit, 30))}", "--oneline"])
+    return ToolResult(result.returncode == 0, _output(result))
+
+
+def has_changes(workspace: Workspace) -> bool:
+    result = run_git(workspace, ["status", "--porcelain"])
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def current_sha(workspace: Workspace) -> str | None:
+    result = run_git(workspace, ["rev-parse", "HEAD"])
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def commit_changes(
+    workspace: Workspace,
+    message: str,
+    env: dict[str, str] | None = None,
+) -> ToolResult:
+    message = " ".join(message.split()).strip()
+    if not message:
+        return ToolResult(False, "commit message is required")
+    if not (workspace.root / ".git").exists():
+        return ToolResult(False, "not a git repository")
+
+    secrets = _secret_changes(workspace)
+    if secrets:
+        return ToolResult(False, SECRET_REFUSAL.format(paths=", ".join(secrets)))
+
+    add = run_git(workspace, ["add", "-A"])
+    if add.returncode != 0:
+        return ToolResult(False, _output(add))
+
+    leftover_secrets = _staged_secrets(workspace)
+    if leftover_secrets:
+        run_git(workspace, ["reset", "HEAD", "--", *leftover_secrets])
+        return ToolResult(False, SECRET_REFUSAL.format(paths=", ".join(leftover_secrets)))
+
+    commit = run_git(workspace, ["commit", "-m", message], env=env)
+    if commit.returncode != 0:
+        return ToolResult(False, _output(commit))
+    sha = current_sha(workspace) or ""
+    return ToolResult(True, f"committed {sha}: {message}")
+
+
+def push_changes(
+    workspace: Workspace,
+    remote: str = "origin",
+    branch: str | None = None,
+) -> ToolResult:
+    if not remote:
+        remote = "origin"
+    args = ["push", remote]
+    if branch:
+        args.append(f"HEAD:{branch}")
+    result = run_git(workspace, args)
+    return ToolResult(result.returncode == 0, _output(result))
+
+
+def create_pull_request(workspace: Workspace, title: str, body: str) -> ToolResult:
+    result = subprocess.run(
+        ["gh", "pr", "create", "--title", title, "--body", body],
+        cwd=workspace.root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    ok = result.returncode == 0
+    return ToolResult(ok, (result.stdout or result.stderr).strip())
+
+
+def _changed_paths(workspace: Workspace) -> list[Path]:
+    result = run_git(workspace, ["status", "--porcelain"])
+    if result.returncode != 0:
+        return []
+    paths: list[Path] = []
+    for line in result.stdout.splitlines():
+        raw = line[3:].strip()
+        if " -> " in raw:
+            raw = raw.split(" -> ", 1)[1]
+        if raw:
+            paths.append(Path(raw))
+    return paths
+
+
+def _secret_changes(workspace: Workspace) -> list[str]:
+    return [path.as_posix() for path in _changed_paths(workspace) if is_probably_secret_path(path)]
+
+
+def _staged_secrets(workspace: Workspace) -> list[str]:
+    result = run_git(workspace, ["diff", "--cached", "--name-only"])
+    if result.returncode != 0:
+        return []
+    secrets: list[str] = []
+    for line in result.stdout.splitlines():
+        if is_probably_secret_path(Path(line.strip())):
+            secrets.append(line.strip())
+    return secrets

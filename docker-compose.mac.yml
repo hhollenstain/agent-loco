@@ -1,0 +1,9 @@
+# Apple Silicon / Docker Desktop: the Linux VM cannot use Metal.
+# Run Ollama on the Mac host, then point the container at it.
+services:
+  agent:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      LOCO_MODEL_BASE_URL: ${LOCO_MODEL_BASE_URL:-http://host.docker.internal:11434/v1}
+      LOCO_MODEL_NAME: ${LOCO_MODEL_NAME:-qwen2.5-coder:14b}

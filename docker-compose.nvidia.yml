@@ -1,0 +1,32 @@
+# Linux host with an NVIDIA GPU (including RTX 5090 / Blackwell).
+# Requires NVIDIA driver 570+ and nvidia-container-toolkit on the host.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  agent:
+    depends_on:
+      - ollama
+    environment:
+      LOCO_MODEL_BASE_URL: http://ollama:11434/v1
+      LOCO_MODEL_NAME: ${LOCO_MODEL_NAME:-qwen2.5-coder:32b}
+      LOCO_MODEL_API_KEY: ollama
+
+volumes:
+  ollama:

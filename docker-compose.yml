@@ -1,0 +1,20 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agent-loco:local
+    environment:
+      LOCO_MODEL_NAME: ${LOCO_MODEL_NAME:-qwen2.5-coder:14b}
+      LOCO_MODEL_BASE_URL: ${LOCO_MODEL_BASE_URL:-http://127.0.0.1:11434/v1}
+      LOCO_MODEL_API_KEY: ${LOCO_MODEL_API_KEY:-ollama}
+      LOCO_AUTO_COMMIT: ${LOCO_AUTO_COMMIT:-true}
+      LOCO_REQUIRE_TESTS: ${LOCO_REQUIRE_TESTS:-true}
+      LOCO_PUBLISH: ${LOCO_PUBLISH:-false}
+    volumes:
+      - ${LOCO_WORKSPACE:-./workspaces}:/workspaces
+      # Uncomment to publish from the container:
+      # - ${HOME}/.ssh:/home/loco/.ssh:ro
+    working_dir: /workspaces
+    stdin_open: true
+    tty: true
