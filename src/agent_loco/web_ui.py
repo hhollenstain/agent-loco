@@ -7,68 +7,62 @@ from flask import Flask, jsonify, render_template, request
 from agent_loco.config import Settings
 from agent_loco.runtime.tasks import TaskManager
 
-TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+TEMPLATE_DIR = Path(__file__).resolve().parent / 'templates'
 
 
-def create_app(
-    manager: TaskManager,
-    *,
-    default_workspace: Path,
-    default_goal: str | None = None,
-    default_publish: bool | None = None,
-) -> Flask:
+def create_app(manager: TaskManager, *, default_workspace: Path, default_goal: str | None = None, default_publish: bool | None = None) -> Flask:
     app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
-    app.config["TASK_MANAGER"] = manager
-    app.config["DEFAULT_WORKSPACE"] = str(default_workspace.expanduser().resolve())
-    app.config["DEFAULT_GOAL"] = default_goal or ""
-    app.config["DEFAULT_AUTO_COMMIT"] = manager.settings.auto_commit
-    app.config["DEFAULT_PUBLISH"] = bool(
+    app.config['TASK_MANAGER'] = manager
+    app.config['DEFAULT_WORKSPACE'] = str(default_workspace.expanduser().resolve())
+    app.config['DEFAULT_GOAL'] = default_goal or ''
+    app.config['DEFAULT_AUTO_COMMIT'] = manager.settings.auto_commit
+    app.config['DEFAULT_PUBLISH'] = bool(
         default_publish if default_publish is not None else manager.settings.publish
     )
 
-    @app.get("/")
+    @app.get('/')
     def index():
         return render_template(
-            "index.html",
-            default_workspace=app.config["DEFAULT_WORKSPACE"],
-            default_goal=app.config["DEFAULT_GOAL"],
-            default_auto_commit=app.config["DEFAULT_AUTO_COMMIT"],
-            default_publish=app.config["DEFAULT_PUBLISH"],
+            'index.html',
+            default_workspace=app.config['DEFAULT_WORKSPACE'],
+            default_goal=app.config['DEFAULT_GOAL'],
+            default_auto_commit=app.config['DEFAULT_AUTO_COMMIT'],
+            default_publish=app.config['DEFAULT_PUBLISH'],
             max_concurrent=manager.max_concurrent,
         )
 
-    @app.get("/api/meta")
+    @app.get('/api/meta')
     def meta():
         counts = manager.counts()
         return jsonify(
             {
-                "default_workspace": app.config["DEFAULT_WORKSPACE"],
-                "default_goal": app.config["DEFAULT_GOAL"],
-                "default_auto_commit": app.config["DEFAULT_AUTO_COMMIT"],
-                "default_publish": app.config["DEFAULT_PUBLISH"],
-                "max_concurrent": manager.max_concurrent,
+                'default_workspace': app.config['DEFAULT_WORKSPACE'],
+                'default_goal': app.config['DEFAULT_GOAL'],
+                'default_auto_commit': app.config['DEFAULT_AUTO_COMMIT'],
+                'default_publish': app.config['DEFAULT_PUBLISH'],
+                'max_concurrent': manager.max_concurrent,
                 **counts,
             }
         )
 
-    @app.get("/api/tasks")
+    @app.get('/api/tasks')
     def list_tasks():
         return jsonify([task.to_dict() for task in manager.list()])
 
-    @app.get("/api/tasks/<task_id>")
+    @app.get('/api/tasks/<task_id>')
     def get_task(task_id: str):
         task = manager.get(task_id)
         if task is None:
-            return jsonify({"error": "task not found"}), 404
+            return jsonify({'error': 'task not found'}), 404
         return jsonify(task.to_dict())
 
-    @app.post("/api/tasks")
+    @app.post('/api/tasks')
     def create_task():
         payload = request.get_json(silent=True) or {}
-        workspace_raw = payload.get("workspace") or app.config["DEFAULT_WORKSPACE"]
-        goal = payload.get("goal")
-        auto_commit = payload.get("auto_commit")
-        publish = payload.get("publish")
+        workspace_raw = payload.get('workspace') or app.config['DEFAULT_WORKSPACE']
+        goal = payload.get('goal')
+        auto_commit = payload.get('auto_commit')
+        publish = payload.get('publish')
         try:
             task = manager.submit(
                 Path(str(workspace_raw)),
@@ -77,22 +71,18 @@ def create_app(
                 publish=None if publish is None else bool(publish),
             )
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({'error': str(exc)}), 400
         return jsonify(task.to_dict()), 201
+
+    @app.get('/api/models')
+    def list_models():
+        models = manager.list_models()
+        return jsonify(models)
 
     return app
 
 
-def serve(
-    workspace: Path,
-    settings: Settings,
-    *,
-    host: str = "127.0.0.1",
-    port: int = 8080,
-    max_concurrent: int = 1,
-    default_goal: str | None = None,
-    default_publish: bool | None = None,
-) -> None:
+def serve(workspace: Path, settings: Settings, *, host: str = '127.0.0.1', port: int = 8080, max_concurrent: int = 1, default_goal: str | None = None, default_publish: bool | None = None) -> None:
     manager = TaskManager(settings, max_concurrent=max_concurrent)
     app = create_app(
         manager,
