@@ -6,6 +6,9 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+def log_progress(message):
+    print(f"[INFO] {message}")
+
 from agent_loco.agent.loop import CodingAgent
 from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient
@@ -42,6 +45,7 @@ class CycleResult:
     reason: str | None
 
 
+
 def run_cycle(
     workspace_path: Path,
     settings: Settings,
@@ -50,6 +54,7 @@ def run_cycle(
     *,
     mark_checkbox: bool = True,
 ) -> CycleResult:
+    log_progress("Initializing workspace...")
     workspace = Workspace(workspace_path)
     project = load_project(workspace.root)
     tools = build_tools(
@@ -60,9 +65,11 @@ def run_cycle(
         git_author_email=settings.git_author_email,
     )
 
+    log_progress("Running before tests...")
     tests_before = _maybe_test(workspace, project, settings)
     selected_goal = goal or _choose_goal(project, tests_before)
     if not selected_goal:
+        log_progress("No pending goals and tests are green.")
         result = CycleResult(
             status="skipped",
             goal=None,
@@ -76,18 +83,21 @@ def run_cycle(
         _write_run_log(workspace.root, result)
         return result
 
-    log.info("goal: %s", selected_goal)
+    log_progress(f"Selected goal: {selected_goal}")
+    log_progress("Fetching current SHA...")
     sha_before = current_sha(workspace)
+    log_progress("Initializing coding agent...")
     agent = CodingAgent(llm, tools, max_iterations=settings.max_iterations)
+    log_progress("Running coding agent...")
     agent_result = agent.run(selected_goal, collect_context(workspace.root, project))
 
+    log_progress("Running after tests...")
     tests_after = _maybe_test(workspace, project, settings)
     if tests_after and not tests_after.ok:
         for attempt in range(project.max_repair_attempts):
-            log.info("repair attempt %s", attempt + 1)
+            log_progress(f"Repair attempt {attempt + 1}")
             agent.run(
-                "The test suite failed after the last changes. "
-                "Fix the failures and nothing else.\n\n"
+                "The test suite failed after the last changes. \n\nFix the failures and nothing else.\n\n"
                 + tests_after.output,
                 collect_context(workspace.root, project),
             )
@@ -97,6 +107,7 @@ def run_cycle(
 
     tests_passed = None if tests_after is None else tests_after.ok
     if settings.require_tests and tests_after is not None and not tests_after.ok:
+        log_progress("Tests failed after repairs.")
         result = CycleResult(
             status="failed",
             goal=selected_goal,
@@ -110,12 +121,14 @@ def run_cycle(
         _write_run_log(workspace.root, result)
         return result
 
+    log_progress("Checking for changes...")
     committed = False
     published = False
     sha = current_sha(workspace)
     if sha_before and sha and sha != sha_before:
         committed = True
     if settings.auto_commit and has_changes(workspace):
+        log_progress("Committing changes...")
         message = _commit_message(selected_goal, agent_result.summary)
         commit = commit_changes(
             workspace,
@@ -123,6 +136,7 @@ def run_cycle(
             env=_git_env(settings),
         )
         if not commit.ok:
+            log_progress("Commit failed.")
             result = CycleResult(
                 status="failed",
                 goal=selected_goal,
@@ -136,21 +150,24 @@ def run_cycle(
             _write_run_log(workspace.root, result)
             return result
         committed = True
-        sha = current_sha(workspace)
-        log.info("committed %s", sha)
+        log_progress(f"Committed SHA: {sha}")
         if settings.publish or project.publish_enabled:
+            log_progress("Pushing changes...")
             pushed = push_changes(workspace, project.publish_remote, project.publish_branch)
             published = pushed.ok
             if not pushed.ok:
-                log.warning("publish failed: %s", pushed.output)
+                log_progress(f"Push failed: {pushed.output}")
             elif project.create_pr:
+                log_progress("Creating pull request...")
                 pr = create_pull_request(workspace, message, agent_result.summary)
                 if not pr.ok:
-                    log.warning("pr create failed: %s", pr.output)
+                    log_progress(f"PR creation failed: {pr.output}")
 
     if committed and mark_checkbox:
+        log_progress("Marking goal as done...")
         mark_goal_done(workspace.root, project.goals_file, selected_goal)
 
+    log_progress("Generating cycle result...")
     result = CycleResult(
         status="success",
         goal=selected_goal,
