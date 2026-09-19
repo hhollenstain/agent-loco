@@ -134,7 +134,28 @@ def write_default_project_files(root: Path) -> list[Path]:
             encoding="utf-8",
         )
         created.append(goals_path)
+    gitignore = ensure_run_gitignore(root)
+    if gitignore is not None:
+        created.append(gitignore)
     return created
+
+
+def ensure_run_gitignore(root: Path) -> Path | None:
+    """Keep `.loco/runs/` out of git. Returns the path only when the file is created."""
+    loco = root / ".loco"
+    loco.mkdir(parents=True, exist_ok=True)
+    path = loco / ".gitignore"
+    marker = "runs/"
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        lines = {line.strip() for line in existing.splitlines()}
+        if marker in lines:
+            return None
+        suffix = "" if existing.endswith("\n") or not existing else "\n"
+        path.write_text(f"{existing}{suffix}{marker}\n", encoding="utf-8")
+        return None
+    path.write_text(f"{marker}\n", encoding="utf-8")
+    return path
 
 
 def collect_context(

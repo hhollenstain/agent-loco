@@ -11,11 +11,12 @@ from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
 
-MUTATING_TOOLS = {"write_file", "git_commit"}
+MUTATING_TOOLS = {"write_file"}
+MAX_PLAN_NUDGES = 3
 CONTINUE_NUDGE = (
     "You have not changed any files yet. That reply was a plan, not a finish. "
-    "Call the next tool now and implement the goal. Do not summarize until the "
-    "workspace has actually changed."
+    "Call write_file now and implement the goal. Do not summarize, and do not "
+    "commit `.loco/runs/` logs."
 )
 
 
@@ -48,7 +49,7 @@ class CodingAgent:
         known_names = {tool.name for tool in self.tools}
         tool_calls = 0
         mutated = False
-        nudged = False
+        plan_nudges = 0
 
         for iteration in range(1, self.max_iterations + 1):
             turn = self.llm.complete(messages, schemas)
@@ -69,8 +70,8 @@ class CodingAgent:
                     messages.append(_tool_result_message(call, result.output, native=native))
                 continue
 
-            if not mutated and not nudged:
-                nudged = True
+            if not mutated and plan_nudges < MAX_PLAN_NUDGES:
+                plan_nudges += 1
                 log.info("nudging agent to keep working after a plan-only turn")
                 messages.append({"role": "assistant", "content": turn.text or ""})
                 messages.append({"role": "user", "content": CONTINUE_NUDGE})

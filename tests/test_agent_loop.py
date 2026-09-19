@@ -95,3 +95,34 @@ def test_agent_nudges_after_plan_only_turn(tmp_path: Path) -> None:
         if message.get("role") == "user" and isinstance(message.get("content"), str)
     ]
     assert any("have not changed any files" in content for content in contents)
+
+
+def test_agent_nudges_through_multiple_plan_turns(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="First I will inspect the repo."),
+            AssistantTurn(text="Then I will write the file."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={"path": "done.txt", "content": "ok\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Wrote done.txt"),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run("Write done.txt")
+    assert result.tool_calls == 1
+    assert (tmp_path / "done.txt").read_text(encoding="utf-8") == "ok\n"

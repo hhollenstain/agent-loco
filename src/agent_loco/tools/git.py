@@ -8,6 +8,7 @@ from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 from agent_loco.tools.files import is_probably_secret_path
 
 SECRET_REFUSAL = "refusing to commit likely secrets: {paths}"
+RUN_LOG_PREFIX = ".loco/runs"
 
 
 def git_tools(
@@ -158,9 +159,28 @@ def _git_log(workspace: Workspace, limit: int) -> ToolResult:
     return ToolResult(result.returncode == 0, _output(result))
 
 
+def is_runtime_artifact(path: Path | str) -> bool:
+    """Cycle logs are local telemetry, not project work."""
+    posix = _posix_rel(path)
+    return posix == RUN_LOG_PREFIX or posix.startswith(f"{RUN_LOG_PREFIX}/")
+
+
 def has_changes(workspace: Workspace) -> bool:
-    result = run_git(workspace, ["status", "--porcelain"])
-    return result.returncode == 0 and bool(result.stdout.strip())
+    return any(_is_project_change(path) for path in _changed_paths(workspace))
+
+
+def _posix_rel(path: Path | str) -> str:
+    posix = Path(str(path).strip().strip('"')).as_posix()
+    while posix.startswith("./"):
+        posix = posix[2:]
+    return posix
+
+
+def _is_project_change(path: Path | str) -> bool:
+    posix = _posix_rel(path)
+    if posix == ".loco/.gitignore":
+        return False
+    return not is_runtime_artifact(posix)
 
 
 def current_sha(workspace: Workspace) -> str | None:
@@ -188,6 +208,7 @@ def commit_changes(
     add = run_git(workspace, ["add", "-A"])
     if add.returncode != 0:
         return ToolResult(False, _output(add))
+    _unstage_runtime_artifacts(workspace)
 
     leftover_secrets = _staged_secrets(workspace)
     if leftover_secrets:
@@ -227,8 +248,19 @@ def create_pull_request(workspace: Workspace, title: str, body: str) -> ToolResu
     return ToolResult(ok, (result.stdout or result.stderr).strip())
 
 
+def _unstage_runtime_artifacts(workspace: Workspace) -> None:
+    result = run_git(workspace, ["diff", "--cached", "--name-only", "-z"])
+    if result.returncode != 0 or not result.stdout:
+        return
+    runtime = [
+        path for path in result.stdout.split("\0") if path and is_runtime_artifact(path)
+    ]
+    if runtime:
+        run_git(workspace, ["reset", "HEAD", "--", *runtime])
+
+
 def _changed_paths(workspace: Workspace) -> list[Path]:
-    result = run_git(workspace, ["status", "--porcelain"])
+    result = run_git(workspace, ["status", "--porcelain", "-uall"])
     if result.returncode != 0:
         return []
     paths: list[Path] = []

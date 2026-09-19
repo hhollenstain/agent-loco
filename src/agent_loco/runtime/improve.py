@@ -12,6 +12,7 @@ from agent_loco.llm.client import LLMClient
 from agent_loco.runtime.project import (
     ProjectConfig,
     collect_context,
+    ensure_run_gitignore,
     load_goals,
     load_project,
     mark_goal_done,
@@ -71,6 +72,7 @@ def run_cycle(
 ) -> CycleResult:
     log_progress("Initializing workspace...")
     workspace = Workspace(workspace_path)
+    ensure_run_gitignore(workspace.root)
     project = load_project(workspace.root)
     allow_publish = resolve_publish(settings, project, cli_publish)
     tools = build_tools(
@@ -171,18 +173,39 @@ def run_cycle(
             _write_run_log(workspace.root, result)
             return result
         committed = True
+        sha = current_sha(workspace)
         log_progress(f"Committed SHA: {sha}")
-        if allow_publish:
-            log_progress("Pushing changes...")
-            pushed = push_changes(workspace, project.publish_remote, project.publish_branch)
-            published = pushed.ok
-            if not pushed.ok:
-                log_progress(f"Push failed: {pushed.output}")
-            elif project.create_pr:
-                log_progress("Creating pull request...")
-                pr = create_pull_request(workspace, message, agent_result.summary)
-                if not pr.ok:
-                    log_progress(f"PR creation failed: {pr.output}")
+
+    if not committed and not has_changes(workspace):
+        log_progress("No project files changed; skipping commit and publish.")
+        result = CycleResult(
+            status="skipped",
+            goal=selected_goal,
+            summary=agent_result.summary,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=sha,
+            reason="no project files changed; commit skipped",
+        )
+        _write_run_log(workspace.root, result)
+        return result
+
+    if committed and allow_publish:
+        log_progress("Pushing changes...")
+        pushed = push_changes(workspace, project.publish_remote, project.publish_branch)
+        published = pushed.ok
+        if not pushed.ok:
+            log_progress(f"Push failed: {pushed.output}")
+        elif project.create_pr:
+            log_progress("Creating pull request...")
+            pr = create_pull_request(
+                workspace,
+                _commit_message(selected_goal, agent_result.summary),
+                agent_result.summary,
+            )
+            if not pr.ok:
+                log_progress(f"PR creation failed: {pr.output}")
 
     if committed and mark_checkbox:
         log_progress("Marking goal as done...")
@@ -238,6 +261,7 @@ def _git_env(settings: Settings) -> dict[str, str]:
 
 
 def _write_run_log(root: Path, result: CycleResult) -> None:
+    ensure_run_gitignore(root)
     runs = root / ".loco" / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

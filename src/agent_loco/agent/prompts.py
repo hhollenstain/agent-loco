@@ -19,6 +19,9 @@ Rules:
 - Prefer native tool calls. If you cannot, emit only a JSON object like
   {"name": "read_file", "arguments": {"path": "src/app.py"}} and wait for the result.
 - Do not stop at a plan. Call a tool on the first turn.
+- Call write_file to apply edits. Pasting a planned write_file JSON in a summary
+  does not change the workspace.
+- Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
 """
 
 

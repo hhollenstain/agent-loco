@@ -8,6 +8,8 @@ from agent_loco.config import Settings
 from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
 from agent_loco.runtime.improve import resolve_publish, run_cycle
 from agent_loco.runtime.project import load_project
+from agent_loco.sandbox import Workspace
+from agent_loco.tools.git import run_git
 
 
 def _broken_project(root: Path) -> None:
@@ -87,3 +89,49 @@ def test_no_publish_flag_wins_over_project_config(tmp_path: Path, settings: Sett
     assert resolve_publish(settings, project, cli_publish=False) is False
     assert resolve_publish(settings, project, cli_publish=None) is True
     assert resolve_publish(settings, project, cli_publish=True) is True
+
+
+def _green_project(root: Path) -> None:
+    (root / "app.py").write_text(
+        "def add(left, right):\n    return left + right\n",
+        encoding="utf-8",
+    )
+    (root / "check.py").write_text(
+        "from app import add\nassert add(2, 3) == 5\n",
+        encoding="utf-8",
+    )
+    loco = root / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text(
+        "name: fixture\n"
+        "test_command: python3 check.py\n"
+        "max_repair_attempts: 0\n"
+        "publish:\n  enabled: false\n"
+        "goals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    (loco / "goals.md").write_text("- [ ] Improve the UI\n", encoding="utf-8")
+    init_git_repo(root)
+    runs = loco / "runs"
+    runs.mkdir()
+    (runs / "old.json").write_text('{"status": "success"}\n', encoding="utf-8")
+
+
+def test_cycle_does_not_commit_run_logs_or_plans(tmp_path: Path, settings: Settings) -> None:
+    _green_project(tmp_path)
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="I will add a copy field next."),
+            AssistantTurn(text="Here is the write_file JSON I would send."),
+            AssistantTurn(text="Summary of the planned UI changes."),
+            AssistantTurn(text="Still only describing the work."),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, goal="Improve the UI", cli_publish=True)
+    assert result.status == "skipped"
+    assert result.committed is False
+    assert result.published is False
+    assert "no project files changed" in (result.reason or "")
+    tracked = run_git(Workspace(tmp_path), ["ls-files", ".loco/runs"])
+    assert tracked.stdout.strip() == ""
+    assert (tmp_path / ".loco" / "runs" / "old.json").exists()

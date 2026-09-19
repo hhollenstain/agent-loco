@@ -8,6 +8,7 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
     render_tree,
+    write_default_project_files,
 )
 
 
@@ -47,3 +48,10 @@ def test_render_tree_includes_nested_source(tmp_path: Path) -> None:
     assert "demo_app/" in tree
     assert "calc.py" in tree
     assert ".git" not in tree
+
+
+def test_init_ignores_run_logs(tmp_path: Path) -> None:
+    created = write_default_project_files(tmp_path)
+    gitignore = tmp_path / ".loco" / ".gitignore"
+    assert gitignore in created
+    assert "runs/" in gitignore.read_text(encoding="utf-8")
