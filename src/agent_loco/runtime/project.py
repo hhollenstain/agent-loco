@@ -137,12 +137,18 @@ def write_default_project_files(root: Path) -> list[Path]:
     return created
 
 
-def collect_context(root: Path, project: ProjectConfig) -> str:
+def collect_context(
+    root: Path,
+    project: ProjectConfig,
+    *,
+    allow_publish: bool | None = None,
+) -> str:
+    publish_on = project.publish_enabled if allow_publish is None else allow_publish
     parts = [
         f"Project: {project.name}",
         f"Root: {root}",
         f"Test command: {project.test_command or '(none)'}",
-        f"Publish: {'on' if project.publish_enabled else 'off'} via {project.publish_remote}",
+        f"Publish: {'on' if publish_on else 'off'} via {project.publish_remote}",
     ]
     goals = load_goals(root, project.goals_file)
     if goals:

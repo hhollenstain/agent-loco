@@ -12,6 +12,7 @@ Rules:
 - Run tests after functional changes. If tests fail, fix them before committing.
 - Never commit secrets (.env, keys, credentials, pem files).
 - Never force-push, never skip git hooks, never rewrite published history.
+- Do not push or open a PR unless publish is on and git_push is available.
 - Do not invent dependencies, APIs, or files you have not seen.
 - If you cannot complete the goal safely, stop and explain what blocked you.
 - When you are done, summarize what changed, how you verified it, and what is still open.

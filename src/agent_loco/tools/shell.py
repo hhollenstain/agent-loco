@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import re
 import subprocess
 
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 
+_PUBLISH_COMMAND = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+create\b", re.IGNORECASE)
 
-def shell_tools(workspace: Workspace, default_timeout: int) -> list[ToolSpec]:
+
+def shell_tools(
+    workspace: Workspace,
+    default_timeout: int,
+    *,
+    allow_publish: bool = False,
+) -> list[ToolSpec]:
     return [
         ToolSpec(
             name="run_command",
@@ -31,14 +39,26 @@ def shell_tools(workspace: Workspace, default_timeout: int) -> list[ToolSpec]:
                 workspace,
                 command,
                 int(timeout_seconds) if timeout_seconds is not None else default_timeout,
+                allow_publish=allow_publish,
             ),
         )
     ]
 
 
-def run_command(workspace: Workspace, command: str, timeout_seconds: int) -> ToolResult:
+def run_command(
+    workspace: Workspace,
+    command: str,
+    timeout_seconds: int,
+    *,
+    allow_publish: bool = False,
+) -> ToolResult:
     if not command or not command.strip():
         return ToolResult(False, "command is required")
+    if not allow_publish and _PUBLISH_COMMAND.search(command):
+        return ToolResult(
+            False,
+            "publish is disabled for this run; refusing git push / gh pr create",
+        )
     try:
         result = subprocess.run(
             ["/bin/bash", "-lc", command],

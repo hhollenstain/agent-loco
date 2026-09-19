@@ -6,7 +6,8 @@ from tests.support import init_git_repo
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.runtime.improve import run_cycle
+from agent_loco.runtime.improve import resolve_publish, run_cycle
+from agent_loco.runtime.project import load_project
 
 
 def _broken_project(root: Path) -> None:
@@ -69,3 +70,20 @@ def test_cycle_skips_commit_when_tests_still_fail(tmp_path: Path, settings: Sett
     assert result.status == "failed"
     assert result.tests_passed is False
     assert result.committed is False
+
+
+def test_no_publish_flag_wins_over_project_config(tmp_path: Path, settings: Settings) -> None:
+    _broken_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "publish:\n  enabled: false\n",
+            "publish:\n  enabled: true\n",
+        ),
+        encoding="utf-8",
+    )
+    project = load_project(tmp_path)
+    assert project.publish_enabled is True
+    assert resolve_publish(settings, project, cli_publish=False) is False
+    assert resolve_publish(settings, project, cli_publish=None) is True
+    assert resolve_publish(settings, project, cli_publish=True) is True

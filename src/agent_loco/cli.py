@@ -124,7 +124,13 @@ def run(
         publish=publish,
         auto_commit=auto_commit,
     )
-    result = run_cycle(workspace, settings, _llm(settings), goal)
+    result = run_cycle(
+        workspace,
+        settings,
+        _llm(settings),
+        goal,
+        cli_publish=publish,
+    )
     console.print(
         f"[bold]{result.status}[/bold] committed={result.committed} "
         f"published={result.published} tests={result.tests_passed}"

@@ -6,9 +6,6 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-def log_progress(message):
-    print(f"[INFO] {message}")
-
 from agent_loco.agent.loop import CodingAgent
 from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient
@@ -33,6 +30,10 @@ from agent_loco.tools.tests import run_project_tests
 log = logging.getLogger("loco")
 
 
+def log_progress(message: str) -> None:
+    log.info("%s", message)
+
+
 @dataclass
 class CycleResult:
     status: str
@@ -46,6 +47,19 @@ class CycleResult:
 
 
 
+def resolve_publish(
+    settings: Settings,
+    project: ProjectConfig,
+    cli_publish: bool | None = None,
+) -> bool:
+    """`--no-publish` always wins. Otherwise CLI, env, or project config can enable it."""
+    if cli_publish is False:
+        return False
+    if cli_publish is True:
+        return True
+    return bool(settings.publish or project.publish_enabled)
+
+
 def run_cycle(
     workspace_path: Path,
     settings: Settings,
@@ -53,16 +67,19 @@ def run_cycle(
     goal: str | None = None,
     *,
     mark_checkbox: bool = True,
+    cli_publish: bool | None = None,
 ) -> CycleResult:
     log_progress("Initializing workspace...")
     workspace = Workspace(workspace_path)
     project = load_project(workspace.root)
+    allow_publish = resolve_publish(settings, project, cli_publish)
     tools = build_tools(
         workspace,
         test_command=project.test_command,
         command_timeout_seconds=settings.command_timeout_seconds,
         git_author_name=settings.git_author_name,
         git_author_email=settings.git_author_email,
+        allow_publish=allow_publish,
     )
 
     log_progress("Running before tests...")
@@ -89,7 +106,10 @@ def run_cycle(
     log_progress("Initializing coding agent...")
     agent = CodingAgent(llm, tools, max_iterations=settings.max_iterations)
     log_progress("Running coding agent...")
-    agent_result = agent.run(selected_goal, collect_context(workspace.root, project))
+    agent_result = agent.run(
+        selected_goal,
+        collect_context(workspace.root, project, allow_publish=allow_publish),
+    )
 
     log_progress("Running after tests...")
     tests_after = _maybe_test(workspace, project, settings)
@@ -97,9 +117,10 @@ def run_cycle(
         for attempt in range(project.max_repair_attempts):
             log_progress(f"Repair attempt {attempt + 1}")
             agent.run(
-                "The test suite failed after the last changes. \n\nFix the failures and nothing else.\n\n"
+                "The test suite failed after the last changes. "
+                "Fix the failures and nothing else.\n\n"
                 + tests_after.output,
-                collect_context(workspace.root, project),
+                collect_context(workspace.root, project, allow_publish=allow_publish),
             )
             tests_after = _maybe_test(workspace, project, settings)
             if tests_after.ok:
@@ -151,7 +172,7 @@ def run_cycle(
             return result
         committed = True
         log_progress(f"Committed SHA: {sha}")
-        if settings.publish or project.publish_enabled:
+        if allow_publish:
             log_progress("Pushing changes...")
             pushed = push_changes(workspace, project.publish_remote, project.publish_branch)
             published = pushed.ok

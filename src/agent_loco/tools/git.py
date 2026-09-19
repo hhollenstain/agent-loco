@@ -14,9 +14,11 @@ def git_tools(
     workspace: Workspace,
     author_name: str | None,
     author_email: str | None,
+    *,
+    allow_publish: bool = False,
 ) -> list[ToolSpec]:
     env_extras = _git_identity_env(author_name, author_email)
-    return [
+    tools = [
         ToolSpec(
             name="git_status",
             description="Show git status and the current branch for the workspace.",
@@ -66,24 +68,30 @@ def git_tools(
             ),
             handler=lambda message: commit_changes(workspace, message, env_extras),
         ),
-        ToolSpec(
-            name="git_push",
-            description="Push the current HEAD to the given remote. Never force-pushes.",
-            parameters=object_schema(
-                {
-                    "remote": {
-                        "type": "string",
-                        "description": "Remote name. Default origin.",
-                    },
-                    "branch": {
-                        "type": "string",
-                        "description": "Optional remote branch. Defaults to the current branch.",
-                    },
-                }
-            ),
-            handler=lambda remote="origin", branch=None: push_changes(workspace, remote, branch),
-        ),
     ]
+    if allow_publish:
+        tools.append(
+            ToolSpec(
+                name="git_push",
+                description="Push the current HEAD to the given remote. Never force-pushes.",
+                parameters=object_schema(
+                    {
+                        "remote": {
+                            "type": "string",
+                            "description": "Remote name. Default origin.",
+                        },
+                        "branch": {
+                            "type": "string",
+                            "description": "Optional remote branch. Default: current branch.",
+                        },
+                    }
+                ),
+                handler=lambda remote="origin", branch=None: push_changes(
+                    workspace, remote, branch
+                ),
+            )
+        )
+    return tools
 
 
 def _git_identity_env(name: str | None, email: str | None) -> dict[str, str]:
