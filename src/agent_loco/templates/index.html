@@ -1,10 +1,263 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Agent-LoCO Web UI</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>loco — task runner</title>
+  <style>
+    :root {
+      --bg: #11140f;
+      --panel: #1a1f18;
+      --panel-2: #23291f;
+      --ink: #e7eedf;
+      --muted: #9aa58e;
+      --line: #31392c;
+      --accent: #c4e38a;
+      --warn: #e6c07b;
+      --bad: #e08b73;
+      --ok: #8fca7a;
+      --queued: #8eb4d4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif;
+    }
+    header {
+      padding: 1.25rem 1.5rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+    header p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+      max-width: 52rem;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(18rem, 22rem) 1fr;
+      min-height: calc(100vh - 5.5rem);
+    }
+    @media (max-width: 840px) {
+      main { grid-template-columns: 1fr; }
+    }
+    form, .tasks {
+      padding: 1.25rem 1.5rem;
+    }
+    form { border-right: 1px solid var(--line); }
+    label {
+      display: block;
+      margin: 0.85rem 0 0.3rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    input[type="text"], textarea {
+      width: 100%;
+      background: var(--panel);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.55rem 0.65rem;
+      font: inherit;
+    }
+    textarea { min-height: 7.5rem; resize: vertical; }
+    .checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
+    button {
+      background: var(--accent);
+      color: #16200c;
+      border: 0;
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+      font: 650 0.95rem/1 inherit;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    .note {
+      margin-top: 1rem;
+      padding: 0.7rem 0.8rem;
+      background: var(--panel-2);
+      border-left: 3px solid var(--warn);
+      color: var(--warn);
+      font-size: 0.86rem;
+    }
+    .error { color: var(--bad); font-size: 0.9rem; min-height: 1.2rem; }
+    .task-list { display: flex; flex-direction: column; gap: 0.65rem; }
+    .task {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.75rem 0.85rem;
+      cursor: pointer;
+      text-align: left;
+    }
+    .task.selected { border-color: var(--accent); }
+    .row { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+    .status { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .status.queued { color: var(--queued); }
+    .status.running { color: var(--warn); }
+    .status.success { color: var(--ok); }
+    .status.failed, .status.error { color: var(--bad); }
+    .status.skipped { color: var(--muted); }
+    .goal {
+      margin: 0.35rem 0 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--ink);
+    }
+    .empty { color: var(--muted); }
+    pre {
+      margin: 0.85rem 0 0;
+      background: #0c0e0b;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.85rem;
+      overflow: auto;
+      max-height: 22rem;
+      font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+      white-space: pre-wrap;
+    }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
+  </style>
 </head>
 <body>
-    <h1>Agent-LoCO Web UI</h1>
-    <p>loco task runner</p>
+  <header>
+    <h1>loco task runner</h1>
+    <p>
+      Queue coding-agent cycles against a local workspace. By default only
+      <strong id="max-label">{{ max_concurrent }}</strong> run at a time;
+      extra tasks wait. Parallel runs on this machine will fight over CPU, RAM,
+      and the model server.
+    </p>
+  </header>
+  <main>
+    <form id="task-form">
+      <label for="workspace">Workspace</label>
+      <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
+
+      <label for="goal">Goal</label>
+      <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
+
+      <div class="checks">
+        <label style="text-transform:none;letter-spacing:0;margin:0">
+          <input id="auto-commit" type="checkbox" {% if default_auto_commit %}checked{% endif %}> commit if tests pass
+        </label>
+        <label style="text-transform:none;letter-spacing:0;margin:0">
+          <input id="publish" type="checkbox" {% if default_publish %}checked{% endif %}> publish
+        </label>
+      </div>
+      <button type="submit" id="submit">Queue task</button>
+      <p class="error" id="form-error"></p>
+      <p class="note">
+        A running cycle calls the model, edits files, and runs the project’s
+        tests. Start another only if you accept the slowdown.
+      </p>
+    </form>
+    <section class="tasks">
+      <div class="row">
+        <label style="margin:0">Tasks</label>
+        <span class="meta" id="counts"></span>
+      </div>
+      <div id="task-list" class="task-list"></div>
+      <div id="detail"></div>
+    </section>
+  </main>
+  <script>
+    const state = { tasks: [], selected: null };
+    const listEl = document.getElementById("task-list");
+    const detailEl = document.getElementById("detail");
+    const countsEl = document.getElementById("counts");
+    const errorEl = document.getElementById("form-error");
+    const submitEl = document.getElementById("submit");
+
+    function goalText(task) {
+      if (!task.goal) return "(from project goals / failing tests)";
+      return task.goal.split("\n")[0];
+    }
+
+    function render() {
+      const running = state.tasks.filter(t => t.status === "running").length;
+      const queued = state.tasks.filter(t => t.status === "queued").length;
+      countsEl.textContent = `${running} running · ${queued} queued`;
+      if (!state.tasks.length) {
+        listEl.innerHTML = `<p class="empty">No tasks yet.</p>`;
+      } else {
+        listEl.innerHTML = state.tasks.map(task => `
+          <button type="button" class="task ${task.id === state.selected ? "selected" : ""}" data-id="${task.id}">
+            <div class="row">
+              <span class="status ${task.status}">${task.status}</span>
+              <span class="meta">${task.started_at || task.created_at}</span>
+            </div>
+            <p class="goal">${goalText(task)}</p>
+          </button>
+        `).join("");
+      }
+      const selected = state.tasks.find(t => t.id === state.selected) || state.tasks[0];
+      if (selected) {
+        state.selected = selected.id;
+        const logs = (selected.logs || []).join("\n") || "(waiting for progress…)";
+        const summary = selected.summary ? `\n\n${selected.summary}` : "";
+        const extra = selected.error ? `\n\nerror: ${selected.error}` : "";
+        detailEl.innerHTML = `
+          <label>Progress</label>
+          <p class="meta">${selected.workspace}${selected.commit_sha ? " · " + selected.commit_sha.slice(0, 8) : ""}</p>
+          <pre id="log">${logs}${summary}${extra}</pre>
+        `;
+      } else {
+        detailEl.innerHTML = "";
+      }
+    }
+
+    async function refresh() {
+      const res = await fetch("/api/tasks");
+      state.tasks = await res.json();
+      render();
+    }
+
+    listEl.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-id]");
+      if (!button) return;
+      state.selected = button.dataset.id;
+      render();
+    });
+
+    document.getElementById("task-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorEl.textContent = "";
+      submitEl.disabled = true;
+      try {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspace: document.getElementById("workspace").value,
+            goal: document.getElementById("goal").value,
+            auto_commit: document.getElementById("auto-commit").checked,
+            publish: document.getElementById("publish").checked,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to queue task");
+        state.selected = body.id;
+        await refresh();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        submitEl.disabled = false;
+      }
+    });
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
 </body>
 </html>
