@@ -141,6 +141,7 @@ This is still a coding agent with a shell inside a trusted workspace. Do not poi
 | `loco doctor` | Hardware, git/docker, model health |
 | `loco init [path]` | Write `.loco/` scaffolding |
 | `loco run -w PATH -g "..."` | One improve → test → commit cycle |
+| `loco ui -w PATH` | Local web UI to queue and run tasks (`--web-ui` on `run` also works) |
 | `loco watch -w PATH` | Repeat cycles on an interval |
 
 Environment variables are listed in `.env.example`.

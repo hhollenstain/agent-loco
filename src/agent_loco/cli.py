@@ -107,6 +107,35 @@ def init(
         console.print("project already has .loco config")
 
 
+def _serve_ui(
+    workspace: Path,
+    settings: Settings,
+    *,
+    host: str,
+    port: int,
+    max_concurrent: int,
+    default_goal: str | None = None,
+    default_publish: bool | None = None,
+) -> None:
+    from agent_loco.web_ui import serve
+
+    console.print(f"Web UI on http://{host}:{port}  (Ctrl+C to stop)")
+    if max_concurrent > 1:
+        console.print(
+            "[yellow]Multiple concurrent tasks will contend for CPU, RAM, "
+            "and the local model server.[/yellow]"
+        )
+    serve(
+        workspace,
+        settings,
+        host=host,
+        port=port,
+        max_concurrent=max_concurrent,
+        default_goal=default_goal,
+        default_publish=default_publish,
+    )
+
+
 @app.command()
 def run(
     workspace: Annotated[
@@ -117,6 +146,10 @@ def run(
     model_name: Annotated[str | None, typer.Option("--model")] = None,
     publish: Annotated[bool | None, typer.Option("--publish/--no-publish")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
+    web_ui: Annotated[
+        bool,
+        typer.Option("--web-ui", help="Start the web UI instead of running one cycle."),
+    ] = False,
 ) -> None:
     """Run one improve → test → commit cycle against a project."""
     settings = _settings(
@@ -124,6 +157,17 @@ def run(
         publish=publish,
         auto_commit=auto_commit,
     )
+    if web_ui:
+        _serve_ui(
+            workspace,
+            settings,
+            host="127.0.0.1",
+            port=8080,
+            max_concurrent=1,
+            default_goal=goal,
+            default_publish=publish,
+        )
+        return
     result = run_cycle(
         workspace,
         settings,
@@ -162,5 +206,46 @@ def watch_command(
     settings = _settings(model_name=model_name, watch_interval_seconds=interval)
     try:
         watch_loop(workspace, settings, _llm(settings), goal)
+    except KeyboardInterrupt:
+        console.print("stopped")
+
+
+@app.command("ui")
+def ui_command(
+    workspace: Annotated[
+        Path,
+        typer.Option("--workspace", "-w", exists=True, file_okay=False, resolve_path=True),
+    ] = Path("."),
+    goal: Annotated[str | None, typer.Option("--goal", "-g")] = None,
+    model_name: Annotated[str | None, typer.Option("--model")] = None,
+    host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port")] = 8080,
+    max_concurrent: Annotated[
+        int,
+        typer.Option(
+            "--max-concurrent",
+            min=1,
+            help="How many cycles may run at once. More than 1 is hard on a local machine.",
+        ),
+    ] = 1,
+    publish: Annotated[bool | None, typer.Option("--publish/--no-publish")] = None,
+    auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
+) -> None:
+    """Start a local web UI to queue and run tasks."""
+    settings = _settings(
+        model_name=model_name,
+        publish=publish,
+        auto_commit=auto_commit,
+    )
+    try:
+        _serve_ui(
+            workspace,
+            settings,
+            host=host,
+            port=port,
+            max_concurrent=max_concurrent,
+            default_goal=goal,
+            default_publish=publish,
+        )
     except KeyboardInterrupt:
         console.print("stopped")
