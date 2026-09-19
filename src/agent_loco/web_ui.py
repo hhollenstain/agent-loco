@@ -1,18 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, render_template
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 
-tasks = []
-
-@app.route('/tasks', methods=['GET'])
-def get_tasks():
-    return jsonify({'tasks': tasks})
-
-@app.route('/tasks', methods=['POST'])
-def create_task():
-    task = request.json['description']
-    tasks.append(task)
-    return jsonify({'task': task}), 201
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
