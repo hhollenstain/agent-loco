@@ -11,12 +11,29 @@ from agent_loco.tools.git import (
     current_branch,
     current_sha,
     ensure_pr_branch,
+    extract_pr_url,
     has_changes,
     is_runtime_artifact,
     push_changes,
     run_git,
     upstream_state,
 )
+
+
+def test_extract_pr_url_from_gh_output() -> None:
+    assert extract_pr_url(None) is None
+    assert extract_pr_url("no link here") is None
+    assert (
+        extract_pr_url(
+            "Creating pull request\nhttps://github.com/acme/repo/pull/12\n"
+        )
+        == "https://github.com/acme/repo/pull/12"
+    )
+    assert extract_pr_url("https://example.test/pull/1") == "https://example.test/pull/1"
+    assert (
+        extract_pr_url("opened https://gitlab.com/acme/app/-/merge_requests/7.")
+        == "https://gitlab.com/acme/app/-/merge_requests/7"
+    )
 
 
 def test_run_log_paths_are_runtime_artifacts() -> None:

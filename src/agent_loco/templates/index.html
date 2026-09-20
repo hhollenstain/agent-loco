@@ -479,6 +479,11 @@
     .notice-running .notice-kind { background: rgba(230, 192, 123, 0.2); color: var(--warn); }
     .form-note { margin-top: 1rem; }
     .task-list { display: flex; flex-direction: column; gap: 0.65rem; }
+    .task-card {
+      position: relative;
+    }
+    .task-card .task { width: 100%; }
+    .task-card:has(> .pr-link) .task { padding-bottom: 2.15rem; }
     .task {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -487,7 +492,46 @@
       cursor: pointer;
       text-align: left;
     }
-    .task.selected { border-color: var(--accent); }
+    .task.selected, .task-card.selected .task { border-color: var(--accent); }
+    .pr-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.32rem;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 0.75rem;
+      font-weight: 650;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 999px;
+      padding: 0.2rem 0.55rem 0.2rem 0.38rem;
+      line-height: 1.1;
+    }
+    .pr-link:hover, .pr-link:focus {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .pr-logo {
+      width: 0.9rem;
+      height: 0.9rem;
+      flex: 0 0 auto;
+    }
+    .task-card > .pr-link {
+      position: absolute;
+      right: 0.65rem;
+      bottom: 0.55rem;
+      z-index: 1;
+    }
+    .progress-pr {
+      min-height: 0;
+      margin-top: 0.45rem;
+    }
+    .timeline-item.pr {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
     .row { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
     .status { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
     .status.queued { color: var(--queued); }
@@ -542,6 +586,35 @@
       margin-right: 0.55rem;
     }
     .timeline-title { font-weight: 600; }
+    .timeline-item.failed {
+      border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
+    }
+    .timeline-item.failed .timeline-title { color: var(--bad); }
+    .timeline-item.passed .timeline-title { color: var(--ok); }
+    .timeline-item.think .timeline-title {
+      color: var(--muted);
+      font-style: italic;
+      font-weight: 600;
+    }
+    .timeline-item.think .think-meta {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+      margin-left: 0.45rem;
+    }
+    .think-log {
+      list-style: none;
+      margin: 0.5rem 0 0;
+      padding: 0.15rem 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.28rem;
+    }
+    .think-log li {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+    }
     .timeline-item pre.diff {
       margin: 0.55rem 0 0;
       max-height: 18rem;
@@ -1412,11 +1485,159 @@
       return String(item.id || item.created_at || "") + ":" + String(index);
     }
 
+    const GITHUB_MARK = `<svg class="pr-logo" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.65 7.65 0 0 1 8 4.77c.68.003 1.36.092 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>`;
+    const PR_URL_RE = /https:\/\/(?:www\.)?(?:github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+|[^\s<>"']+\/(?:pull|merge_requests)\/\d+)/i;
+
+    function prUrl(item) {
+      if (!item) return "";
+      if (item.pr_url) return String(item.pr_url);
+      const fromEvent = (item.events || []).find((event) => event && event.kind === "pr" && event.url);
+      if (fromEvent) return String(fromEvent.url);
+      const blob = [
+        item.reason,
+        item.summary,
+        ...((item.events || []).map((event) => (event && (event.url || event.message || event.output)) || "")),
+      ].join("\n");
+      const match = blob.match(PR_URL_RE);
+      return match ? match[0] : "";
+    }
+
+    function prLabel(url) {
+      const match = String(url).match(/\/(?:pull|merge_requests)\/(\d+)/);
+      return match ? `PR #${match[1]}` : "Pull request";
+    }
+
+    function prLinkHtml(url) {
+      if (!url) return "";
+      const safe = escapeHtml(url);
+      return `<a class="pr-link" href="${safe}" target="_blank" rel="noopener noreferrer" title="${safe}">${GITHUB_MARK}<span>${escapeHtml(prLabel(url))}</span></a>`;
+    }
+
+    function historyCardHtml(entry, index) {
+      const selected = historyKey(entry, index) === state.selectedHistoryKey ? " selected" : "";
+      return `
+        <div class="task-card${selected}">
+          <button type="button" class="task${selected}" data-history-key="${escapeHtml(historyKey(entry, index))}">
+            <div class="row">
+              <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
+              <span class="meta" title="${escapeHtml(entry.created_at || entry.id || "")}">${escapeHtml(timestampLabel(entry))}</span>
+            </div>
+            <p class="goal">${escapeHtml(goalText(entry))}</p>
+            <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
+          </button>
+          ${prLinkHtml(prUrl(entry))}
+        </div>
+      `;
+    }
+
     function formatElapsedMs(ms) {
       const value = Number(ms);
       if (!Number.isFinite(value) || value < 0) return "";
       if (value < 1000) return `${Math.round(value)}ms`;
+      if (value >= 60_000) return `${(value / 60_000).toFixed(value < 600_000 ? 1 : 0)}m`;
       return `${(value / 1000).toFixed(value < 10000 ? 2 : 1)}s`;
+    }
+
+    const THINKING_LINES = [
+      "Thinking…",
+      "Having a little think…",
+      "Chewing on the problem…",
+      "Waiting for the weights to settle…",
+      "Asking the model nicely…",
+      "Staring into the token stream…",
+      "Warming up the silicon…",
+      "Counting on its GPU fingers…",
+    ];
+
+    function isThinkEvent(event) {
+      return Boolean(
+        event
+        && event.kind === "llm"
+        && event.ok !== false
+        && (event.purpose || "agent") === "agent"
+      );
+    }
+
+    function thinkingLabel(events) {
+      const seed = String((events[0] && events[0].at) || events.length);
+      let n = 0;
+      for (const ch of seed) n = (n + ch.charCodeAt(0)) % THINKING_LINES.length;
+      return THINKING_LINES[n];
+    }
+
+    function groupTimelineEvents(events) {
+      const groups = [];
+      for (const event of events) {
+        const last = groups[groups.length - 1];
+        if (isThinkEvent(event) && last && last.type === "think") {
+          last.events.push(event);
+          continue;
+        }
+        if (isThinkEvent(event)) {
+          groups.push({ type: "think", events: [event] });
+          continue;
+        }
+        groups.push({ type: "event", event });
+      }
+      return groups;
+    }
+
+    function renderThinkGroup(events, { running = false } = {}) {
+      if (events.length < 2) return renderEvent(events[0], { running });
+      const first = events[0];
+      const last = events[events.length - 1];
+      const key = `think:${first.at || ""}`;
+      const open = state.openDiffs.has(key) ? " open" : "";
+      const total = events.reduce((sum, event) => sum + (Number(event.elapsed_ms) || 0), 0);
+      const wait = formatElapsedMs(total);
+      const when = `<span class="timeline-when">${escapeHtml(formatTimestamp(last.at) || last.at || "")}</span>`;
+      const title = `<span class="timeline-title">${escapeHtml(thinkingLabel(events))}</span>`;
+      const meta = `<span class="think-meta">${events.length} turns${wait ? " · " + wait : ""}</span>`;
+      const rows = events.map((event) => {
+        const stamp = escapeHtml(formatTimestamp(event.at) || event.at || "");
+        return `<li><span class="timeline-when">${stamp}</span>${escapeHtml(eventTitle(event))}</li>`;
+      }).join("");
+      return `<li><details class="timeline-item think" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}${meta}</summary><ol class="think-log">${rows}</ol></details></li>`;
+    }
+
+    function renderEvent(event, { running = false, lastFile = null, lastFailedTest = null } = {}) {
+      if (!event) return "";
+      const when = `<span class="timeline-when">${escapeHtml(formatTimestamp(event.at) || event.at || "")}</span>`;
+      const title = `<span class="timeline-title">${escapeHtml(eventTitle(event))}</span>`;
+      if (event.kind === "file" && event.diff) {
+        const key = `${event.kind}:${event.path || ""}:${event.at || ""}`;
+        const open = running && lastFile === event || state.openDiffs.has(key) ? " open" : "";
+        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${renderDiff(event.diff)}</pre></details></li>`;
+      }
+      if (event.kind === "review" && event.raw) {
+        const key = `${event.kind}:${event.attempt || 1}:${event.at || ""}`;
+        const open = state.openDiffs.has(key) ? " open" : "";
+        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${escapeHtml(event.raw)}</pre></details></li>`;
+      }
+      if (event.kind === "test" && event.output) {
+        const key = `${event.kind}:${event.phase || ""}:${event.at || ""}`;
+        const open = lastFailedTest === event || state.openDiffs.has(key) ? " open" : "";
+        const tone = event.ok === false ? " failed" : " passed";
+        const command = event.command ? `<span class="meta">${escapeHtml(event.command)}</span>` : "";
+        return `<li><details class="timeline-item${tone}" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary>${command}<pre class="diff">${escapeHtml(event.output)}</pre></details></li>`;
+      }
+      if (event.kind === "pr" && event.url) {
+        return `<li class="timeline-item pr">${when}${prLinkHtml(event.url)}</li>`;
+      }
+      return `<li class="timeline-item">${when}${title}</li>`;
+    }
+
+    function renderTimeline(events, { running = false } = {}) {
+      if (!events || !events.length) return "";
+      const lastFile = [...events].reverse().find((event) => event.kind === "file");
+      const lastFailedTest = [...events].reverse().find((event) => event.kind === "test" && event.ok === false);
+      const items = groupTimelineEvents(events).map((group) => {
+        if (group.type === "think") {
+          return renderThinkGroup(group.events, { running });
+        }
+        return renderEvent(group.event, { running, lastFile, lastFailedTest });
+      }).join("");
+      return `<ol class="timeline" id="progress-timeline">${items}</ol>`;
     }
 
     function renderDiff(diff) {
@@ -1446,29 +1667,16 @@
         }
         return `Goal review${attempt}: met=${event.met} (${event.reason || ""})`;
       }
+      if (event.kind === "test") {
+        const bits = [event.ok === false ? "Tests failed" : "Tests passed"];
+        if (event.phase && event.phase !== "tests") bits.push(event.phase);
+        const wait = formatElapsedMs(event.elapsed_ms);
+        if (wait) bits.push(wait);
+        return bits.join(" · ");
+      }
+      if (event.kind === "pr") return event.url ? prLabel(event.url) : (event.message || "pull request");
       if (event.kind === "step") return event.message || "step";
       return event.message || event.kind || "event";
-    }
-
-    function renderTimeline(events, { running = false } = {}) {
-      if (!events || !events.length) return "";
-      const lastFile = [...events].reverse().find((event) => event.kind === "file");
-      const items = events.map((event) => {
-        const when = `<span class="timeline-when">${escapeHtml(formatTimestamp(event.at) || event.at || "")}</span>`;
-        const title = `<span class="timeline-title">${escapeHtml(eventTitle(event))}</span>`;
-        if (event.kind === "file" && event.diff) {
-          const key = `${event.kind}:${event.path || ""}:${event.at || ""}`;
-          const open = running && lastFile === event || state.openDiffs.has(key) ? " open" : "";
-          return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${renderDiff(event.diff)}</pre></details></li>`;
-        }
-        if (event.kind === "review" && event.raw) {
-          const key = `${event.kind}:${event.attempt || 1}:${event.at || ""}`;
-          const open = state.openDiffs.has(key) ? " open" : "";
-          return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${escapeHtml(event.raw)}</pre></details></li>`;
-        }
-        return `<li class="timeline-item">${when}${title}</li>`;
-      }).join("");
-      return `<ol class="timeline" id="progress-timeline">${items}</ol>`;
     }
 
     function renderProgress(item, { running = false } = {}) {
@@ -1580,15 +1788,19 @@
       } else {
         listEl.innerHTML = filteredTasks.map(task => {
           const duration = taskDurationLabel(task);
+          const selected = task.id === state.selected ? " selected" : "";
           return `
-          <button type="button" class="task ${task.id === state.selected ? "selected" : ""}" data-id="${escapeHtml(task.id)}">
-            <div class="row">
-              <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
-              <span class="meta duration">${escapeHtml(duration || formatTimestamp(task.started_at || task.created_at))}</span>
-            </div>
-            <p class="goal">${escapeHtml(goalText(task))}</p>
-            <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}${duration ? " · " + escapeHtml(formatTimestamp(task.started_at || task.created_at)) : ""}</p>
-          </button>
+          <div class="task-card${selected}">
+            <button type="button" class="task${selected}" data-id="${escapeHtml(task.id)}">
+              <div class="row">
+                <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
+                <span class="meta duration">${escapeHtml(duration || formatTimestamp(task.started_at || task.created_at))}</span>
+              </div>
+              <p class="goal">${escapeHtml(goalText(task))}</p>
+              <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}${duration ? " · " + escapeHtml(formatTimestamp(task.started_at || task.created_at)) : ""}</p>
+            </button>
+            ${prLinkHtml(prUrl(task))}
+          </div>
         `}).join("");
       }
 
@@ -1598,16 +1810,7 @@
         if (!state.history.length) {
           historyEl.innerHTML = `<p class="empty">No past runs yet.</p>`;
         } else {
-          historyEl.innerHTML = state.history.map((entry, index) => `
-            <button type="button" class="task ${historyKey(entry, index) === state.selectedHistoryKey ? "selected" : ""}" data-history-key="${escapeHtml(historyKey(entry, index))}">
-              <div class="row">
-                <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
-                <span class="meta" title="${escapeHtml(entry.created_at || entry.id || "")}">${escapeHtml(timestampLabel(entry))}</span>
-              </div>
-              <p class="goal">${escapeHtml(goalText(entry))}</p>
-              <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
-            </button>
-          `).join("");
+          historyEl.innerHTML = state.history.map((entry, index) => historyCardHtml(entry, index)).join("");
         }
         paginationEl.innerHTML = "";
       } else {
@@ -1617,16 +1820,7 @@
         if (!items.length) {
           historyEl.innerHTML = `<p class="empty">${state.search ? "No matches found." : "No past runs yet."}</p>`;
         } else {
-          historyEl.innerHTML = items.map((entry, index) => `
-            <button type="button" class="task ${historyKey(entry, index) === state.selectedHistoryKey ? "selected" : ""}" data-history-key="${escapeHtml(historyKey(entry, index))}">
-              <div class="row">
-                <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
-                <span class="meta" title="${escapeHtml(entry.created_at || entry.id || "")}">${escapeHtml(timestampLabel(entry))}</span>
-              </div>
-              <p class="goal">${escapeHtml(goalText(entry))}</p>
-              <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
-            </button>
-          `).join("");
+          historyEl.innerHTML = items.map((entry, index) => historyCardHtml(entry, index)).join("");
         }
         renderPagination(page, total_pages);
       }
@@ -1656,6 +1850,7 @@
         : selectedHistory
           ? [goalText(selectedHistory), taskDurationLabel(selectedHistory), timestampLabel(selectedHistory)].filter(Boolean).join(" · ")
           : "";
+      const prHtml = prLinkHtml(prUrl(selected || selectedHistory));
       const root = detailEl.querySelector("[data-progress-root]");
       const sameItem = Boolean(root && itemKey && root.dataset.itemKey === itemKey);
       if (!itemKey) {
@@ -1663,6 +1858,8 @@
       } else if (sameItem) {
         const metaEl = root.querySelector("[data-progress-meta]");
         if (metaEl) metaEl.textContent = metaText;
+        const prEl = root.querySelector("[data-progress-pr]");
+        if (prEl) prEl.innerHTML = prHtml;
         const body = root.querySelector("[data-progress-body]");
         if (body && lastProgressHtml !== progressHtml) {
           body.innerHTML = progressHtml;
@@ -1672,6 +1869,7 @@
           <div data-progress-root data-item-key="${escapeHtml(itemKey)}">
             <label>Progress</label>
             <p class="meta" data-progress-meta>${escapeHtml(metaText)}</p>
+            <div class="progress-pr" data-progress-pr>${prHtml}</div>
             <div data-progress-body>${progressHtml}</div>
           </div>
         `;
@@ -1738,6 +1936,7 @@
     }
 
     listEl.addEventListener("click", (event) => {
+      if (event.target.closest("a.pr-link")) return;
       const button = event.target.closest("[data-id]");
       if (!button) return;
       state.selected = button.dataset.id;
@@ -1746,6 +1945,7 @@
     });
 
     historyEl.addEventListener("click", (event) => {
+      if (event.target.closest("a.pr-link")) return;
       const button = event.target.closest("[data-history-key]");
       if (!button) return;
       state.selectedHistoryKey = button.dataset.historyKey;

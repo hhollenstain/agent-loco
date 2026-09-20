@@ -93,6 +93,12 @@ def test_cycle_skips_commit_when_tests_still_fail(tmp_path: Path, settings: Sett
     assert result.status == "failed"
     assert result.tests_passed is False
     assert result.committed is False
+    tests = [event for event in result.events if event["kind"] == "test"]
+    assert tests
+    failed = [event for event in tests if event["ok"] is False]
+    assert failed
+    assert any("NotImplementedError" in (event.get("output") or "") for event in failed)
+    assert any(event.get("phase") == "after" for event in tests)
 
 
 def test_no_create_pr_flag_wins_over_project_config(tmp_path: Path, settings: Settings) -> None:
@@ -205,6 +211,11 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert result.status == "success"
     assert result.committed is True
     assert result.published is True
+    assert result.pr_url == "https://example.test/pull/1"
+    assert any(
+        event.get("kind") == "pr" and event.get("url") == result.pr_url
+        for event in result.events
+    )
     assert captured["push_branch"]
     assert str(captured["push_branch"]).startswith("loco/")
     assert captured["push_branch"] != protected
@@ -316,6 +327,11 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
     assert result.status == "success"
     assert result.committed is True
     assert result.published is True
+    assert result.pr_url == "https://example.test/pull/4"
+    assert any(
+        event.get("kind") == "pr" and event.get("url") == result.pr_url
+        for event in result.events
+    )
     assert "Goal review confirmed" in str(captured["body"])
     assert "<header>" not in (tmp_path / "ui.html").read_text(encoding="utf-8")
     assert "toggle-sidebar" in (tmp_path / "ui.html").read_text(encoding="utf-8")

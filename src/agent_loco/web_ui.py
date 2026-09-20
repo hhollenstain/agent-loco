@@ -257,9 +257,17 @@ class UiState:
                         item.get("reason", ""),
                         item.get("status", ""),
                         item.get("id", ""),
+                        item.get("pr_url", ""),
                         item.get("created_at", ""),
                         " ".join(
-                            str(event.get("path") or event.get("message") or "")
+                            str(
+                                event.get("path")
+                                or event.get("url")
+                                or event.get("message")
+                                or event.get("output")
+                                or event.get("command")
+                                or ""
+                            )
                             for event in item.get("events") or []
                             if isinstance(event, dict)
                         ),

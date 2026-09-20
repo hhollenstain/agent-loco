@@ -53,6 +53,7 @@ class Task:
     committed: bool = False
     published: bool = False
     commit_sha: str | None = None
+    pr_url: str | None = None
     error: str | None = None
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
@@ -74,6 +75,7 @@ class Task:
             "committed": self.committed,
             "published": self.published,
             "commit_sha": self.commit_sha,
+            "pr_url": self.pr_url,
             "error": self.error,
             "events": list(self.events),
         }
@@ -223,6 +225,7 @@ class TaskManager:
             task.committed = result.committed
             task.published = result.published
             task.commit_sha = result.commit_sha
+            task.pr_url = result.pr_url
         except Exception as exc:
             log.exception("task %s crashed", task.id)
             task.status = "error"

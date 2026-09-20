@@ -177,3 +177,116 @@ def test_agent_nudges_through_multiple_plan_turns(tmp_path: Path) -> None:
     result = CodingAgent(llm, tools, max_iterations=8).run("Write done.txt")
     assert result.tool_calls == 1
     assert (tmp_path / "done.txt").read_text(encoding="utf-8") == "ok\n"
+
+
+def test_looks_unfinished_detects_mid_work_replies() -> None:
+    from agent_loco.agent.loop import looks_unfinished
+
+    assert looks_unfinished(
+        "There are two failing tests - I need to fix the mocks. Let me update the tests:"
+    )
+    assert looks_unfinished("I'll write the missing assertions next.")
+    assert not looks_unfinished("Wrote tests and they pass. Two cases still lack coverage.")
+
+
+def test_agent_keeps_going_after_unfinished_summary(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={"path": "app.py", "content": "ok\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(
+                text=(
+                    "The tests are running and some are passing. There are two failing "
+                    "tests - I need to fix the mocks to return coroutines properly. "
+                    "Let me update the tests:"
+                )
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-2",
+                        name="write_file",
+                        arguments={"path": "tests.py", "content": "fixed\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Fixed the test mocks."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run("Add tests")
+    assert result.stopped_reason == "completed"
+    assert result.summary == "Fixed the test mocks."
+    assert (tmp_path / "tests.py").read_text(encoding="utf-8") == "fixed\n"
+    contents = [
+        message["content"]
+        for message in llm.calls[-1]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("not a finish" in content for content in contents)
+
+
+def test_agent_nudges_after_inspect_only_tools(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    reads = [
+        AssistantTurn(
+            text=None,
+            tool_calls=[
+                ToolCall(
+                    id=f"read-{index}",
+                    name="read_file",
+                    arguments={"path": "app.py"},
+                )
+            ],
+        )
+        for index in range(8)
+    ]
+    llm = ScriptedClient(
+        [
+            *reads,
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="write-1",
+                        name="write_file",
+                        arguments={"path": "done.txt", "content": "ok\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Wrote done.txt"),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=12).run("Write done.txt")
+    assert result.tool_calls >= 9
+    assert (tmp_path / "done.txt").read_text(encoding="utf-8") == "ok\n"
+    contents = [
+        message["content"]
+        for message in llm.calls[-1]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("without changing files" in content for content in contents)

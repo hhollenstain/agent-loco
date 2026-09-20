@@ -12,6 +12,7 @@ from agent_loco.logging import format_elapsed, utcnow_iso
 log = logging.getLogger("loco")
 
 MAX_DIFF_CHARS = 12_000
+MAX_TEST_OUTPUT_CHARS = 16_000
 ProgressToken = Token[list[dict[str, Any]] | None]
 
 _events: ContextVar[list[dict[str, Any]] | None] = ContextVar(
@@ -75,6 +76,34 @@ def record_file_change(
         diff = unified_file_diff(path, before, after, created=created)
     event = record_event(kind="file", path=path, action=action, diff=diff)
     log.info("file %s %s", action, path)
+    return event
+
+
+def clip_output(text: str, limit: int = MAX_TEST_OUTPUT_CHARS) -> str:
+    value = text or ""
+    if len(value) <= limit:
+        return value
+    omitted = len(value) - limit
+    return f"... truncated {omitted} chars\n" + value[-limit:]
+
+
+def record_test_run(
+    *,
+    command: str,
+    ok: bool,
+    output: str,
+    phase: str = "tests",
+    elapsed_ms: int | None = None,
+) -> dict[str, Any]:
+    event = record_event(
+        kind="test",
+        command=command,
+        ok=ok,
+        phase=phase,
+        elapsed_ms=elapsed_ms,
+        output=clip_output(output),
+    )
+    log.info("tests %s ok=%s", phase, ok)
     return event
 
 

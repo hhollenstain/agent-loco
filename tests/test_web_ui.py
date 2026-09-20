@@ -97,6 +97,10 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"notice-warning" in home.content
         assert b"notice-skipped" in home.content
         assert b"function notify(" in home.content
+        assert b"class=\"pr-link\"" in home.content
+        assert b"function prLinkHtml(" in home.content
+        assert b"GITHUB_MARK" in home.content
+        assert b'event.kind === "pr"' in home.content
         assert b"\n  10|" not in home.content
 
         created = client.post(
@@ -156,6 +160,49 @@ def test_finished_task_records_start_and_finish_times(
         assert body["started_at"]
         assert body["finished_at"]
         assert body["finished_at"] >= body["started_at"]
+        assert body["pr_url"] is None
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_finished_task_includes_pr_url(settings: Settings, tmp_path: Path) -> None:
+    pr = "https://github.com/acme/repo/pull/12"
+
+    def runner(task: Task) -> CycleResult:
+        return CycleResult(
+            status="success",
+            goal=task.goal,
+            summary="opened a pull request",
+            tests_passed=True,
+            committed=True,
+            published=True,
+            commit_sha="abc123",
+            reason="completed",
+            pr_url=pr,
+            events=[{"kind": "pr", "url": pr, "message": pr}],
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Ship it", "auto_commit": False},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        body = None
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            match = next((item for item in listed if item["id"] == task_id), None)
+            if match and match["status"] not in {"queued", "running"}:
+                body = match
+                break
+            time.sleep(0.05)
+        assert body is not None
+        assert body["published"] is True
+        assert body["pr_url"] == pr
     finally:
         manager.shutdown(wait=False)
 
@@ -333,6 +380,36 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
         assert body["page_size"] == 10
         assert body["total"] == 1
         assert body["total_pages"] == 1
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_history_search_matches_pr_url(settings: Settings, tmp_path: Path) -> None:
+    (tmp_path / "history.json").write_text(
+        json.dumps(
+            [
+                {
+                    "status": "success",
+                    "goal": "Ship it",
+                    "published": True,
+                    "pr_url": "https://github.com/acme/repo/pull/12",
+                    "created_at": "2026-09-20T12:00:00Z",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        found = client.get("/api/history", params={"search": "pull/12"})
+        assert found.status_code == 200
+        items = found.json()["items"]
+        assert len(items) == 1
+        assert items[0]["pr_url"] == "https://github.com/acme/repo/pull/12"
+        missed = client.get("/api/history", params={"search": "no-such-pr"})
+        assert missed.json()["items"] == []
     finally:
         manager.shutdown(wait=False)
 
@@ -615,6 +692,14 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
             diff="--- /dev/null\n+++ b/hello.py\n+print('hi')\n",
         )
         record_event(kind="llm", purpose="agent", ok=True, elapsed_ms=12)
+        record_event(
+            kind="test",
+            command="python3 check.py",
+            ok=False,
+            phase="after",
+            elapsed_ms=90,
+            output="AssertionError: expected 5",
+        )
         return _ok_result(task.goal)
 
     manager = TaskManager(settings, runner=runner)
@@ -651,9 +736,18 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
         kinds = [event["kind"] for event in body["events"]]
         assert "file" in kinds
         assert "llm" in kinds
+        assert "test" in kinds
         file_event = next(event for event in body["events"] if event["kind"] == "file")
         assert file_event["path"] == "hello.py"
         assert "print('hi')" in file_event["diff"]
+        test_event = next(event for event in body["events"] if event["kind"] == "test")
+        assert test_event["ok"] is False
+        assert "AssertionError" in test_event["output"]
+        assert b"Tests failed" in home.content
+        assert b'event.kind === "test"' in home.content
+        assert b"groupTimelineEvents" in home.content
+        assert b"Thinking" in home.content
+        assert b"timeline-item think" in home.content
     finally:
         manager.shutdown(wait=False)
 
