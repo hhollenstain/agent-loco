@@ -142,7 +142,7 @@ def write_default_project_files(root: Path) -> list[Path]:
 
 def ensure_run_gitignore(root: Path) -> Path | None:
     """Keep local loco runtime files out of git. Returns the path only when created."""
-    markers = ("runs/", "servers.json")
+    markers = ("runs/", "servers.json", "workspaces.json")
     loco = root / ".loco"
     loco.mkdir(parents=True, exist_ok=True)
     path = loco / ".gitignore"

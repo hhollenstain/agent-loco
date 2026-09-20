@@ -18,6 +18,7 @@ build/
 # Local env and runtime
 .loco/runs/
 .loco/servers.json
+.loco/workspaces.json
 .env
 .env.*
 !.env.example

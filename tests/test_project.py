@@ -56,3 +56,4 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
     assert gitignore in created
     assert "runs/" in gitignore.read_text(encoding="utf-8")
     assert "servers.json" in gitignore.read_text(encoding="utf-8")
+    assert "workspaces.json" in gitignore.read_text(encoding="utf-8")

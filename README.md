@@ -70,7 +70,7 @@ uv run loco watch --workspace /path/to/your/project
 
 Attach any local git checkout. The agent will not read or write outside that workspace.
 
-The web UI (`loco ui`) lets you queue cycles, pick an LLM server, and choose a model from that host. The default is local Ollama at `http://127.0.0.1:11434/v1`. Change the LLM server field (host:port or a full `/v1` URL) and load models to point at another OpenAI-compatible endpoint. Used servers are remembered in `.loco/servers.json` so they stay selectable after a refresh or restart. `--base-url` on `run`, `watch`, and `ui` does the same from the CLI.
+The web UI (`loco ui`) lets you queue cycles, pick an LLM server, choose a model from that host, and switch workspaces. Browse local folders, create a new loco project, or clone a git repo onto this machine so you can run and open PRs locally. Remembered folders live in `.loco/workspaces.json`. The default LLM server is local Ollama at `http://127.0.0.1:11434/v1`. Change the LLM server field (host:port or a full `/v1` URL) and load models to point at another OpenAI-compatible endpoint. Used servers are remembered in `.loco/servers.json` so they stay selectable after a refresh or restart. `--base-url` on `run`, `watch`, and `ui` does the same from the CLI.
 
 ## Onboard a project
 
@@ -85,6 +85,7 @@ That writes:
 .loco/goals.md      # checkbox backlog the watcher consumes
 .loco/runs/         # JSON logs written after every cycle
 .loco/servers.json  # remembered LLM hosts for the web UI
+.loco/workspaces.json  # remembered folders for the workspace picker
 ```
 
 If `test_command` is omitted, loco infers one (`pytest`, `npm test`, `make test`, `cargo test`, `go test`).

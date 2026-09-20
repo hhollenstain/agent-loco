@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -50,6 +50,9 @@ class CycleResult:
     published: bool
     commit_sha: str | None
     reason: str | None
+    created_at: str = field(
+        default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
 
 
 def resolve_create_pr(
@@ -490,7 +493,10 @@ def _write_run_log(root: Path, result: CycleResult) -> None:
     runs.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = runs / f"{stamp}.json"
-    path.write_text(json.dumps(asdict(result), indent=2) + "\n", encoding="utf-8")
+    payload = asdict(result)
+    payload.setdefault("id", stamp)
+    payload.setdefault("created_at", result.created_at)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def _append_to_history(root: Path, result: CycleResult) -> None:
