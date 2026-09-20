@@ -90,20 +90,35 @@ class UiState:
         }
 
     def load_history(self, workspace_root: Path) -> list[dict[str, Any]]:
-        """Load cycle logs from `.loco/runs/` newest first."""
+        """Load cycle logs from `.loco/runs/` and history.json, newest first."""
         runs_dir = Path(workspace_root) / ".loco" / "runs"
-        if not runs_dir.exists():
-            return []
         results: list[dict[str, Any]] = []
-        for path in sorted(runs_dir.glob("*.json"), reverse=True):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if not isinstance(data, dict):
-                continue
-            data.setdefault("id", path.stem)
-            results.append(data)
+        
+        # Load from .loco/runs/ directory (current runs)
+        if runs_dir.exists():
+            for path in sorted(runs_dir.glob("*.json"), reverse=True):
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                data.setdefault("id", path.stem)
+                results.append(data)
+        
+        # Load from history.json (persisted history)
+        history_file = Path(workspace_root) / "history.json"
+        try:
+            if history_file.exists():
+                with open(history_file, "r", encoding="utf-8") as f:
+                    history = json.load(f)
+                if isinstance(history, list):
+                    # Add all historical items (the file has them newest first)
+                    results.extend(history)
+        except (OSError, json.JSONDecodeError):
+            # If we can't read the history file, continue with current runs
+            pass
+
         return results
 
 

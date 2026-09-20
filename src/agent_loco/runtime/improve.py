@@ -99,6 +99,7 @@ def run_cycle(
             reason="no open goals and tests are green",
         )
         _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
         return result
 
     log_progress(f"Selected goal: {selected_goal}")
@@ -141,6 +142,7 @@ def run_cycle(
             reason="tests failed; commit skipped",
         )
         _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
         return result
 
     log_progress("Checking for changes...")
@@ -170,6 +172,7 @@ def run_cycle(
                 reason=f"commit failed: {commit.output}",
             )
             _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
             return result
         committed = True
         sha = current_sha(workspace)
@@ -188,6 +191,7 @@ def run_cycle(
             reason="no project files changed; commit skipped",
         )
         _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
         return result
 
     if committed and allow_create_pr:
@@ -222,6 +226,7 @@ def run_cycle(
         reason=agent_result.stopped_reason,
     )
     _write_run_log(workspace.root, result)
+    _append_to_history(workspace.root, result)
     return result
 
 
@@ -266,3 +271,33 @@ def _write_run_log(root: Path, result: CycleResult) -> None:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = runs / f"{stamp}.json"
     path.write_text(json.dumps(asdict(result), indent=2) + "\n", encoding="utf-8")
+
+
+def _append_to_history(root: Path, result: CycleResult) -> None:
+    """Append cycle result to history.json for persistent storage across restarts."""
+    history_file = root / "history.json"
+    # Read existing history
+    try:
+        if history_file.exists():
+            with open(history_file, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        else:
+            history = []
+    except (OSError, json.JSONDecodeError):
+        # If we can't read the file for any reason, start fresh
+        history = []
+    
+    # Add the new result to the beginning of the list 
+    # (most recent at the beginning) and keep only the last 100 entries
+    history.insert(0, asdict(result))
+    
+    # Limit history size to avoid file becoming too large
+    if len(history) > 100:
+        history = history[:100]
+    
+    try:
+        with open(history_file, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2)
+    except OSError:
+        # If we can't write the file, silently ignore (not critical for functionality)
+        pass
