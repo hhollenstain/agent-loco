@@ -13,22 +13,26 @@ from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
 
-MUTATING_TOOLS = {"write_file"}
+MUTATING_TOOLS = {"write_file", "str_replace"}
 MAX_PLAN_NUDGES = 3
 MAX_UNFINISHED_NUDGES = 4
 MAX_INSPECT_ROUNDS = 3
 CONTINUE_NUDGE = (
     "You have not changed any files that implement the goal. Inspection is over. "
-    "Call write_file and implement this exact goal — not a placeholder, status note, "
-    "verification test, or a different task you noticed in the repo."
+    "Call str_replace on the existing files (or write_file for a new/small file) "
+    "and implement this exact goal — not a placeholder, status note, "
+    "verification test, or a different task you noticed in the repo. "
+    "Do not rewrite a large file with write_file."
 )
 UNFINISHED_NUDGE = (
     "That reply is not a finish. You still have work left on the stated goal. "
-    "Call a tool now and apply the next edit. Do not narrate the change; write_file it."
+    "Call a tool now and apply the next edit. Do not narrate the change; "
+    "str_replace it."
 )
 INSPECT_NUDGE = (
     "You have been inspecting the repo without changing files. "
-    "Stop reading. Call write_file and implement this exact goal. "
+    "Stop reading. Call str_replace and implement this exact goal. "
+    "Use write_file only for a new or small file. "
     "Do not write placeholder, status, or verification files."
 )
 _UNFINISHED_RE = re.compile(

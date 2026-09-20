@@ -292,3 +292,77 @@ def test_agent_nudges_after_inspect_only_tools(tmp_path: Path) -> None:
         if message.get("role") == "user" and isinstance(message.get("content"), str)
     ]
     assert any("without changing files" in content for content in contents)
+
+
+def test_agent_str_replace_counts_as_mutation(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="edit-1",
+                        name="str_replace",
+                        arguments={
+                            "path": "ui.html",
+                            "old_string": "<main></main>",
+                            "new_string": "<main class='stages'></main>",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Added stages."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=5).run("Add stages")
+    assert result.stopped_reason == "completed"
+    assert result.tool_calls == 1
+    assert "<main class='stages'></main>" in (tmp_path / "ui.html").read_text(
+        encoding="utf-8"
+    )
+    contents = [
+        message["content"]
+        for message in llm.calls[-1]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert not any("have not changed any files" in content for content in contents)
+
+
+def test_agent_accepts_qwen_xml_str_replace(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=(
+                    "<tool_call><function=str_replace>"
+                    "<parameter=path>ui.html</parameter>"
+                    "<parameter=old_string><main></main></parameter>"
+                    "<parameter=new_string><main class='stages'></main></parameter>"
+                    "</function></tool_call>"
+                )
+            ),
+            AssistantTurn(text="Patched ui.html"),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=5).run("Add stages")
+    assert result.tool_calls == 1
+    assert "<main class='stages'></main>" in (tmp_path / "ui.html").read_text(
+        encoding="utf-8"
+    )

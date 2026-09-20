@@ -44,6 +44,58 @@ def test_write_file_records_create_and_update_diffs(tmp_path: Path) -> None:
     assert events[0]["at"].endswith("Z")
 
 
+def test_str_replace_updates_unique_match(tmp_path: Path) -> None:
+    from agent_loco.progress import bind_progress, current_events, reset_progress
+
+    workspace = Workspace(tmp_path)
+    (tmp_path / "ui.html").write_text("<header>old</header>\n<main></main>\n", encoding="utf-8")
+    token = bind_progress()
+    try:
+        result = _tool(workspace, "str_replace").handler(
+            path="ui.html",
+            old_string="<header>old</header>",
+            new_string="<header>new</header>",
+        )
+        events = current_events()
+    finally:
+        reset_progress(token)
+    assert result.ok
+    assert "1 replacement" in result.output
+    assert (tmp_path / "ui.html").read_text(encoding="utf-8") == (
+        "<header>new</header>\n<main></main>\n"
+    )
+    assert events[0]["action"] == "updated"
+    assert "-<header>old</header>" in events[0]["diff"]
+    assert "+<header>new</header>" in events[0]["diff"]
+
+
+def test_str_replace_requires_unique_match_unless_replace_all(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "note.txt").write_text("alpha\nalpha\n", encoding="utf-8")
+    missing = _tool(workspace, "str_replace").handler(
+        path="note.txt",
+        old_string="beta",
+        new_string="gamma",
+    )
+    assert not missing.ok
+    assert "not found" in missing.output
+    ambiguous = _tool(workspace, "str_replace").handler(
+        path="note.txt",
+        old_string="alpha",
+        new_string="beta",
+    )
+    assert not ambiguous.ok
+    assert "2 times" in ambiguous.output
+    replaced = _tool(workspace, "str_replace").handler(
+        path="note.txt",
+        old_string="alpha",
+        new_string="beta",
+        replace_all="true",
+    )
+    assert replaced.ok
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "beta\nbeta\n"
+
+
 def test_search_finds_literal(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     (tmp_path / "note.txt").write_text("alpha loco beta\n", encoding="utf-8")

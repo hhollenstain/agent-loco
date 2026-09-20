@@ -204,6 +204,7 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     )
     assert "Add a task progress bar" in empty
     assert "placeholder" in empty.lower()
+    assert "str_replace" in empty
     retry = _goal_retry_prompt(
         "Add a task progress bar",
         "only a verification test was added",

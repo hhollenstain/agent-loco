@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from agent_loco.progress import record_file_change
 from agent_loco.sandbox import Workspace
@@ -70,8 +71,9 @@ def file_tools(workspace: Workspace) -> list[ToolSpec]:
         ToolSpec(
             name="write_file",
             description=(
-                "Create or overwrite a text file inside the workspace. "
-                "Creates parent directories."
+                "Create or overwrite a text file. Prefer str_replace for edits to "
+                "existing files; write_file must include the full file contents and "
+                "is a poor fit for large files. Creates parent directories."
             ),
             parameters=object_schema(
                 {
@@ -81,6 +83,39 @@ def file_tools(workspace: Workspace) -> list[ToolSpec]:
                 ["path", "content"],
             ),
             handler=lambda path, content: _write_file(workspace, path, content),
+        ),
+        ToolSpec(
+            name="str_replace",
+            description=(
+                "Replace exact text in an existing file. Prefer this over write_file "
+                "for edits. old_string must match exactly once unless replace_all is true."
+            ),
+            parameters=object_schema(
+                {
+                    "path": {"type": "string", "description": "File path inside the workspace."},
+                    "old_string": {
+                        "type": "string",
+                        "description": (
+                            "Exact text to find. Copy from the file, "
+                            "not from numbered read_file output."
+                        ),
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "Replacement text.",
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": (
+                            "Replace every match. Default false requires a unique match."
+                        ),
+                    },
+                },
+                ["path", "old_string", "new_string"],
+            ),
+            handler=lambda path, old_string, new_string, replace_all=False: _str_replace(
+                workspace, path, old_string, new_string, replace_all
+            ),
         ),
         ToolSpec(
             name="search_text",
@@ -171,6 +206,65 @@ def _write_file(workspace: Workspace, path: str, content: str) -> ToolResult:
         return ToolResult(False, f"write failed: {exc}")
     record_file_change(rel, before=before, after=content, created=created)
     return ToolResult(True, f"wrote {rel} ({len(encoded)} bytes)")
+
+
+def _str_replace(
+    workspace: Workspace,
+    path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: Any = False,
+) -> ToolResult:
+    if not old_string:
+        return ToolResult(False, "old_string is required")
+    if old_string == new_string:
+        return ToolResult(False, "old_string and new_string are identical")
+    file_path = workspace.resolve(path)
+    if not file_path.exists():
+        return ToolResult(False, f"not found: {path}")
+    if not file_path.is_file():
+        return ToolResult(False, f"not a file: {path}")
+    try:
+        before = file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return ToolResult(False, f"not a utf-8 text file: {path}")
+    except OSError as exc:
+        return ToolResult(False, f"read failed: {exc}")
+    matches = before.count(old_string)
+    if matches == 0:
+        return ToolResult(False, f"old_string not found in {path}")
+    replace_every = _as_bool(replace_all)
+    if matches > 1 and not replace_every:
+        return ToolResult(
+            False,
+            f"old_string matched {matches} times in {path}; "
+            "provide more context or set replace_all=true",
+        )
+    if replace_every:
+        after = before.replace(old_string, new_string)
+    else:
+        after = before.replace(old_string, new_string, 1)
+    encoded = after.encode("utf-8")
+    if len(encoded) > MAX_WRITE_BYTES:
+        return ToolResult(False, f"refusing to write more than {MAX_WRITE_BYTES} bytes")
+    try:
+        file_path.write_text(after, encoding="utf-8")
+    except OSError as exc:
+        return ToolResult(False, f"write failed: {exc}")
+    rel = workspace.relative(file_path)
+    record_file_change(rel, before=before, after=after, created=False)
+    replaced = matches if replace_every else 1
+    return ToolResult(True, f"updated {rel} ({replaced} replacement{'s' if replaced != 1 else ''})")
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
 
 
 def _search_text(workspace: Workspace, query: str, glob: str | None) -> ToolResult:

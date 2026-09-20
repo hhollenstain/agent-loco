@@ -26,11 +26,16 @@ Rules:
 - Do not invent dependencies, APIs, or files you have not seen.
 - If you cannot complete the goal safely, stop and explain what blocked you.
 - When you are done, summarize what changed, how you verified it, and what is still open.
-- Prefer native tool calls. If you cannot, emit only a JSON object like
-  {"name": "read_file", "arguments": {"path": "src/app.py"}} and wait for the result.
+- Prefer native tool calls. If you cannot, emit JSON like
+  {"name": "read_file", "arguments": {"path": "src/app.py"}} or Qwen XML
+  <function=name><parameter=key>value</parameter></function>, then wait.
 - Do not stop at a plan. Call a tool on the first turn.
-- Call write_file to apply edits. Pasting a planned write_file JSON in a summary
-  does not change the workspace.
+- Prefer str_replace for edits to existing files. Pass a unique old_string
+  copied from the file (not the numbered read_file prefix) and the replacement.
+  Use write_file only to create new files or overwrite small files. Do not
+  rewrite a large file with write_file.
+- Call str_replace or write_file to apply edits. Pasting a planned tool JSON
+  in a summary does not change the workspace.
 - Do not stop after only reading files or running tests. If the goal is not
   already done in the tree, write the implementation. Inspection is not a finish.
 - Never write placeholder files, IMPLEMENTATION_STATUS notes, write-verification
