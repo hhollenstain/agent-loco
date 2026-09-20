@@ -2022,16 +2022,33 @@
       return `<ol class="file-changes" id="file-changes">${items}</ol>`;
     }
 
-    function renderTaskPanes(logHtml, changesHtml, fileCount) {
-      const pane = state.taskPane === "changes" ? "changes" : "progress";
+    function screenshotHtmlFromEvents(events) {
+      const screenshots = (events || []).filter((e) => e.kind === "ui" && e.screenshot_filename);
+      if (!screenshots.length) return `<p class="empty">No screenshots from UI reviews in this task.</p>`;
+      return `<ul class="file-changes" aria-label="UI review screenshots">
+        ${screenshots.map((e, i) => `
+          <li class="file-change-path">
+            <span class="name">UI review #${i + 1}</span>
+            <span class="file-change-stats">ui-screenshots/${escapeHtml(e.screenshot_filename || "")}</span>
+            <button type="button" class="secondary btn-screenshot" data-screenshot="${escapeHtml(e.screenshot_filename || "")}" title="View screenshot">▶</button>
+          </li>
+        `).join("")}
+      </ul>`;
+    }
+
+    function renderTaskPanes(logHtml, changesHtml, fileCount, screenshotHtml) {
+      const pane = state.taskPane === "changes" ? "changes" : state.taskPane === "screenshots" ? "screenshots" : "progress";
       const count = fileCount ? `<span class="task-pane-count">(${fileCount})</span>` : "";
+      const screenshotCount = screenshotHtml ? `<span class="task-pane-count">(${(document.querySelectorAll(".btn-screenshot")?.length || 0)})</span>` : "";
       return `
         <div class="task-pane-tabs" role="tablist" aria-label="Task views">
           <button type="button" class="task-pane-tab" role="tab" data-task-pane="progress" aria-selected="${pane === "progress" ? "true" : "false"}">Progress</button>
           <button type="button" class="task-pane-tab" role="tab" data-task-pane="changes" aria-selected="${pane === "changes" ? "true" : "false"}">Changes${count ? " " + count : ""}</button>
+          <button type="button" class="task-pane-tab" role="tab" data-task-pane="screenshots" aria-selected="${pane === "screenshots" ? "true" : "false"}">Screenshots${screenshotCount ? " " + screenshotCount : ""}</button>
         </div>
         <div class="task-pane" role="tabpanel" data-pane="progress"${pane === "progress" ? "" : " hidden"}>${logHtml}</div>
         <div class="task-pane" role="tabpanel" data-pane="changes"${pane === "changes" ? "" : " hidden"}>${changesHtml}</div>
+        <div class="task-pane" role="tabpanel" data-pane="screenshots"${pane === "screenshots" ? "" : " hidden"}>${screenshotHtml}</div>
       `;
     }
 
@@ -2088,10 +2105,12 @@
           ? `<pre id="log">${escapeHtml(parts.join("\n\n"))}</pre>`
           : `<pre id="log">${running ? "(waiting for progress…)" : "(no progress recorded)"}</pre>`;
       }
+      const screenshotHtml = screenshotHtmlFromEvents(events);
       return progressHtml + renderTaskPanes(
         logHtml,
         renderFileChanges(events),
         groupedFileChanges(events).length,
+        screenshotHtml,
       );
     }
 

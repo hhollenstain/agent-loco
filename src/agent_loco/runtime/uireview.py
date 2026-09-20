@@ -83,6 +83,7 @@ class UiEvidence:
     smashed: list[str] = field(default_factory=list)
     snapshot: str = ""
     screenshot: str | None = None
+    screenshot_filename: str | None = None
     notes: str = ""
 
     @property
@@ -134,6 +135,8 @@ def format_ui_evidence(evidence: UiEvidence | None) -> str:
         lines.append(evidence.snapshot.strip())
     if evidence.screenshot:
         lines.append(f"Screenshot: {evidence.screenshot}")
+    if evidence.screenshot_filename:
+        lines.append(f"Screenshot (for PRs): ui-screenshots/{evidence.screenshot_filename}")
     return "\n".join(lines)
 
 
@@ -147,8 +150,16 @@ def collect_ui_evidence(
     click: str | None = None,
     wait_ms: int = 4000,
 ) -> UiEvidence:
-    screenshot = workspace.root / ".loco" / "ui-review.png"
-    screenshot.parent.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime
+
+    import uuid
+
+    screenshot_dir = workspace.root / ".loco" / "ui-screenshots"
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    goal_slug = re.sub(r"\W+", "-", goal.strip().lower())[:40] or "untitled"
+    screenshot_name = f"ui-review_{goal_slug}_{timestamp}_{uuid.uuid4().hex[:6]}.png"
+    screenshot = screenshot_dir / screenshot_name
     preview: _Preview | None = None
     target = (url or "").strip()
     try:
@@ -163,12 +174,14 @@ def collect_ui_evidence(
                     ),
                 )
             target = preview.url
-        page = capture_page(
+        page: UiEvidence = capture_page(
             target,
             click=click or _default_click(workspace.root),
             screenshot=screenshot,
             wait_ms=wait_ms,
         )
+        if page.screenshot and screenshot.exists():
+            page.screenshot_filename = screenshot.name
         record_event(
             kind="ui",
             ok=page.ok,
@@ -176,6 +189,7 @@ def collect_ui_evidence(
             message=page.summary,
             snapshot=page.snapshot,
             screenshot=page.screenshot,
+            screenshot_filename=page.screenshot_filename,
             errors=page.page_errors + page.console_errors,
         )
         return page
