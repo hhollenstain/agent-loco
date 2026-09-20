@@ -23,6 +23,7 @@ class ProjectConfig:
     create_pr: bool
     goals_file: str
     max_repair_attempts: int
+    preview_command: str | None = None
 
 
 def load_project(root: Path) -> ProjectConfig:
@@ -52,6 +53,7 @@ def load_project(root: Path) -> ProjectConfig:
         create_pr=bool(publish.get("create_pr", False)),
         goals_file=str(raw.get("goals_file") or "goals.md"),
         max_repair_attempts=int(raw.get("max_repair_attempts") or 2),
+        preview_command=str(raw["preview_command"]) if raw.get("preview_command") else None,
     )
 
 

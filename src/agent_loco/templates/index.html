@@ -80,6 +80,9 @@
     form, .tasks {
       padding: 1.25rem 1.5rem;
     }
+    .tasks {
+      padding-right: 3.5rem;
+    }
     #task-form {
       overflow-y: auto;
       flex: 1;
@@ -494,117 +497,96 @@
     }
     .task.selected, .task-card.selected .task { border-color: var(--accent); }
     .task-progress {
-      margin-top: 0.65rem;
+      margin: 0 0 0.75rem;
       display: flex;
       flex-direction: column;
       gap: 0.35rem;
     }
+    .task-card > .task-progress {
+      margin: 0.65rem 0.15rem 0.15rem;
+    }
     .progress-bar {
       display: flex;
-      gap: 0.25rem;
-      padding: 0.35rem 0.45rem;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      padding: 0.45rem;
       background: #0c0e0b;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      overflow: hidden;
+      border-radius: 8px;
     }
     .progress-stage {
-      flex: 1;
-      min-width: 0;
-      padding: 0.5rem 0.45rem;
-      font-size: 0.72rem;
+      flex: 1 1 7.25rem;
+      min-width: 7.25rem;
+      padding: 0.45rem 0.5rem 0.5rem;
+      font: inherit;
       font-variant-numeric: tabular-nums;
-      text-align: center;
-      border-radius: 4px;
+      text-align: left;
+      border-radius: 6px;
+      border: 1px solid transparent;
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      gap: 0.2rem;
+      gap: 0.15rem;
+      background: rgba(154, 165, 142, 0.08);
+      color: inherit;
       cursor: pointer;
-      transition: background 0.15s ease;
-      position: relative;
+    }
+    .progress-stage:hover,
+    .progress-stage.active {
+      border-color: var(--accent);
+    }
+    .progress-stage:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
     }
     .progress-stage .stage-label {
-      font-size: 0.65rem;
+      font-size: 0.68rem;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      font-weight: 600;
-      color: color-mix(in srgb, currentColor 70%, transparent);
-      margin-bottom: -0.05rem;
+      letter-spacing: 0.05em;
+      font-weight: 650;
+      color: var(--muted);
+      line-height: 1.2;
+      white-space: nowrap;
     }
     .progress-stage .stage-time {
-      font-size: 0.82rem;
+      font-size: 0.92rem;
       font-weight: 650;
       color: var(--ink);
+      line-height: 1.2;
+      min-height: 1.15em;
     }
     .progress-stage .stage-badge {
+      align-self: flex-start;
       font-size: 0.65rem;
-      padding: 0.1rem 0.35rem;
+      padding: 0.08rem 0.35rem;
       border-radius: 3px;
+      background: rgba(0, 0, 0, 0.28);
       font-weight: 650;
-    }
-    .progress-stage.completed .stage-label { color: var(--ok); }
-    .progress-stage.running .stage-label,
-    .progress-stage.failed .stage-label,
-    .progress-stage.error .stage-label { color: var(--bad); }
-    .progress-stage.skipped .stage-label { color: var(--muted); }
-    .progress-stage.queued .stage-label,
-    .progress-stage.queued .progress-stage .stage-name { color: var(--queued); }
-    .progress-stage:hover {
-      background: rgba(196, 227, 138, 0.1);
     }
     .progress-stage.completed {
       background: rgba(143, 202, 122, 0.15);
-      border: 1px solid rgba(143, 202, 122, 0.3);
+      border-color: rgba(143, 202, 122, 0.3);
     }
-    .progress-stage.completed .stage-name {
-      color: var(--ok);
-    }
+    .progress-stage.completed .stage-label { color: var(--ok); }
     .progress-stage.failed {
       background: rgba(224, 139, 115, 0.15);
-      border: 1px solid rgba(224, 139, 115, 0.3);
+      border-color: rgba(224, 139, 115, 0.3);
     }
-    .progress-stage.failed .stage-name,
-    .progress-stage.error .stage-name {
-      color: var(--bad);
-    }
+    .progress-stage.failed .stage-label { color: var(--bad); }
     .progress-stage.skipped {
-      background: rgba(154, 165, 142, 0.15);
-      border: 1px solid rgba(154, 165, 142, 0.3);
-      opacity: 0.85;
+      background: rgba(154, 165, 142, 0.12);
+      border-color: rgba(154, 165, 142, 0.25);
     }
-    .progress-stage.skipped .stage-name {
-      color: var(--muted);
-    }
+    .progress-stage.skipped .stage-label,
+    .progress-stage.queued .stage-label { color: var(--muted); }
     .progress-stage.queued {
-      background: rgba(142, 180, 212, 0.12);
-      border: 1px solid rgba(142, 180, 212, 0.2);
+      background: rgba(142, 180, 212, 0.1);
+      border-color: rgba(142, 180, 212, 0.18);
     }
     .progress-stage.running {
-      background: rgba(230, 192, 123, 0.15);
-      border: 1px solid rgba(230, 192, 123, 0.3);
+      background: rgba(230, 192, 123, 0.18);
+      border-color: rgba(230, 192, 123, 0.4);
     }
-    .progress-stage.running .stage-name {
-      color: var(--warn);
-    }
-    .progress-stage .stage-name {
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .progress-stage .stage-duration {
-      font-size: 0.65rem;
-      color: var(--muted);
-      font-weight: 500;
-    }
-    .progress-stage .stage-badge {
-      font-size: 0.62rem;
-      padding: 0.08rem 0.3rem;
-      border-radius: 3px;
-      background: rgba(0, 0, 0, 0.3);
-      font-weight: 600;
-    }
+    .progress-stage.running .stage-label { color: var(--warn); }
     .pr-link {
       display: inline-flex;
       align-items: center;
@@ -702,7 +684,10 @@
       border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
     }
     .timeline-item.failed .timeline-title { color: var(--bad); }
-    .timeline-item.passed .timeline-title { color: var(--ok); }
+    .timeline-item.stage-target {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+    }
     .timeline-item.think .timeline-title {
       color: var(--muted);
       font-style: italic;
@@ -736,6 +721,59 @@
     .diff-add { color: var(--ok); }
     .diff-del { color: var(--bad); }
     .diff-meta { color: var(--muted); }
+    .task-pane-tabs {
+      display: flex;
+      gap: 0.15rem;
+      margin: 0.85rem 0 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .task-pane-tab {
+      background: transparent;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--muted);
+      padding: 0.5rem 0.8rem 0.45rem;
+      min-width: 0;
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .task-pane-tab:hover, .task-pane-tab:focus {
+      color: var(--ink);
+    }
+    .task-pane-tab[aria-selected="true"] {
+      color: var(--ink);
+      border-bottom-color: var(--accent);
+    }
+    .task-pane-count {
+      margin-left: 0.35rem;
+      color: var(--muted);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+    .file-changes {
+      list-style: none;
+      margin: 0.85rem 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      max-height: min(70vh, 42rem);
+      overflow: auto;
+    }
+    .file-change-path {
+      font: 12.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .file-change-stats {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+      margin-left: 0.5rem;
+    }
+    .file-change-stats .diff-add,
+    .file-change-stats .diff-del { font-weight: 650; }
+    .file-changes .empty { margin: 0.85rem 0 0; }
     .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
     .duration {
       color: var(--ink);
@@ -963,7 +1001,7 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -1683,8 +1721,8 @@
       return groups;
     }
 
-    function renderThinkGroup(events, { running = false } = {}) {
-      if (events.length < 2) return renderEvent(events[0], { running });
+    function renderThinkGroup(events, { running = false, stageId = "" } = {}) {
+      if (events.length < 2) return renderEvent(events[0], { running, stageId });
       const first = events[0];
       const last = events[events.length - 1];
       const key = `think:${first.at || ""}`;
@@ -1698,179 +1736,224 @@
         const stamp = escapeHtml(formatTimestamp(event.at) || event.at || "");
         return `<li><span class="timeline-when">${stamp}</span>${escapeHtml(eventTitle(event))}</li>`;
       }).join("");
-      return `<li><details class="timeline-item think" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}${meta}</summary><ol class="think-log">${rows}</ol></details></li>`;
+      return `<li><details class="timeline-item think"${stageAttr(stageId)} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}${meta}</summary><ol class="think-log">${rows}</ol></details></li>`;
     }
 
-    function renderEvent(event, { running = false, lastFile = null, lastFailedTest = null } = {}) {
+    function renderEvent(event, { running = false, lastFile = null, lastFailedTest = null, stageId = "" } = {}) {
       if (!event) return "";
       const when = `<span class="timeline-when">${escapeHtml(formatTimestamp(event.at) || event.at || "")}</span>`;
       const title = `<span class="timeline-title">${escapeHtml(eventTitle(event))}</span>`;
+      const stage = stageAttr(stageId);
       if (event.kind === "file" && event.diff) {
         const key = `${event.kind}:${event.path || ""}:${event.at || ""}`;
         const open = running && lastFile === event || state.openDiffs.has(key) ? " open" : "";
-        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${renderDiff(event.diff)}</pre></details></li>`;
+        return `<li><details class="timeline-item"${stage} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${renderDiff(event.diff)}</pre></details></li>`;
       }
       if (event.kind === "review" && event.raw) {
         const key = `${event.kind}:${event.attempt || 1}:${event.at || ""}`;
         const open = state.openDiffs.has(key) ? " open" : "";
-        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${escapeHtml(event.raw)}</pre></details></li>`;
+        return `<li><details class="timeline-item"${stage} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${escapeHtml(event.raw)}</pre></details></li>`;
       }
       if (event.kind === "test" && event.output) {
         const key = `${event.kind}:${event.phase || ""}:${event.at || ""}`;
         const open = lastFailedTest === event || state.openDiffs.has(key) ? " open" : "";
         const tone = event.ok === false ? " failed" : " passed";
         const command = event.command ? `<span class="meta">${escapeHtml(event.command)}</span>` : "";
-        return `<li><details class="timeline-item${tone}" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary>${command}<pre class="diff">${escapeHtml(event.output)}</pre></details></li>`;
+        return `<li><details class="timeline-item${tone}"${stage} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary>${command}<pre class="diff">${escapeHtml(event.output)}</pre></details></li>`;
+      }
+      if (event.kind === "ui") {
+        const key = `ui:${event.at || ""}`;
+        const open = state.openDiffs.has(key) ? " open" : "";
+        const tone = event.ok === false ? " failed" : " passed";
+        const body = event.snapshot || (event.errors || []).join("\n") || event.message || "";
+        return `<li><details class="timeline-item${tone}"${stage} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${escapeHtml(body)}</pre></details></li>`;
       }
       if (event.kind === "pr" && event.url) {
-        return `<li class="timeline-item pr">${when}${prLinkHtml(event.url)}</li>`;
+        return `<li class="timeline-item pr"${stage}>${when}${prLinkHtml(event.url)}</li>`;
       }
-      return `<li class="timeline-item">${when}${title}</li>`;
+      return `<li class="timeline-item"${stage}>${when}${title}</li>`;
     }
 
     function renderTimeline(events, { running = false } = {}) {
       if (!events || !events.length) return "";
       const lastFile = [...events].reverse().find((event) => event.kind === "file");
       const lastFailedTest = [...events].reverse().find((event) => event.kind === "test" && event.ok === false);
+      const stageIds = eventStageIds(events);
+      let index = 0;
       const items = groupTimelineEvents(events).map((group) => {
         if (group.type === "think") {
-          return renderThinkGroup(group.events, { running });
+          const stageId = stageIds[index] || "";
+          index += group.events.length;
+          return renderThinkGroup(group.events, { running, stageId });
         }
-        return renderEvent(group.event, { running, lastFile, lastFailedTest });
+        const stageId = stageIds[index] || "";
+        index += 1;
+        return renderEvent(group.event, { running, lastFile, lastFailedTest, stageId });
       }).join("");
       return `<ol class="timeline" id="progress-timeline">${items}</ol>`;
     }
 
-    function renderProgressStage(status, name, duration, totalDuration) {
-      const durationText = formatElapsedMs(duration);
-      let statusClass = status;
-      if (status === "success" || status === "passed") statusClass = "completed";
-      else if (status === "failed" || status === "error") statusClass = "failed";
-      else if (status === "skipped") statusClass = "skipped";
-      else if (status === "running") statusClass = "running";
-      else if (status === "queued") statusClass = "queued";
-      
+    function isStep(event, pattern) {
+      return Boolean(event && event.kind === "step" && pattern.test(event.message || ""));
+    }
+
+    function taskStages() {
+      return [
+        { id: "init", label: "Init", match: (event) => isStep(event, /initializing workspace/i) },
+        { id: "before", label: "Before tests", match: (event) =>
+          (event.kind === "test" && event.phase === "before") || isStep(event, /before tests/i) },
+        { id: "goal", label: "Goal", match: (event) => isStep(event, /selected goal/i) },
+        { id: "agent", label: "Agent", match: (event) =>
+          event.kind === "llm" || isStep(event, /coding agent|without edits|goal retry|keep working|stop inspecting|unfinished/i) },
+        { id: "tests", label: "Tests", match: (event) =>
+          (event.kind === "test" && event.phase !== "before") || isStep(event, /after tests|running tests/i) },
+        { id: "review", label: "Review", match: (event) =>
+          event.kind === "review" || event.kind === "ui"
+          || isStep(event, /goal review|reviewing rendered ui|checking for changes|checking whether the goal/i) },
+        { id: "publish", label: "Publish", match: (event) =>
+          event.kind === "pr" || isStep(event, /pull request|committing|pushing branch|moving work onto/i) },
+      ];
+    }
+
+    function stageIdForEvent(event) {
+      if (!event) return "";
+      if (isStep(event, /generating cycle result|marking goal/i)) return "result";
+      const stages = taskStages();
+      for (let i = stages.length - 1; i >= 0; i--) {
+        if (stages[i].match(event)) return stages[i].id;
+      }
+      return "";
+    }
+
+    function eventStageIds(events) {
+      const ids = [];
+      let current = "";
+      for (const event of events || []) {
+        const id = stageIdForEvent(event);
+        if (id) current = id;
+        ids.push(current);
+      }
+      return ids;
+    }
+
+    function stageAttr(stageId) {
+      return stageId ? ` data-stage="${escapeHtml(stageId)}"` : "";
+    }
+
+    function renderProgressStage(status, name, durationMs, stageId) {
+      const statusClass = {
+        success: "completed",
+        passed: "completed",
+        done: "completed",
+        error: "failed",
+      }[status] || status || "queued";
       const badge = {
         completed: "✓",
         failed: "✗",
-        error: "✗",
         skipped: "⊘",
-        queued: "⊟",
-        running: "⏳",
+        queued: "·",
+        running: "▶",
       }[statusClass] || "";
-      
-      const progressWidth = totalDuration > 0 ? Math.round((duration / totalDuration) * 100) : 0;
-      
+      const durationText = statusClass === "queued"
+        ? "—"
+        : durationMs >= 1000
+          ? (formatElapsedMs(durationMs) || "—")
+          : statusClass === "running"
+            ? (formatElapsedMs(durationMs) || "—")
+            : "<1s";
+      const current = statusClass === "running" ? ' aria-current="step"' : "";
+      const active = state.pinnedStage === stageId ? " active" : "";
       return `
-        <div class="progress-stage ${statusClass}" title="${escapeHtml(status)}" style="flex: ${progressWidth}">
-          <span class="stage-label">${escapeHtml(label || name)}</span>
+        <button type="button" class="progress-stage ${escapeHtml(statusClass)}${active}" data-stage="${escapeHtml(stageId)}" title="${escapeHtml("Show " + name + " in the log")}" aria-label="${escapeHtml("Show " + name + " in the log")}"${current}>
+          <span class="stage-label">${escapeHtml(name)}</span>
           <span class="stage-time">${escapeHtml(durationText)}</span>
           ${badge ? `<span class="stage-badge">${escapeHtml(badge)}</span>` : ""}
-        </div>
+        </button>
       `;
     }
 
-    function renderProgressStageBar(events) {
-      if (!events || !events.length) return "";
-      
-      // Define stage types with their event kinds and labels
-      const stageTypes = [
-        { id: "queued", label: "Queued", kind: "status", status: (e) => e.status === "queued" },
-        { id: "initializing", label: "Initializing", kind: "status", status: (e) => e.status === "running" },
-        { id: "goal_setting", label: "Goal setting", kind: "review" },
-        { id: "goal_reviewed", label: "Goal reviewed", kind: "review", status: (e) => e.parsed !== false },
-        { id: "first_response", label: "First response", kind: "llm", status: (e) => e.purpose === "agent" },
-        { id: "thinking", label: "Thinking", kind: "llm", status: (e) => e.purpose === "agent" && e.elapsed_ms },
-        { id: "before_tests", label: "Before tests", kind: "test", status: (e) => e.phase === "before" },
-        { id: "tests", label: "Tests", kind: "test", status: (e) => e.phase === "tests" },
-        { id: "after_tests", label: "After tests", kind: "test", status: (e) => e.phase === "after" },
-        { id: "pr", label: "Pull request", kind: "pr" },
-        { id: "completed", label: "Completed", kind: "status", status: (e) => e.status === "success" || e.status === "done" },
-        { id: "failed", label: "Failed", kind: "status", status: (e) => e.status === "failed" || e.status === "error" },
-        { id: "skipped", label: "Skipped", kind: "status", status: (e) => e.status === "skipped" },
-      ];
-      
-      // Track active stages and their durations
-      const stageDurations = {};
-      const completedStages = new Set();
-      let currentActiveStage = null;
-      let startTime = null;
-      
-      // Process events chronologically to calculate stage durations
-      for (const event of events) {
-        if (!event || !event.at) continue;
-        const eventTime = new Date(event.at).getTime();
-        
-        if (!startTime && event.kind === "status") {
-          // Found first status event, use it as start time
-          if (startTime === null) startTime = eventTime;
-        }
-        
-        for (const stage of stageTypes) {
-          const matches = stage.status ? stage.status(event) : true;
-          if (!matches) continue;
-          
-          const key = stage.id;
-          
-          // Check if this event should activate this stage
-          const isActive = stage.kind !== "status" || stage.status?.(event);
-          
-          if (isActive && !completedStages.has(key)) {
-            // If this stage is being activated
-            if (currentActiveStage && currentActiveStage !== key) {
-              // Previous stage is now complete
-              const prevEndTime = eventTime;
-              const prevStartTimeVal = stageDurations[currentActiveStage]?.start;
-              if (prevStartTimeVal) {
-                stageDurations[currentActiveStage].duration = prevEndTime - prevStartTimeVal;
-              }
-              completedStages.add(currentActiveStage);
-            }
-            
-            // Start new active stage
-            if (!stageDurations[key]) {
-              stageDurations[key] = { start: eventTime, duration: 0 };
-            }
-            currentActiveStage = key;
+    function renderProgressStageBar(events, { status = "", running = false } = {}) {
+      const stages = taskStages();
+      const rows = stages.map(() => ({ duration: 0, eventMs: 0, started: false }));
+      let current = -1;
+      let currentStart = null;
+      let firstAt = null;
+      let lastAt = null;
+      for (const event of events || []) {
+        const at = parseTime(event && event.at);
+        if (!at) continue;
+        const stamp = at.getTime();
+        if (firstAt == null) firstAt = stamp;
+        lastAt = stamp;
+        let index = -1;
+        for (let i = stages.length - 1; i >= 0; i--) {
+          if (stages[i].match(event)) {
+            index = i;
+            break;
           }
         }
-      }
-      
-      // Close any remaining active stage with final time
-      if (currentActiveStage && !completedStages.has(currentActiveStage)) {
-        const endTime = events[events.length - 1]?.at 
-          ? new Date(events[events.length - 1].at).getTime() 
-          : (startTime || Date.now());
-        if (stageDurations[currentActiveStage]) {
-          stageDurations[currentActiveStage].duration = endTime - stageDurations[currentActiveStage].start;
+        if (index < 0) continue;
+        if (current >= 0 && index !== current && currentStart != null) {
+          rows[current].duration += stamp - currentStart;
         }
-        completedStages.add(currentActiveStage);
+        rows[index].started = true;
+        const extra = Number(event.elapsed_ms);
+        if (Number.isFinite(extra) && extra > 0) {
+          rows[index].eventMs += extra;
+        }
+        current = index;
+        currentStart = stamp;
       }
-      
-      // Calculate total duration from first to last event
-      let totalDuration = 0;
-      if (events.length >= 2 && startTime) {
-        const lastTime = new Date(events[events.length - 1].at).getTime();
-        totalDuration = lastTime - startTime;
+      const endAt = running ? Date.now() : (lastAt || Date.now());
+      if (current >= 0 && currentStart != null) {
+        rows[current].duration += Math.max(0, endAt - currentStart);
       }
-      
-      // Render progress bar with all stages
-      const allStagesHtml = stageTypes.map(stage => {
-        const duration = stageDurations[stage.id]?.duration || 0;
-        const status = stageDurations[stage.id] 
-          ? (completedStages.has(stage.id) ? "completed" : "running")
-          : (currentActiveStage === stage.id ? "running" : "queued");
-        return renderProgressStage(status, stage.label, duration, totalDuration);
-      }).join("");
-      
+      const resultKind = status === "failed" || status === "error"
+        ? "failed"
+        : status === "skipped"
+          ? "skipped"
+          : status === "success" || status === "done"
+            ? "completed"
+            : "queued";
+      const resultLabel = {
+        failed: "Failed",
+        skipped: "Skipped",
+        completed: "Success",
+      }[resultKind] || "Result";
+      const visible = stages.map((stage, index) => {
+        let kind = "queued";
+        if (rows[index].started && index === current && running) kind = "running";
+        else if (rows[index].started) kind = "completed";
+        else if (index === current && running) kind = "running";
+        return {
+          id: stage.id,
+          label: stage.label,
+          kind,
+          duration: Math.max(rows[index].duration, rows[index].eventMs),
+          started: rows[index].started,
+        };
+      });
+      if (!running && resultKind !== "queued") {
+        visible.push({
+          id: "result",
+          label: resultLabel,
+          kind: resultKind,
+          duration: 0,
+          started: true,
+        });
+        if (!rows[stages.findIndex((stage) => stage.id === "publish")].started) {
+          const publish = visible.find((stage) => stage.id === "publish");
+          if (publish && !publish.started) publish.kind = "skipped";
+        }
+      } else {
+        visible.push({ id: "result", label: resultLabel, kind: resultKind, duration: 0, started: false });
+      }
+      const total = firstAt == null ? 0 : Math.max(0, endAt - firstAt);
+      const stagesHtml = visible.map((stage) => renderProgressStage(stage.kind, stage.label, stage.duration, stage.id)).join("");
       return `
         <div class="task-progress">
-          <div class="progress-bar" title="Task progress stages">
-            ${allStagesHtml}
-          </div>
-          <div class="meta" style="margin-top:0.25rem;font-size:0.7rem;color:var(--muted)">
-            Total elapsed: ${formatElapsedMs(totalDuration)}
-          </div>
+          <div class="progress-bar" title="Task progress stages">${stagesHtml}</div>
+          <div class="meta">Total elapsed: ${escapeHtml(formatElapsedMs(total) || "—")}</div>
         </div>
       `;
     }
@@ -1885,6 +1968,71 @@
         if (line.startsWith("-")) return `<span class="diff-del">${safe}</span>`;
         return safe;
       }).join("\n");
+    }
+
+    function diffStats(diff) {
+      let added = 0;
+      let removed = 0;
+      for (const line of String(diff || "").split("\n")) {
+        if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) continue;
+        if (line.startsWith("+")) added += 1;
+        else if (line.startsWith("-")) removed += 1;
+      }
+      return { added, removed };
+    }
+
+    function fileChangeEvents(events) {
+      return (events || []).filter((event) => event && event.kind === "file" && (event.path || event.diff));
+    }
+
+    function groupedFileChanges(events) {
+      const byPath = new Map();
+      for (const event of fileChangeEvents(events)) {
+        const path = event.path || "file";
+        const list = byPath.get(path) || [];
+        list.push(event);
+        byPath.set(path, list);
+      }
+      return [...byPath.entries()].map(([path, edits]) => ({
+        path,
+        edits,
+        latest: edits[edits.length - 1],
+      }));
+    }
+
+    function renderFileChanges(events) {
+      const groups = groupedFileChanges(events);
+      if (!groups.length) {
+        return `<p class="empty">No file changes in this task.</p>`;
+      }
+      const items = groups.map((group) => {
+        const key = `changes:${group.path}`;
+        const open = state.closedChanges.has(key) ? "" : " open";
+        const action = group.latest.action || "changed";
+        const stats = diffStats(group.latest.diff);
+        const edits = group.edits.length > 1 ? `${group.edits.length} edits · ` : "";
+        const when = group.latest.at
+          ? `<span class="timeline-when">${escapeHtml(formatTimestamp(group.latest.at) || group.latest.at)}</span>`
+          : "";
+        const body = group.latest.diff
+          ? `<pre class="diff">${renderDiff(group.latest.diff)}</pre>`
+          : `<p class="empty">No diff captured.</p>`;
+        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}<span class="file-change-path">${escapeHtml(action)} ${escapeHtml(group.path)}</span><span class="file-change-stats">${escapeHtml(edits)}<span class="diff-add">+${stats.added}</span> <span class="diff-del">−${stats.removed}</span></span></summary>${body}</details></li>`;
+      }).join("");
+      return `<ol class="file-changes" id="file-changes">${items}</ol>`;
+    }
+
+    function renderTaskPanes(logHtml, changesHtml, fileCount) {
+      const pane = state.taskPane === "changes" ? "changes" : "progress";
+      const count = fileCount ? `<span class="task-pane-count">(${fileCount})</span>` : "";
+      return `
+        <div class="task-pane-tabs" role="tablist" aria-label="Task views">
+          <button type="button" class="task-pane-tab" role="tab" data-task-pane="progress" aria-selected="${pane === "progress" ? "true" : "false"}">Progress</button>
+          <button type="button" class="task-pane-tab" role="tab" data-task-pane="changes" aria-selected="${pane === "changes" ? "true" : "false"}">Changes${count ? " " + count : ""}</button>
+        </div>
+        <div class="task-pane" role="tabpanel" data-pane="progress"${pane === "progress" ? "" : " hidden"}>${logHtml}</div>
+        <div class="task-pane" role="tabpanel" data-pane="changes"${pane === "changes" ? "" : " hidden"}>${changesHtml}</div>
+      `;
     }
 
     function eventTitle(event) {
@@ -1909,6 +2057,10 @@
         if (wait) bits.push(wait);
         return bits.join(" · ");
       }
+      if (event.kind === "ui") {
+        if (event.ok === false) return event.message || "UI review failed";
+        return event.message || "UI review";
+      }
       if (event.kind === "pr") return event.url ? prLabel(event.url) : (event.message || "pull request");
       if (event.kind === "step") return event.message || "step";
       return event.message || event.kind || "event";
@@ -1919,19 +2071,28 @@
       const logs = (item.logs || []).join("\n");
       const summary = item.summary ? String(item.summary) : "";
       const extra = item.error ? `error: ${item.error}` : "";
-      const progressHtml = events.length ? renderProgressStageBar(events) : "";
+      const progressHtml = renderProgressStageBar(events, {
+        status: item.status || "",
+        running,
+      });
+      let logHtml = "";
       if (events.length) {
         const tail = [summary, extra]
           .filter(Boolean)
           .map((text) => `<pre>${escapeHtml(text)}</pre>`)
           .join("");
-        return progressHtml + renderTimeline(events, { running }) + tail;
+        logHtml = renderTimeline(events, { running }) + tail;
+      } else {
+        const parts = [logs, summary, extra].filter(Boolean);
+        logHtml = parts.length
+          ? `<pre id="log">${escapeHtml(parts.join("\n\n"))}</pre>`
+          : `<pre id="log">${running ? "(waiting for progress…)" : "(no progress recorded)"}</pre>`;
       }
-      const parts = [logs, summary, extra].filter(Boolean);
-      if (!parts.length) {
-        return progressHtml + `<pre id="log">${running ? "(waiting for progress…)" : "(no progress recorded)"}</pre>`;
-      }
-      return progressHtml + `<pre id="log">${escapeHtml(parts.join("\n\n"))}</pre>`;
+      return progressHtml + renderTaskPanes(
+        logHtml,
+        renderFileChanges(events),
+        groupedFileChanges(events).length,
+      );
     }
 
     function serverOptionLabel(server, url) {
@@ -1960,6 +2121,9 @@
     let lastProgressHtml = "";
 
     function progressScroller() {
+      if (state.taskPane === "changes") {
+        return document.getElementById("file-changes");
+      }
       return document.getElementById("progress-timeline") || detailEl.querySelector("#log");
     }
 
@@ -1992,7 +2156,12 @@
         && snap.selected === state.selected
         && snap.historyKey === state.selectedHistoryKey;
       if (!sameItem) {
+        state.pinnedStage = "";
         if (running) el.scrollTop = el.scrollHeight;
+        return;
+      }
+      if (state.pinnedStage) {
+        focusTimelineStage(state.pinnedStage);
         return;
       }
       if (!snap.hadScroller || snap.follow) {
@@ -2000,6 +2169,39 @@
         return;
       }
       el.scrollTop = snap.top;
+    }
+
+    function focusTimelineStage(stageId) {
+      if (!stageId) return false;
+      const timeline = document.getElementById("progress-timeline");
+      if (!timeline) return false;
+      const items = [...timeline.querySelectorAll("[data-stage]")];
+      const target = stageId === "result"
+        ? (items.filter((el) => el.dataset.stage === "result").pop() || timeline.lastElementChild)
+        : items.find((el) => el.dataset.stage === stageId);
+      if (!target) return false;
+      timeline.querySelectorAll(".stage-target").forEach((el) => el.classList.remove("stage-target"));
+      target.classList.add("stage-target");
+      if (target instanceof HTMLDetailsElement) target.open = true;
+      const listTop = timeline.getBoundingClientRect().top;
+      const itemTop = target.getBoundingClientRect().top;
+      timeline.scrollTop += itemTop - listTop - 8;
+      document.querySelectorAll(".progress-stage.active").forEach((el) => el.classList.remove("active"));
+      document.querySelectorAll(`.progress-stage[data-stage="${CSS.escape(stageId)}"]`).forEach((el) => {
+        el.classList.add("active");
+      });
+      return true;
+    }
+
+    function pinTimelineStage(stageId) {
+      if (!stageId) return;
+      state.pinnedStage = stageId;
+      if (state.taskPane !== "progress") {
+        state.taskPane = "progress";
+        render();
+        return;
+      }
+      focusTimelineStage(stageId);
     }
 
     function restoreScroll(snap, page, { running = false } = {}) {
@@ -2025,10 +2227,13 @@
         listEl.innerHTML = filteredTasks.map(task => {
           const duration = taskDurationLabel(task);
           const selected = task.id === state.selected ? " selected" : "";
-          const taskProgress = task.events ? renderProgressStageBar(task.events) : "";
+          const taskProgress = renderProgressStageBar(task.events, {
+            status: task.status || "",
+            running: task.status === "running",
+          });
           return `
           <div class="task-card${selected}">
-            ${taskProgress ? `<div class="task-progress">${taskProgress}</div>` : ""}
+            ${taskProgress}
             <button type="button" class="task${selected}" data-id="${escapeHtml(task.id)}">
               <div class="row">
                 <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
@@ -2175,10 +2380,27 @@
 
     listEl.addEventListener("click", (event) => {
       if (event.target.closest("a.pr-link")) return;
+      const stage = event.target.closest(".progress-stage[data-stage]");
+      const card = event.target.closest(".task-card");
+      if (stage && card) {
+        const taskBtn = card.querySelector("[data-id]");
+        if (taskBtn) {
+          state.selected = taskBtn.dataset.id;
+          state.selectedHistoryKey = "";
+          state.pinnedStage = stage.dataset.stage || "";
+          state.taskPane = "progress";
+          state.closedChanges = new Set();
+          render();
+        }
+        return;
+      }
       const button = event.target.closest("[data-id]");
       if (!button) return;
       state.selected = button.dataset.id;
       state.selectedHistoryKey = "";
+      state.pinnedStage = "";
+      state.taskPane = "progress";
+      state.closedChanges = new Set();
       render();
     });
 
@@ -2188,14 +2410,38 @@
       if (!button) return;
       state.selectedHistoryKey = button.dataset.historyKey;
       state.selected = null;
+      state.pinnedStage = "";
+      state.taskPane = "progress";
+      state.closedChanges = new Set();
       render();
+    });
+
+    detailEl.addEventListener("click", (event) => {
+      const paneTab = event.target.closest("[data-task-pane]");
+      if (paneTab && detailEl.contains(paneTab)) {
+        const pane = paneTab.dataset.taskPane === "changes" ? "changes" : "progress";
+        if (state.taskPane === pane) return;
+        state.taskPane = pane;
+        render();
+        return;
+      }
+      const stage = event.target.closest(".progress-stage[data-stage]");
+      if (!stage || !detailEl.contains(stage)) return;
+      event.preventDefault();
+      pinTimelineStage(stage.dataset.stage);
     });
 
     detailEl.addEventListener("toggle", (event) => {
       const details = event.target;
       if (!(details instanceof HTMLDetailsElement) || !details.dataset.eventKey) return;
-      if (details.open) state.openDiffs.add(details.dataset.eventKey);
-      else state.openDiffs.delete(details.dataset.eventKey);
+      const key = details.dataset.eventKey;
+      if (key.startsWith("changes:")) {
+        if (details.open) state.closedChanges.delete(key);
+        else state.closedChanges.add(key);
+        return;
+      }
+      if (details.open) state.openDiffs.add(key);
+      else state.openDiffs.delete(key);
     }, true);
 
     paginationEl.addEventListener("click", (event) => {

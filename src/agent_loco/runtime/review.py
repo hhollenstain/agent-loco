@@ -18,6 +18,9 @@ Rules:
 - If the goal says to remove something, it must actually be gone from the diff.
 - If the goal asks for a user-visible control, it must be visible and wired, not
   display:none or otherwise non-functional.
+- When a Rendered UI section is present, JavaScript errors mean the goal is unmet.
+  Controls with 0x0 or tiny sizes are unmet. A template diff is not enough if the
+  rendered page is blank, crushed, or throws.
 - A summary that claims the work is done does not count unless the diff shows it.
 - Use the changed-file list. A lockfile may be summarized as `package: old -> new`
   instead of a hash dump; that still counts as updating the package.
@@ -36,6 +39,9 @@ already fulfills the stated goal.
 Rules:
 - Passing tests is not enough by itself.
 - Use the current evidence: dependency versions, manifests, and files.
+- When a Rendered UI section is present, JavaScript errors mean the goal is unmet.
+  Controls with 0x0 or tiny sizes are unmet. A missing diff does not save a
+  broken page.
 - A missing diff does not mean the goal is unmet if the tree already has the
   requested result (for example a lockfile already on the requested version).
 - Set met=true only if a careful reviewer would accept the current tree as complete.
@@ -101,6 +107,7 @@ def review_goal(
     tests_passed: bool | None,
     existing: bool = False,
     upstream: str | None = None,
+    ui_evidence: str | None = None,
 ) -> GoalReview:
     if is_test_suite_goal(goal) and tests_passed is True:
         verdict = GoalReview(True, "project tests passed after the change")
@@ -126,6 +133,8 @@ def review_goal(
         if upstream:
             user_parts.extend(["", "Upstream:", upstream])
     user_parts.extend(["", evidence_label, diff.strip() or "(no diff)"])
+    if ui_evidence and ui_evidence.strip():
+        user_parts.extend(["", ui_evidence.strip()])
     user = "\n".join(user_parts)
     messages: list[dict] = [
         {
