@@ -24,6 +24,7 @@ from agent_loco.runtime.workdiff import collect_current_evidence, collect_work_d
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
+    CO_AUTHORED_BY,
     commit_changes,
     create_pull_request,
     current_branch,
@@ -609,6 +610,7 @@ def _pr_body(
         lines.extend(["", f"Commit: `{commit_sha}`"])
     if branch:
         lines.append(f"Branch: `{branch}`")
+    lines.extend(["", CO_AUTHORED_BY])
     return "\n".join(lines)
 
 

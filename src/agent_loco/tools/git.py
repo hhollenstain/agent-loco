@@ -16,11 +16,24 @@ PROTECTED_COMMIT_REFUSAL = (
 )
 RUN_LOG_PREFIX = ".loco/runs"
 PROTECTED_BRANCHES = frozenset({"main", "master", "trunk"})
+LOCO_COAUTHOR_NAME = "agent-loco"
+LOCO_COAUTHOR_EMAIL = "agent-loco@users.noreply.github.com"
+CO_AUTHORED_BY = f"Co-authored-by: {LOCO_COAUTHOR_NAME} <{LOCO_COAUTHOR_EMAIL}>"
 _PR_URL_RE = re.compile(
     r"https://(?:www\.)?github\.com/[\w.-]+/[\w.-]+/pull/\d+"
     r"|https://[^\s<>\"']+/(?:pull|merge_requests)/\d+",
     re.IGNORECASE,
 )
+
+
+def with_loco_coauthor(message: str) -> str:
+    """Keep a one-line subject and credit agent-loco the way GitHub expects."""
+    subject = " ".join((message or "").split()).strip()
+    if not subject:
+        return ""
+    if "co-authored-by: agent-loco" in (message or "").lower():
+        return message.strip()
+    return f"{subject}\n\n{CO_AUTHORED_BY}"
 
 
 def extract_pr_url(text: str | None) -> str | None:
@@ -395,7 +408,7 @@ def commit_changes(
     message: str,
     env: dict[str, str] | None = None,
 ) -> ToolResult:
-    message = " ".join(message.split()).strip()
+    message = with_loco_coauthor(message)
     if not message:
         return ToolResult(False, "commit message is required")
     if not (workspace.root / ".git").exists():
@@ -449,7 +462,10 @@ def create_pull_request(
     head = current_branch(workspace)
     if is_protected_branch(head):
         return ToolResult(False, f"refusing to open a PR from {head}")
-    args = ["gh", "pr", "create", "--title", title, "--body", body or title, "--add-co-author", "agent-loco"]
+    body = (body or title).rstrip()
+    if "co-authored-by: agent-loco" not in body.lower():
+        body = f"{body}\n\n{CO_AUTHORED_BY}"
+    args = ["gh", "pr", "create", "--title", title, "--body", body]
     if base:
         args.extend(["--base", base])
     result = subprocess.run(

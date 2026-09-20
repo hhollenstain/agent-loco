@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from tests.support import init_git_repo
 
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.git import (
+    CO_AUTHORED_BY,
     agent_commit,
     commit_changes,
+    create_pull_request,
     current_branch,
     current_sha,
     ensure_pr_branch,
@@ -17,6 +20,7 @@ from agent_loco.tools.git import (
     push_changes,
     run_git,
     upstream_state,
+    with_loco_coauthor,
 )
 
 
@@ -34,6 +38,46 @@ def test_extract_pr_url_from_gh_output() -> None:
         extract_pr_url("opened https://gitlab.com/acme/app/-/merge_requests/7.")
         == "https://gitlab.com/acme/app/-/merge_requests/7"
     )
+
+
+def test_with_loco_coauthor_adds_github_trailer() -> None:
+    assert with_loco_coauthor("") == ""
+    assert with_loco_coauthor("  fix the thing  ") == f"fix the thing\n\n{CO_AUTHORED_BY}"
+    already = f"fix the thing\n\n{CO_AUTHORED_BY}"
+    assert with_loco_coauthor(already) == already
+
+
+def test_create_pull_request_does_not_pass_unknown_coauthor_flag(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    captured: dict[str, list[str]] = {}
+    real_run = subprocess.run
+
+    def fake_run(args, **kwargs):
+        if args and args[0] == "gh":
+            captured["args"] = list(args)
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout="https://github.com/acme/repo/pull/1\n",
+                stderr="",
+            )
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    result = create_pull_request(workspace, "Add feature", "details", base="main")
+    assert result.ok
+    args = captured["args"]
+    assert args[:3] == ["gh", "pr", "create"]
+    assert "--add-co-author" not in args
+    body = args[args.index("--body") + 1]
+    assert CO_AUTHORED_BY in body
+    assert "--base" in args
+    assert args[args.index("--base") + 1] == "main"
 
 
 def test_run_log_paths_are_runtime_artifacts() -> None:
@@ -56,6 +100,9 @@ def test_commit_happy_path(tmp_path: Path) -> None:
     assert result.ok
     assert "committed" in result.output
     assert not has_changes(workspace)
+    log = run_git(workspace, ["log", "-1", "--format=%B"]).stdout
+    assert "update readme" in log
+    assert CO_AUTHORED_BY in log
 
 
 def test_commit_rejects_env_file(tmp_path: Path) -> None:

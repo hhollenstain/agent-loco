@@ -10,7 +10,7 @@ from agent_loco.runtime.improve import resolve_create_pr, run_cycle
 from agent_loco.runtime.project import load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult
-from agent_loco.tools.git import current_branch, current_sha, run_git
+from agent_loco.tools.git import CO_AUTHORED_BY, current_branch, current_sha, run_git
 
 
 def _broken_project(root: Path) -> None:
@@ -224,6 +224,9 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert captured["base"] == protected
     assert "## Summary" in str(captured["body"])
     assert "## Test plan" in str(captured["body"])
+    assert CO_AUTHORED_BY in str(captured["body"])
+    log = run_git(workspace, ["log", "-1", "--format=%B"]).stdout
+    assert CO_AUTHORED_BY in log
     assert current_branch(workspace).startswith("loco/")
     assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == initial
     assert "Goal review confirmed the requested outcome" in str(captured["body"])
