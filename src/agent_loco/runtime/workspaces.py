@@ -45,6 +45,31 @@ def _normalize_dir(path: str | Path) -> Path:
     return resolved
 
 
+def _canonical(path: str | Path) -> str:
+    target = Path(path).expanduser()
+    try:
+        return str(target.resolve())
+    except OSError:
+        return str(target)
+
+
+def _raw_paths(items: object) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        raw = item.get("path") if isinstance(item, dict) else item
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        text = _canonical(raw)
+        if text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
 def _entry(path: Path) -> dict[str, str | bool]:
     return {
         "path": str(path),
@@ -56,17 +81,10 @@ def _entry(path: Path) -> dict[str, str | bool]:
     }
 
 
-def load_workspaces(root: Path, *, default: str | None = None) -> list[dict[str, str | bool]]:
-    payload = _read_payload(root)
-    items = payload.get("workspaces")
-    if not isinstance(items, list):
-        items = []
+def _entries_for(paths: list[str]) -> list[dict[str, str | bool]]:
     result: list[dict[str, str | bool]] = []
     seen: set[str] = set()
-    for item in items:
-        raw = item.get("path") if isinstance(item, dict) else item
-        if not isinstance(raw, str) or not raw.strip():
-            continue
+    for raw in paths:
         try:
             path = Path(raw).expanduser().resolve()
         except OSError:
@@ -75,6 +93,33 @@ def load_workspaces(root: Path, *, default: str | None = None) -> list[dict[str,
             continue
         seen.add(str(path))
         result.append(_entry(path))
+    return result
+
+
+def _save_payload(
+    store_root: Path,
+    *,
+    workspaces: list[str],
+    archived: list[str],
+    last: str,
+) -> None:
+    active = list(dict.fromkeys(workspaces))
+    archived_only = [path for path in dict.fromkeys(archived) if path not in set(active)]
+    payload = {
+        "workspaces": [{"path": path} for path in active],
+        "archived": [{"path": path} for path in archived_only],
+        "last": last,
+    }
+    dest = workspaces_path(store_root)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    ensure_run_gitignore(store_root)
+    dest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def load_workspaces(root: Path, *, default: str | None = None) -> list[dict[str, str | bool]]:
+    payload = _read_payload(root)
+    result = _entries_for(_raw_paths(payload.get("workspaces")))
+    seen = {str(item["path"]) for item in result}
     if default:
         try:
             fallback = _normalize_dir(default)
@@ -85,14 +130,31 @@ def load_workspaces(root: Path, *, default: str | None = None) -> list[dict[str,
     return result[:MAX_WORKSPACES]
 
 
+def load_archived_workspaces(root: Path) -> list[dict[str, str | bool]]:
+    payload = _read_payload(root)
+    active = {str(item["path"]) for item in load_workspaces(root)}
+    archived = [
+        item
+        for item in _entries_for(_raw_paths(payload.get("archived")))
+        if str(item["path"]) not in active
+    ]
+    return archived
+
+
 def last_workspace(root: Path, *, default: str | Path | None = None) -> str:
     payload = _read_payload(root)
+    archived = set(_raw_paths(payload.get("archived")))
     last = payload.get("last")
     if isinstance(last, str) and last.strip():
-        try:
-            return str(_normalize_dir(last))
-        except ValueError:
-            pass
+        canonical = _canonical(last)
+        if canonical not in archived:
+            try:
+                return str(_normalize_dir(last))
+            except ValueError:
+                pass
+    active = _entries_for(_raw_paths(payload.get("workspaces")))
+    if active:
+        return str(active[-1]["path"])
     if default is not None:
         try:
             return str(_normalize_dir(default))
@@ -103,20 +165,65 @@ def last_workspace(root: Path, *, default: str | Path | None = None) -> str:
 
 def remember_workspace(store_root: Path, path: str | Path) -> list[dict[str, str | bool]]:
     resolved = _normalize_dir(path)
-    existing = load_workspaces(store_root)
-    if any(str(item["path"]) == str(resolved) for item in existing):
-        saved = existing
+    payload = _read_payload(store_root)
+    key = str(resolved)
+    workspaces = _raw_paths(payload.get("workspaces"))
+    archived = [item for item in _raw_paths(payload.get("archived")) if item != key]
+    if key in workspaces:
+        saved = workspaces
     else:
-        saved = [*existing, _entry(resolved)][-MAX_WORKSPACES:]
-    payload = {
-        "workspaces": [{"path": item["path"]} for item in saved],
-        "last": str(resolved),
-    }
-    dest = workspaces_path(store_root)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    ensure_run_gitignore(store_root)
-    dest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    return saved
+        saved = [*workspaces, key][-MAX_WORKSPACES:]
+    _save_payload(store_root, workspaces=saved, archived=archived, last=key)
+    return load_workspaces(store_root)
+
+
+def _switch_last(active: list[str], removed: str, previous: object) -> str:
+    if previous == removed or not isinstance(previous, str) or previous not in active:
+        index = active.index(removed) if removed in active else len(active)
+        remaining = [path for path in active if path != removed]
+        if not remaining:
+            return ""
+        return remaining[min(index, len(remaining) - 1)]
+    return previous
+
+
+def archive_workspace(store_root: Path, path: str | Path) -> list[dict[str, str | bool]]:
+    resolved = _normalize_dir(path)
+    payload = _read_payload(store_root)
+    key = str(resolved)
+    workspaces = _raw_paths(payload.get("workspaces"))
+    if key not in workspaces:
+        raise ValueError("workspace is not in the session")
+    if len(workspaces) < 2:
+        raise ValueError("keep at least one workspace in the session")
+    last = _switch_last(workspaces, key, payload.get("last"))
+    remaining = [item for item in workspaces if item != key]
+    archived = [item for item in _raw_paths(payload.get("archived")) if item != key]
+    archived.append(key)
+    _save_payload(store_root, workspaces=remaining, archived=archived, last=last)
+    return load_workspaces(store_root)
+
+
+def forget_workspace(store_root: Path, path: str | Path) -> list[dict[str, str | bool]]:
+    key = _canonical(path)
+    payload = _read_payload(store_root)
+    workspaces = _raw_paths(payload.get("workspaces"))
+    archived = _raw_paths(payload.get("archived"))
+    if key not in workspaces and key not in archived:
+        raise ValueError("workspace is not in the session")
+    if key in workspaces and len(workspaces) < 2 and key not in archived:
+        raise ValueError("keep at least one workspace in the session")
+    last = payload.get("last")
+    if key in workspaces:
+        last = _switch_last(workspaces, key, last)
+    remaining = [item for item in workspaces if item != key]
+    kept_archived = [item for item in archived if item != key]
+    if not remaining:
+        raise ValueError("keep at least one workspace in the session")
+    if not isinstance(last, str) or last not in remaining:
+        last = remaining[-1]
+    _save_payload(store_root, workspaces=remaining, archived=kept_archived, last=last)
+    return load_workspaces(store_root)
 
 
 def browse_directory(path: str | Path | None = None) -> dict[str, object]:

@@ -15,6 +15,7 @@ from agent_loco.tools.git import (
     is_runtime_artifact,
     push_changes,
     run_git,
+    upstream_state,
 )
 
 
@@ -152,4 +153,43 @@ def test_ensure_pr_branch_moves_commits_off_main(tmp_path: Path) -> None:
     assert current_branch(workspace) == result.output
     assert current_sha(workspace) == after
     assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == sha_before
+
+
+def test_upstream_state_without_remote_is_not_pushed(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    state = upstream_state(Workspace(tmp_path))
+    assert state.pushed is False
+    assert state.tracking is None
+    assert "not pushed" in state.detail
+
+
+def test_upstream_state_matches_tracking_ref(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    branch = current_branch(workspace)
+    sha = current_sha(workspace)
+    run_git(workspace, ["update-ref", f"refs/remotes/origin/{branch}", sha or ""])
+    run_git(workspace, ["branch", f"--set-upstream-to=origin/{branch}"])
+    state = upstream_state(workspace)
+    assert state.pushed is True
+    assert state.ahead == 0
+    assert "pushed" in state.detail
+
+
+def test_upstream_state_detects_unpushed_local_commits(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    branch = current_branch(workspace)
+    sha = current_sha(workspace)
+    run_git(workspace, ["update-ref", f"refs/remotes/origin/{branch}", sha or ""])
+    run_git(workspace, ["branch", f"--set-upstream-to=origin/{branch}"])
+    (tmp_path / "app.py").write_text("print('next')\n", encoding="utf-8")
+    commit_changes(workspace, "local only")
+    state = upstream_state(workspace)
+    assert state.pushed is False
+    assert state.ahead == 1
+    assert "not pushed" in state.detail
 

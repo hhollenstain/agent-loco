@@ -19,8 +19,8 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
 )
-from agent_loco.runtime.review import review_goal, review_reason
-from agent_loco.runtime.workdiff import collect_work_diff
+from agent_loco.runtime.review import GoalReview, review_goal, review_reason
+from agent_loco.runtime.workdiff import collect_current_evidence, collect_work_diff
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
@@ -33,6 +33,7 @@ from agent_loco.tools.git import (
     has_changes,
     is_protected_branch,
     push_changes,
+    upstream_state,
 )
 from agent_loco.tools.tests import run_project_tests
 
@@ -190,20 +191,16 @@ def _run_cycle(
     sha = current_sha(workspace)
     has_work = has_changes(workspace) or bool(sha_before and sha and sha != sha_before)
     if not has_work:
-        log_progress("No project files changed; skipping commit and publish.")
-        result = CycleResult(
-            status="skipped",
-            goal=selected_goal,
-            summary=agent_result.summary,
-            tests_passed=tests_passed,
-            committed=False,
-            published=False,
-            commit_sha=sha,
-            reason="no project files changed; commit skipped",
+        return _finish_without_changes(
+            workspace,
+            project,
+            llm,
+            selected_goal,
+            agent_result.summary,
+            tests_passed,
+            sha,
+            mark_checkbox=mark_checkbox,
         )
-        _write_run_log(workspace.root, result)
-        _append_to_history(workspace.root, result)
-        return result
 
     review = _ensure_goal_met(
         workspace,
@@ -380,6 +377,89 @@ def _run_cycle(
     _write_run_log(workspace.root, result)
     _append_to_history(workspace.root, result)
     return result
+
+
+def _finish_without_changes(
+    workspace: Workspace,
+    project: ProjectConfig,
+    llm: LLMClient,
+    goal: str,
+    summary: str,
+    tests_passed: bool | None,
+    sha: str | None,
+    *,
+    mark_checkbox: bool,
+) -> CycleResult:
+    log_progress("No project files changed; checking whether the goal is already met...")
+    upstream = upstream_state(workspace, project.publish_remote)
+    log_progress(f"Upstream: {upstream.detail}")
+    evidence = collect_current_evidence(workspace, goal)
+    verdict = review_goal(
+        llm,
+        goal,
+        diff=evidence,
+        summary=summary,
+        tests_passed=tests_passed,
+        existing=True,
+        upstream=upstream.detail,
+    )
+    log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
+    combined = _no_work_summary(summary, verdict, upstream.detail)
+    if verdict.met:
+        log_progress(f"No work needed: {verdict.reason}")
+        if mark_checkbox:
+            log_progress("Marking goal as done...")
+            mark_goal_done(workspace.root, project.goals_file, goal)
+        result = CycleResult(
+            status="success",
+            goal=goal,
+            summary=combined,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=sha,
+            reason=f"no changes needed: {verdict.reason} {upstream.detail}",
+        )
+    else:
+        log_progress("Goal is not already met; no files were changed.")
+        result = CycleResult(
+            status="skipped",
+            goal=goal,
+            summary=combined,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=sha,
+            reason=(
+                "no files changed and the goal is not already met: "
+                f"{review_reason(verdict)} {upstream.detail}"
+            ),
+        )
+    _write_run_log(workspace.root, result)
+    _append_to_history(workspace.root, result)
+    return result
+
+
+def _no_work_summary(agent_summary: str, verdict: GoalReview, upstream_detail: str) -> str:
+    if verdict.met:
+        lines = [
+            f"No work to do: {verdict.reason}",
+            upstream_detail,
+        ]
+    else:
+        lines = [
+            "No files changed this cycle, and the current tree does not already "
+            f"meet the goal: {review_reason(verdict)}",
+            upstream_detail,
+        ]
+    notes = (agent_summary or "").strip()
+    skip_notes = {
+        "stopped after reaching the iteration limit.",
+        "agent finished without a summary.",
+    }
+    if notes and notes.lower() not in skip_notes:
+        lines.extend(["", "Agent notes:", notes])
+    return "\n".join(lines)
 
 
 def _ensure_goal_met(

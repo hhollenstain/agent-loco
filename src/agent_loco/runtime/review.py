@@ -28,6 +28,23 @@ Reply with ONLY a JSON object:
 {"met": true or false, "reason": "one sentence"}
 """
 
+EXISTING_REVIEW_SYSTEM = """You are a strict reviewer for an unattended coding agent.
+
+The agent made no file changes this cycle. Decide whether the CURRENT workspace
+already fulfills the stated goal.
+
+Rules:
+- Passing tests is not enough by itself.
+- Use the current evidence: dependency versions, manifests, and files.
+- A missing diff does not mean the goal is unmet if the tree already has the
+  requested result (for example a lockfile already on the requested version).
+- Set met=true only if a careful reviewer would accept the current tree as complete.
+- Set met=false if the goal still requires work.
+
+Reply with ONLY a JSON object:
+{"met": true or false, "reason": "one sentence"}
+"""
+
 REVIEW_JSON_NUDGE = (
     "Your previous reply was not valid. Reply with ONLY this JSON object and "
     'no other text:\n{"met": true or false, "reason": "one sentence"}'
@@ -82,27 +99,39 @@ def review_goal(
     diff: str,
     summary: str,
     tests_passed: bool | None,
+    existing: bool = False,
+    upstream: str | None = None,
 ) -> GoalReview:
     if is_test_suite_goal(goal) and tests_passed is True:
         verdict = GoalReview(True, "project tests passed after the change")
         _record_review(verdict, attempt=1)
         return verdict
-    user = "\n".join(
-        [
-            "Goal:",
-            goal.strip(),
-            "",
-            "Agent summary:",
-            (summary or "").strip() or "(none)",
-            "",
-            f"Tests passed: {tests_passed}",
-            "",
-            "Diff:",
-            diff.strip() or "(no diff)",
-        ]
-    )
+    evidence_label = "Current workspace:" if existing else "Diff:"
+    user_parts = [
+        "Goal:",
+        goal.strip(),
+        "",
+        "Agent summary:",
+        (summary or "").strip() or "(none)",
+        "",
+        f"Tests passed: {tests_passed}",
+    ]
+    if existing:
+        user_parts.extend(
+            [
+                "",
+                "This cycle produced no file changes.",
+            ]
+        )
+        if upstream:
+            user_parts.extend(["", "Upstream:", upstream])
+    user_parts.extend(["", evidence_label, diff.strip() or "(no diff)"])
+    user = "\n".join(user_parts)
     messages: list[dict] = [
-        {"role": "system", "content": REVIEW_SYSTEM},
+        {
+            "role": "system",
+            "content": EXISTING_REVIEW_SYSTEM if existing else REVIEW_SYSTEM,
+        },
         {"role": "user", "content": user},
     ]
     turn = timed_complete(llm, messages, [], purpose="review")

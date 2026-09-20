@@ -13,23 +13,26 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
-from agent_loco.runtime.servers import (
-    load_selection,
-    list_known_servers,
-    remember_server,
-    update_server_alias,
-)
 from agent_loco.runtime.project import (
     default_guidelines,
     guidelines_are_custom,
     save_guidelines,
 )
+from agent_loco.runtime.servers import (
+    list_known_servers,
+    load_selection,
+    remember_server,
+    update_server_alias,
+)
 from agent_loco.runtime.tasks import TaskManager
 from agent_loco.runtime.workspaces import (
+    archive_workspace,
     browse_directory,
     clone_workspace,
     create_workspace,
+    forget_workspace,
     last_workspace,
+    load_archived_workspaces,
     load_workspaces,
     remember_workspace,
 )
@@ -128,6 +131,21 @@ class UiState:
         self.default_workspace = last_workspace(
             Path(self.store_root), default=path
         )
+        return remembered
+
+    def _refresh_current_workspace(self) -> None:
+        self.default_workspace = last_workspace(
+            Path(self.store_root), default=self.store_root
+        )
+
+    def archive_workspace_path(self, path: str) -> list[dict[str, str | bool]]:
+        remembered = archive_workspace(Path(self.store_root), path)
+        self._refresh_current_workspace()
+        return remembered
+
+    def forget_workspace_path(self, path: str) -> list[dict[str, str | bool]]:
+        remembered = forget_workspace(Path(self.store_root), path)
+        self._refresh_current_workspace()
         return remembered
 
     def remember_server(self, url: str, model: str | None = None) -> list[dict[str, str]]:
@@ -464,6 +482,7 @@ def create_app(
             "guidelines": (current or {}).get("guidelines") or default_guidelines(),
             "custom_guidelines": bool((current or {}).get("custom_guidelines")),
             "workspaces": workspaces,
+            "archived": load_archived_workspaces(Path(ui.store_root)),
         }
 
     def _seed_guidelines(path: str, text: str | None) -> None:
@@ -528,6 +547,33 @@ def create_app(
         try:
             save_guidelines(Path(path), body.guidelines)
             ui.set_workspace(path)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return _workspace_payload(ui)
+
+    @app.post("/api/workspaces/archive")
+    def archive_workspace_tab(request: Request, payload: WorkspaceSelect) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            ui.archive_workspace_path(payload.path)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return _workspace_payload(ui)
+
+    @app.post("/api/workspaces/restore")
+    def restore_workspace_tab(request: Request, payload: WorkspaceSelect) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            ui.set_workspace(payload.path)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return _workspace_payload(ui)
+
+    @app.post("/api/workspaces/forget")
+    def forget_workspace_tab(request: Request, payload: WorkspaceSelect) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            ui.forget_workspace_path(payload.path)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return _workspace_payload(ui)

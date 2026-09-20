@@ -70,3 +70,31 @@ def test_review_goal_retries_when_first_reply_is_prose() -> None:
     assert reviews[0]["raw"] == "Looks complete to me."
     assert reviews[1]["parsed"] is True
     assert "2.7.1" in reviews[1]["raw"]
+
+
+def test_review_goal_existing_tree_uses_workspace_evidence() -> None:
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text='{"met": true, "reason": "discord.py is already 2.7.1"}'
+            ),
+        ]
+    )
+    token = bind_progress()
+    try:
+        verdict = review_goal(
+            llm,
+            "update discord.py",
+            diff="Pipfile.lock current versions:\n- discord.py: 2.7.1",
+            summary="already current",
+            tests_passed=True,
+            existing=True,
+            upstream="HEAD is on main; no upstream tracking branch (not pushed).",
+        )
+    finally:
+        reset_progress(token)
+    assert verdict.met is True
+    user = llm.calls[0][-1]["content"]
+    assert "no file changes" in user.lower()
+    assert "Current workspace:" in user
+    assert "not pushed" in user

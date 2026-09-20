@@ -146,13 +146,14 @@ def test_cycle_does_not_commit_run_logs_or_plans(tmp_path: Path, settings: Setti
             AssistantTurn(text="Here is the write_file JSON I would send."),
             AssistantTurn(text="Summary of the planned UI changes."),
             AssistantTurn(text="Still only describing the work."),
+            _review_turn(False, "the UI was not changed"),
         ]
     )
     result = run_cycle(tmp_path, settings, llm, goal="Improve the UI", cli_create_pr=True)
     assert result.status == "skipped"
     assert result.committed is False
     assert result.published is False
-    assert "no project files changed" in (result.reason or "")
+    assert "no files changed and the goal is not already met" in (result.reason or "")
     tracked = run_git(Workspace(tmp_path), ["ls-files", ".loco/runs"])
     assert tracked.stdout.strip() == ""
     assert (tmp_path / ".loco" / "runs" / "old.json").exists()
@@ -423,3 +424,93 @@ def test_cycle_review_prompt_includes_lockfile_versions(
     assert "discord.py: 2.3.2 -> 2.7.1" in diff_text
     assert "setup.py" in diff_text
     assert diff_text.count("sha256") < 3
+
+
+def _discord_lockfile(version: str) -> str:
+    return (
+        "{\n"
+        '    "default": {\n'
+        '        "discord.py": {\n'
+        '            "hashes": [\n'
+        '                "sha256:00"\n'
+        "            ],\n"
+        f'            "version": "=={version}"\n'
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+
+
+def test_cycle_already_done_when_dependency_is_current(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    goal = "Update the outdated discord.py library"
+    (tmp_path / ".loco" / "goals.md").write_text(f"- [ ] {goal}\n", encoding="utf-8")
+    (tmp_path / "setup.py").write_text("INSTALL = ['discord.py==2.7.1']\n", encoding="utf-8")
+    (tmp_path / "Pipfile.lock").write_text(_discord_lockfile("2.7.1"), encoding="utf-8")
+    run_git(Workspace(tmp_path), ["add", "-A"])
+    run_git(Workspace(tmp_path), ["commit", "-m", "discord.py 2.7.1"])
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="discord.py is already 2.7.1."),
+            AssistantTurn(text="No files to change."),
+            AssistantTurn(text="The lockfile already has the current version."),
+            AssistantTurn(text="Stopping without edits."),
+            _review_turn(True, "discord.py is already 2.7.1 in Pipfile.lock"),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, goal=goal)
+    assert result.status == "success"
+    assert result.committed is False
+    assert result.published is False
+    assert "no changes needed" in (result.reason or "")
+    assert "2.7.1" in (result.reason or "")
+    assert "not pushed" in (result.reason or "")
+    assert "No work to do" in (result.summary or "")
+    assert "- [x] Update the outdated discord.py library" in (
+        tmp_path / ".loco" / "goals.md"
+    ).read_text(encoding="utf-8")
+    review_messages = [
+        message["content"]
+        for batch in llm.calls
+        for message in batch
+        if message.get("role") == "user"
+        and "Current workspace:" in str(message.get("content") or "")
+    ]
+    assert review_messages
+    assert "discord.py" in str(review_messages[0])
+    assert "2.7.1" in str(review_messages[0])
+
+
+def test_cycle_already_done_notes_when_head_matches_upstream(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    workspace = Workspace(tmp_path)
+    (tmp_path / "setup.py").write_text("INSTALL = ['discord.py==2.7.1']\n", encoding="utf-8")
+    run_git(workspace, ["add", "-A"])
+    run_git(workspace, ["commit", "-m", "discord.py 2.7.1"])
+    branch = current_branch(workspace)
+    sha = current_sha(workspace)
+    run_git(workspace, ["update-ref", f"refs/remotes/origin/{branch}", sha or ""])
+    run_git(workspace, ["branch", f"--set-upstream-to=origin/{branch}"])
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="Already updated."),
+            AssistantTurn(text="Nothing to edit."),
+            AssistantTurn(text="Tree already matches the goal."),
+            AssistantTurn(text="Done."),
+            _review_turn(True, "setup.py already pins discord.py 2.7.1"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="Update discord.py",
+    )
+    assert result.status == "success"
+    assert "no changes needed" in (result.reason or "")
+    assert "pushed" in (result.reason or "")
+    assert "not pushed" not in (result.reason or "")

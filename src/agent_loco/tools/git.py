@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +16,16 @@ PROTECTED_COMMIT_REFUSAL = (
 )
 RUN_LOG_PREFIX = ".loco/runs"
 PROTECTED_BRANCHES = frozenset({"main", "master", "trunk"})
+
+
+@dataclass(frozen=True)
+class UpstreamState:
+    branch: str | None
+    tracking: str | None
+    ahead: int
+    behind: int
+    pushed: bool
+    detail: str
 
 
 def git_tools(
@@ -270,6 +281,83 @@ def current_sha(workspace: Workspace) -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def upstream_state(workspace: Workspace, remote: str = "origin") -> UpstreamState:
+    """Whether HEAD is already on the tracked remote branch."""
+    branch = current_branch(workspace)
+    tracking = _tracking_ref(workspace, remote, branch)
+    if not tracking:
+        where = branch or "HEAD"
+        return UpstreamState(
+            branch=branch,
+            tracking=None,
+            ahead=0,
+            behind=0,
+            pushed=False,
+            detail=f"HEAD is on {where}; no upstream tracking branch (not pushed).",
+        )
+    ahead, behind = _ahead_behind(workspace, tracking)
+    pushed = ahead == 0
+    if pushed and behind == 0:
+        detail = f"HEAD is on {branch} and matches {tracking} (pushed)."
+    elif pushed and behind > 0:
+        detail = (
+            f"HEAD is on {branch} and is contained in {tracking} "
+            f"(pushed; {behind} remote commit(s) not in HEAD)."
+        )
+    elif behind == 0:
+        detail = (
+            f"HEAD is on {branch}, {ahead} local commit(s) ahead of {tracking} "
+            "(not pushed)."
+        )
+    else:
+        detail = (
+            f"HEAD is on {branch}, diverged from {tracking} "
+            f"(ahead {ahead}, behind {behind}; not pushed)."
+        )
+    return UpstreamState(
+        branch=branch,
+        tracking=tracking,
+        ahead=ahead,
+        behind=behind,
+        pushed=pushed,
+        detail=detail,
+    )
+
+
+def _tracking_ref(workspace: Workspace, remote: str, branch: str | None) -> str | None:
+    configured = run_git(
+        workspace,
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+    )
+    if configured.returncode == 0 and configured.stdout.strip():
+        return configured.stdout.strip()
+    if not branch or branch == "HEAD":
+        return None
+    candidate = f"{remote}/{branch}"
+    exists = run_git(
+        workspace,
+        ["show-ref", "--verify", "--quiet", f"refs/remotes/{candidate}"],
+    )
+    if exists.returncode == 0:
+        return candidate
+    return None
+
+
+def _ahead_behind(workspace: Workspace, tracking: str) -> tuple[int, int]:
+    result = run_git(workspace, ["rev-list", "--left-right", "--count", f"{tracking}...HEAD"])
+    if result.returncode != 0:
+        return 0, 0
+    parts = result.stdout.strip().split()
+    if len(parts) < 2:
+        return 0, 0
+    try:
+        behind = int(parts[0])
+        ahead = int(parts[1])
+    except ValueError:
+        return 0, 0
+    return ahead, behind
 
 
 def agent_commit(
