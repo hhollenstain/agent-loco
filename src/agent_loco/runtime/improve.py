@@ -20,6 +20,12 @@ from agent_loco.runtime.project import (
     mark_goal_done,
 )
 from agent_loco.runtime.review import GoalReview, review_goal, review_reason
+from agent_loco.runtime.uireview import (
+    UiEvidence,
+    collect_ui_evidence,
+    format_ui_evidence,
+    ui_review_needed,
+)
 from agent_loco.runtime.workdiff import collect_current_evidence, collect_work_diff
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools
@@ -422,12 +428,14 @@ def _handle_empty_diff(
     upstream = upstream_state(workspace, project.publish_remote)
     log_progress(f"Upstream: {upstream.detail}")
     evidence = collect_current_evidence(workspace, goal)
-    verdict = review_goal(
+    verdict = _review_goal(
+        workspace,
+        project,
         llm,
         goal,
-        diff=evidence,
-        summary=summary,
-        tests_passed=tests_passed,
+        evidence,
+        summary,
+        tests_passed,
         existing=True,
         upstream=upstream.detail,
     )
@@ -535,6 +543,63 @@ def _no_work_summary(agent_summary: str, verdict: GoalReview, upstream_detail: s
     return "\n".join(lines)
 
 
+def _review_goal(
+    workspace: Workspace,
+    project: ProjectConfig,
+    llm: LLMClient,
+    goal: str,
+    diff: str,
+    summary: str,
+    tests_passed: bool | None,
+    *,
+    existing: bool = False,
+    upstream: str | None = None,
+) -> GoalReview:
+    ui_text = ""
+    ui_evidence = None
+    if ui_review_needed(goal, diff, workspace.root):
+        log_progress("Reviewing rendered UI...")
+        try:
+            ui_evidence = collect_ui_evidence(workspace, project, goal)
+        except Exception as exc:  # noqa: BLE001 - UI capture must not abort the cycle
+            ui_evidence = UiEvidence(ok=False, notes=f"could not render UI: {exc}")
+        if ui_evidence is not None:
+            ui_text = format_ui_evidence(ui_evidence)
+            log_progress(ui_evidence.summary)
+    verdict = review_goal(
+        llm,
+        goal,
+        diff=diff,
+        summary=summary,
+        tests_passed=tests_passed,
+        existing=existing,
+        upstream=upstream,
+        ui_evidence=ui_text or None,
+    )
+    errors = []
+    smashed = []
+    if ui_evidence is not None:
+        errors = ui_evidence.page_errors + ui_evidence.console_errors
+        smashed = ui_evidence.smashed
+    if verdict.met and errors:
+        overridden = GoalReview(
+            False,
+            f"Rendered UI has JavaScript errors: {errors[0]}",
+            parsed=True,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
+    if verdict.met and smashed:
+        overridden = GoalReview(
+            False,
+            f"Rendered UI controls are unusable: {smashed[0]}",
+            parsed=True,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
+    return verdict
+
+
 def _ensure_goal_met(
     workspace: Workspace,
     settings: Settings,
@@ -549,12 +614,14 @@ def _ensure_goal_met(
 ) -> dict[str, object]:
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     work_diff = collect_work_diff(workspace, sha_before, goal=goal)
-    verdict = review_goal(
+    verdict = _review_goal(
+        workspace,
+        project,
         llm,
         goal,
-        diff=work_diff,
-        summary=summary,
-        tests_passed=tests_passed,
+        work_diff,
+        summary,
+        tests_passed,
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     attempts = 0
@@ -583,12 +650,14 @@ def _ensure_goal_met(
                 "tests_failed": True,
             }
         work_diff = collect_work_diff(workspace, sha_before, goal=goal)
-        verdict = review_goal(
+        verdict = _review_goal(
+            workspace,
+            project,
             llm,
             goal,
-            diff=work_diff,
-            summary=summary,
-            tests_passed=tests_passed,
+            work_diff,
+            summary,
+            tests_passed,
         )
         log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     return {
@@ -606,7 +675,8 @@ def _goal_retry_prompt(goal: str, reason: str, diff: str) -> str:
         "Do not summarize. Do not switch to a different task. "
         "Do not write placeholder, status, or verification files. "
         "If the diff is unrelated, replace or remove it and implement this exact goal. "
-        "Use str_replace for surgical edits; do not rewrite large files.\n\n"
+        "Use str_replace for surgical edits; do not rewrite large files. "
+        "If this is a UI change, call review_ui after editing and fix render errors.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}\n\n"
         f"Current diff:\n{diff}"

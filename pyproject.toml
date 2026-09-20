@@ -24,6 +24,9 @@ dev = [
     "pytest>=8.3",
     "ruff>=0.9",
 ]
+browser = [
+    "playwright>=1.49",
+]
 
 [project.scripts]
 loco = "agent_loco.cli:app"

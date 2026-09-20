@@ -41,6 +41,10 @@ Rules:
 - Never write placeholder files, IMPLEMENTATION_STATUS notes, write-verification
   tests, or docs that describe a different task. Only change files that implement
   the stated goal.
+- When the goal changes UI (HTML, CSS, JS, templates, layout), call review_ui
+  after editing. Fix JavaScript errors and unusable layout (zero-size, crushed
+  labels, missing controls) before you finish. A diff is not done until the
+  rendered page works.
 - Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """

@@ -101,6 +101,16 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function prLinkHtml(" in home.content
         assert b"GITHUB_MARK" in home.content
         assert b'event.kind === "pr"' in home.content
+        assert b'event.kind === "ui"' in home.content
+        assert b"function renderFileChanges(" in home.content
+        assert b'data-task-pane="changes"' in home.content
+        assert b'id="file-changes"' in home.content
+        assert b"function focusTimelineStage(" in home.content
+        assert b'data-stage="' in home.content
+        assert b"pinTimelineStage" in home.content
+        assert b"stage-time" in home.content
+        assert b"Before tests" in home.content
+        assert b"label || name" not in home.content
         assert b"\n  10|" not in home.content
 
         created = client.post(
@@ -748,6 +758,9 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
         assert b"groupTimelineEvents" in home.content
         assert b"Thinking" in home.content
         assert b"timeline-item think" in home.content
+        assert b"function renderFileChanges(" in home.content
+        assert b'data-task-pane="changes"' in home.content
+        assert b"No file changes in this task." in home.content
     finally:
         manager.shutdown(wait=False)
 
