@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +13,21 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
-from agent_loco.runtime.servers import list_known_servers, load_selection, remember_server
+from agent_loco.runtime.servers import (
+    load_selection,
+    list_known_servers,
+    remember_server,
+    update_server_alias,
+)
 from agent_loco.runtime.tasks import TaskManager
+from agent_loco.runtime.workspaces import (
+    browse_directory,
+    clone_workspace,
+    create_workspace,
+    last_workspace,
+    load_workspaces,
+    remember_workspace,
+)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
@@ -41,6 +55,26 @@ class HistoryQuery(BaseModel):
     search: str | None = None
 
 
+class ServerAliasUpdate(BaseModel):
+    url: str
+    alias: str | None = None
+
+
+class UrlCreate(BaseModel):
+    url: str
+    alias: str | None = None
+
+
+class WorkspaceSelect(BaseModel):
+    path: str
+
+
+class WorkspaceClone(BaseModel):
+    url: str
+    parent: str | None = None
+    name: str | None = None
+
+
 class UiState:
     def __init__(
         self,
@@ -51,27 +85,38 @@ class UiState:
         default_create_pr: bool | None,
     ) -> None:
         self.manager = manager
-        self.default_workspace = str(default_workspace.expanduser().resolve())
+        self.store_root = str(default_workspace.expanduser().resolve())
+        self.default_workspace = last_workspace(
+            Path(self.store_root), default=self.store_root
+        )
         self.default_goal = default_goal or ""
         self.default_auto_commit = manager.settings.auto_commit
         self.default_create_pr = bool(
             default_create_pr if default_create_pr is not None else manager.settings.create_pr
         )
 
-    def known_servers(self) -> list[str]:
+    def known_servers(self) -> list[dict[str, str]]:
         return list_known_servers(
             Path(self.default_workspace),
             default=self.manager.settings.model_base_url,
         )
 
-    def selection(self) -> dict[str, str | list[str] | None]:
+    def selection(self) -> dict[str, str | list[dict[str, str]] | None]:
         return load_selection(
             Path(self.default_workspace),
             default_url=self.manager.settings.model_base_url,
             default_model=self.manager.settings.model_name,
         )
 
-    def remember_server(self, url: str, model: str | None = None) -> list[str]:
+    def remember_current_workspace(self) -> list[dict[str, str | bool]]:
+        return remember_workspace(Path(self.store_root), self.default_workspace)
+
+    def set_workspace(self, path: str) -> list[dict[str, str | bool]]:
+        remembered = remember_workspace(Path(self.store_root), path)
+        self.default_workspace = str(remembered[0]["path"])
+        return remembered
+
+    def remember_server(self, url: str, model: str | None = None) -> list[dict[str, str]]:
         return remember_server(
             Path(self.default_workspace),
             url,
@@ -81,8 +126,10 @@ class UiState:
 
     def template_vars(self) -> dict[str, Any]:
         selected = self.selection()
+        workspaces = self.remember_current_workspace()
         return {
             "default_workspace": self.default_workspace,
+            "known_workspaces": workspaces,
             "default_goal": self.default_goal,
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
@@ -97,6 +144,9 @@ class UiState:
         selected = self.selection()
         return {
             "default_workspace": self.default_workspace,
+            "known_workspaces": load_workspaces(
+                Path(self.store_root), default=self.default_workspace
+            ),
             "default_goal": self.default_goal,
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
@@ -123,6 +173,10 @@ class UiState:
                 if not isinstance(data, dict):
                     continue
                 data.setdefault("id", path.stem)
+                if not data.get("created_at"):
+                    parsed = _created_at_from_run_id(path.stem)
+                    if parsed:
+                        data["created_at"] = parsed
                 results.append(data)
         
         # Load from history.json (persisted history)
@@ -164,6 +218,7 @@ class UiState:
                         item.get("reason", ""),
                         item.get("status", ""),
                         item.get("id", ""),
+                        item.get("created_at", ""),
                     ]
                 )
             ]
@@ -303,6 +358,7 @@ def create_app(
                 model_api_key=body.api_key,
             )
             ui.remember_server(task.model_base_url, model=task.model_name)
+            ui.set_workspace(task.workspace)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(task.to_dict(), status_code=201)
@@ -322,7 +378,110 @@ def create_app(
             search=search,
         )
 
+    @app.post("/api/servers/alias")
+    def update_alias(
+        request: Request,
+        payload: ServerAliasUpdate | None = None,
+    ) -> dict[str, Any]:
+        """Update or add an alias for a server URL."""
+        ui: UiState = request.app.state.ui
+        body = payload or ServerAliasUpdate(url="", alias=None)
+        if not body.url or not body.url.strip():
+            return JSONResponse({"error": "url is required"}, status_code=400)
+        servers = update_server_alias(
+            Path(ui.default_workspace),
+            body.url,
+            body.alias,
+        )
+        return {
+            "servers": servers,
+            "last_base_url": ui.selection()["last_base_url"],
+            "last_model": ui.selection()["last_model"],
+        }
+
+    @app.post("/api/servers")
+    def create_server(
+        request: Request,
+        payload: UrlCreate | None = None,
+    ) -> dict[str, Any]:
+        """Create a new server with optional alias."""
+        from agent_loco.runtime.servers import create_or_update_server
+        
+        ui: UiState = request.app.state.ui
+        body = payload or UrlCreate(url="", alias=None)
+        if not body.url or not body.url.strip():
+            return JSONResponse({"error": "url is required"}, status_code=400)
+        
+        servers = create_or_update_server(
+            Path(ui.default_workspace),
+            body.url,
+            body.alias or None,
+        )
+        return {
+            "servers": servers,
+            "last_base_url": ui.selection()["last_base_url"],
+            "last_model": ui.selection()["last_model"],
+        }
+
+    def _workspace_payload(ui: UiState) -> dict[str, Any]:
+        return {
+            "current": ui.default_workspace,
+            "home": str(Path.home()),
+            "workspaces": load_workspaces(
+                Path(ui.store_root), default=ui.default_workspace
+            ),
+        }
+
+    @app.get("/api/workspaces")
+    def list_workspaces(request: Request) -> dict[str, Any]:
+        return _workspace_payload(request.app.state.ui)
+
+    @app.get("/api/workspaces/browse")
+    def browse_workspaces(path: str | None = None) -> Any:
+        try:
+            return browse_directory(path)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.post("/api/workspaces/select")
+    def select_workspace(request: Request, payload: WorkspaceSelect) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            ui.set_workspace(payload.path)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return _workspace_payload(ui)
+
+    @app.post("/api/workspaces/create")
+    def make_workspace(request: Request, payload: WorkspaceSelect) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            created = create_workspace(payload.path)
+            ui.set_workspace(str(created["path"]))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {**_workspace_payload(ui), "created": created}
+
+    @app.post("/api/workspaces/clone")
+    def clone_repo(request: Request, payload: WorkspaceClone) -> Any:
+        ui: UiState = request.app.state.ui
+        parent = payload.parent or str(Path.home() / "projects")
+        try:
+            cloned = clone_workspace(payload.url, parent, name=payload.name)
+            ui.set_workspace(str(cloned["path"]))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {**_workspace_payload(ui), "created": cloned}
+
     return app
+
+
+def _created_at_from_run_id(stem: str) -> str | None:
+    try:
+        parsed = datetime.strptime(stem, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def serve(

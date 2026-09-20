@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -107,6 +108,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert body[0]["model"] == settings.model_name
         assert body[0]["base_url"] == settings.model_base_url
         assert body[0]["status"] in {"queued", "running"}
+        if body[0]["status"] == "running":
+            assert body[0]["started_at"]
+            assert body[0]["finished_at"] is None
 
         missing = client.get("/api/tasks/nope")
         assert missing.status_code == 404
@@ -117,6 +121,35 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert "error" in bad.json()
     finally:
         gate.set()
+        manager.shutdown(wait=False)
+
+
+def test_finished_task_records_start_and_finish_times(
+    settings: Settings, tmp_path: Path
+) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Time this", "auto_commit": False},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        body = None
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            match = next((item for item in listed if item["id"] == task_id), None)
+            if match and match["status"] not in {"queued", "running"}:
+                body = match
+                break
+            time.sleep(0.05)
+        assert body is not None
+        assert body["started_at"]
+        assert body["finished_at"]
+        assert body["finished_at"] >= body["started_at"]
+    finally:
         manager.shutdown(wait=False)
 
 
@@ -219,16 +252,16 @@ def test_web_ui_lists_models_from_requested_host(
         assert posted.status_code == 200
         assert posted.json()["models"] == ["remote-coder"]
         assert posted.json()["base_url"] == "http://10.0.0.8:8000/v1"
-        assert posted.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert posted.json()["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert posted.json()["last_model"] == "remote-coder"
 
         listed = client.get("/api/servers")
         assert listed.status_code == 200
-        assert listed.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert listed.json()["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert listed.json()["last_base_url"] == "http://10.0.0.8:8000/v1"
         assert listed.json()["last_model"] == "remote-coder"
         saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))
-        assert saved["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert saved["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert saved["last_model"] == "remote-coder"
 
         home = client.get("/")
@@ -287,6 +320,7 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
         # Paginated response format
         assert len(body["items"]) == 1
         assert body["items"][0]["id"] == "20260919T180000Z"
+        assert body["items"][0]["created_at"] == "2026-09-19T18:00:00Z"
         assert body["items"][0]["goal"] == "Past goal"
         assert body["page"] == 1
         assert body["page_size"] == 10
@@ -298,13 +332,14 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
 
 def test_remember_server_dedupes_and_keeps_newest_first(tmp_path: Path) -> None:
     first = remember_server(tmp_path, "10.0.0.8:8000", default="http://127.0.0.1:11434/v1")
-    assert first[0] == "http://10.0.0.8:8000/v1"
-    assert "http://127.0.0.1:11434/v1" in first
+    assert first[0]["url"] == "http://10.0.0.8:8000/v1"
+    assert "http://127.0.0.1:11434/v1" in [s["url"] for s in first]
     again = remember_server(tmp_path, "http://10.0.0.8:8000/v1")
-    assert again[0] == "http://10.0.0.8:8000/v1"
-    assert again.count("http://10.0.0.8:8000/v1") == 1
+    assert again[0]["url"] == "http://10.0.0.8:8000/v1"
+    assert again.count({"url": "http://10.0.0.8:8000/v1", "alias": None}) == 1
     newer = remember_server(tmp_path, "http://10.0.0.9:11434/v1")
-    assert newer[:2] == ["http://10.0.0.9:11434/v1", "http://10.0.0.8:8000/v1"]
+    assert newer[0]["url"] == "http://10.0.0.9:11434/v1"
+    assert newer[1]["url"] == "http://10.0.0.8:8000/v1"
     gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
     assert "servers.json" in gitignore
     remember_server(tmp_path, "http://10.0.0.8:8000/v1", model="remote-coder")
@@ -340,3 +375,119 @@ def test_normalize_model_base_url() -> None:
         assert "required" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_web_ui_workspace_picker_browse_select_create(
+    settings: Settings, tmp_path: Path
+) -> None:
+    other = tmp_path / "other-app"
+    other.mkdir()
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert b'id="open-workspace-picker"' in home.content
+        assert b'id="workspace-picker"' in home.content
+        assert b"Clone a repository" in home.content
+
+        listed = client.get("/api/workspaces")
+        assert listed.status_code == 200
+        body = listed.json()
+        assert body["current"] == str(tmp_path.resolve())
+        assert body["home"]
+        assert any(item["path"] == str(tmp_path.resolve()) for item in body["workspaces"])
+
+        browse = client.get("/api/workspaces/browse", params={"path": str(tmp_path)})
+        assert browse.status_code == 200
+        listing = browse.json()
+        assert listing["path"] == str(tmp_path.resolve())
+        names = [item["name"] for item in listing["entries"]]
+        assert "other-app" in names
+
+        selected = client.post("/api/workspaces/select", json={"path": str(other)})
+        assert selected.status_code == 200
+        assert selected.json()["current"] == str(other.resolve())
+        saved = json.loads((tmp_path / ".loco" / "workspaces.json").read_text(encoding="utf-8"))
+        assert saved["last"] == str(other.resolve())
+
+        created = client.post(
+            "/api/workspaces/create",
+            json={"path": str(tmp_path / "fresh-app")},
+        )
+        assert created.status_code == 200
+        fresh = tmp_path / "fresh-app"
+        assert created.json()["current"] == str(fresh.resolve())
+        assert (fresh / ".loco" / "config.yaml").exists()
+        assert (fresh / ".git").exists()
+
+        missing = client.post("/api/workspaces/select", json={"path": str(tmp_path / "nope")})
+        assert missing.status_code == 400
+        empty_clone = client.post("/api/workspaces/clone", json={"url": "  "})
+        assert empty_clone.status_code == 400
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_restores_last_workspace(settings: Settings, tmp_path: Path) -> None:
+    last = tmp_path / "picked"
+    last.mkdir()
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "workspaces.json").write_text(
+        json.dumps(
+            {
+                "last": str(last.resolve()),
+                "workspaces": [{"path": str(last.resolve())}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        listed = client.get("/api/workspaces")
+        assert listed.status_code == 200
+        assert listed.json()["current"] == str(last.resolve())
+        home = client.get("/")
+        assert str(last.resolve()).encode() in home.content
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_clones_repository_into_local_workspace(
+    settings: Settings, tmp_path: Path
+) -> None:
+    from tests.support import init_git_repo
+
+    source = tmp_path / "upstream"
+    source.mkdir()
+    (source / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(source)
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        cloned = client.post(
+            "/api/workspaces/clone",
+            json={
+                "url": str(source),
+                "parent": str(tmp_path / "projects"),
+                "name": "checkout",
+            },
+        )
+        assert cloned.status_code == 200
+        dest = tmp_path / "projects" / "checkout"
+        assert cloned.json()["current"] == str(dest.resolve())
+        assert (dest / "readme.txt").read_text(encoding="utf-8") == "hello\n"
+        assert (dest / ".loco" / "config.yaml").exists()
+        again = client.post(
+            "/api/workspaces/clone",
+            json={"url": str(source), "parent": str(tmp_path / "projects"), "name": "checkout"},
+        )
+        assert again.status_code == 400
+    finally:
+        manager.shutdown(wait=False)

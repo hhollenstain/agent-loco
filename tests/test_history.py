@@ -44,6 +44,8 @@ def test_append_to_history() -> None:
         assert len(history) == 1
         assert history[0]["status"] == "success"
         assert history[0]["goal"] == "Test goal"
+        assert "created_at" in history[0]
+        assert history[0]["created_at"].endswith("Z")
         
         # Second append
         result2 = CycleResult(

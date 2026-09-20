@@ -27,7 +27,7 @@
     }
     main {
       display: grid;
-      grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+      grid-template-columns: minmax(20rem, 24rem) minmax(0, 1fr);
       min-height: 100vh;
     }
     main.collapsed {
@@ -97,10 +97,111 @@
       padding: 0.55rem 0.65rem;
       font: inherit;
     }
-    textarea { min-height: 7.5rem; resize: vertical; }
-    .host-row { display: flex; gap: 0.45rem; align-items: stretch; margin-top: 0.4rem; }
-    .host-row input { flex: 1; min-width: 0; }
-    .hint { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.8rem; }
+    textarea { min-height: 4.75rem; resize: vertical; }
+    .llm-block {
+      margin: 1.05rem 0 0.2rem;
+      padding: 0.95rem 1rem 1.1rem;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .llm-heading {
+      margin: 0 0 0.7rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .llm-block label { margin-top: 0.9rem; }
+    .llm-block > label:first-of-type { margin-top: 0; }
+    .llm-load {
+      width: 100%;
+      margin-top: 0.75rem;
+    }
+    #base-url, #server-history, #model {
+      font-size: 0.88rem;
+    }
+    #base-url {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.78rem;
+    }
+    .hint { margin: 0.4rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+    .workspace-row { display: flex; gap: 0.45rem; align-items: stretch; }
+    .workspace-row input { flex: 1; min-width: 0; font-size: 0.82rem; }
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 10, 7, 0.72);
+      z-index: 40;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: min(42rem, 100%);
+      max-height: min(36rem, 92vh);
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1.1rem 1.15rem 1.25rem;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+    }
+    .modal h2 {
+      margin: 0 0 0.35rem;
+      font-size: 1.05rem;
+    }
+    .modal-section { margin-top: 1rem; }
+    .browse-path {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0.35rem 0 0.55rem;
+      word-break: break-all;
+    }
+    .folder-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      max-height: 12rem;
+      overflow: auto;
+      margin: 0.4rem 0 0.65rem;
+    }
+    .folder-item, .recent-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.6rem;
+      width: 100%;
+      text-align: left;
+      background: var(--panel-2);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.5rem 0.65rem;
+      font: inherit;
+      cursor: pointer;
+    }
+    .folder-item:hover, .recent-item:hover, .folder-item:focus, .recent-item:focus {
+      border-color: var(--accent);
+    }
+    .folder-item .name, .recent-item .name { font-weight: 600; }
+    .badge {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .path-hint {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-align: right;
+      word-break: break-all;
+    }
+    .modal-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+    .modal-error { color: var(--bad); min-height: 1.2rem; margin: 0.45rem 0 0; font-size: 0.86rem; }
     .checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
     button {
       background: var(--accent);
@@ -164,6 +265,12 @@
       white-space: pre-wrap;
     }
     .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
+    .duration {
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .status.running + .duration { color: var(--warn); }
     .history { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
     .history .search-row {
       display: flex;
@@ -196,6 +303,27 @@
       border: 1px solid var(--accent);
       pointer-events: none;
     }
+    .tasks-toolbar {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.55rem;
+      margin-bottom: 0.9rem;
+    }
+    .server-filter {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      max-width: 22rem;
+    }
+    .server-filter label {
+      margin: 0;
+      white-space: nowrap;
+    }
+    .server-filter select {
+      flex: 1;
+      min-width: 0;
+    }
   </style>
 </head>
 <body>
@@ -207,27 +335,34 @@
       </div>
       <form id="task-form">
       <label for="workspace">Workspace</label>
-      <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
+      <div class="workspace-row">
+        <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
+        <button type="button" class="secondary" id="open-workspace-picker">Browse</button>
+      </div>
+      <p class="hint">Pick a local folder or clone a git repo to work on it here.</p>
 
       <label for="goal">Goal</label>
       <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
 
-      <label for="server-history">LLM server</label>
-      <select id="server-history" aria-label="Remembered LLM servers">
-        {% for url in known_servers %}
-        <option value="{{ url }}" {% if url == default_base_url %}selected{% endif %}>{{ url }}</option>
-        {% endfor %}
-      </select>
-      <div class="host-row">
+      <div class="llm-block">
+        <p class="llm-heading">LLM</p>
+        <label for="server-history">Saved server</label>
+        <select id="server-history" aria-label="Remembered LLM servers">
+          {% for server in known_servers %}
+          {% set server_url = server.url if server is mapping else server %}
+          {% set server_alias = server.alias if server is mapping else None %}
+          <option value="{{ server_url }}" title="{{ server_url }}" {% if server_url == default_base_url %}selected{% endif %}>{{ server_alias or server_url }}</option>
+          {% endfor %}
+        </select>
+        <label for="base-url">Server URL</label>
         <input id="base-url" name="base_url" type="text" spellcheck="false" required value="{{ default_base_url }}" placeholder="http://127.0.0.1:11434/v1">
-        <button type="button" class="secondary" id="load-models">Load models</button>
+        <p class="hint">Pick a saved host or type a new one (host:port or /v1 URL). Used servers are remembered after you load models.</p>
+        <button type="button" class="secondary llm-load" id="load-models">Load models</button>
+        <label for="model">Model</label>
+        <select id="model" name="model">
+          <option value="{{ default_model }}" selected>{{ default_model }}</option>
+        </select>
       </div>
-      <p class="hint">Pick a remembered host or type a new one (host:port or /v1 URL). Used servers are saved for the next restart.</p>
-
-      <label for="model">Model</label>
-      <select id="model" name="model">
-        <option value="{{ default_model }}" selected>{{ default_model }}</option>
-      </select>
 
       <div class="checks">
         <label style="text-transform:none;letter-spacing:0;margin:0">
@@ -248,9 +383,17 @@
     </form>
     </aside>
     <section class="tasks">
-      <div class="row">
-        <label style="margin:0">Tasks</label>
-        <span class="meta" id="counts"></span>
+      <div class="tasks-toolbar">
+        <div class="row">
+          <label style="margin:0">Tasks</label>
+          <span class="meta" id="counts"></span>
+        </div>
+        <div class="server-filter">
+          <label for="server-filter">Server</label>
+          <select id="server-filter" aria-label="Filter tasks by server">
+            <option value="">All servers</option>
+          </select>
+        </div>
       </div>
       <div id="task-list" class="task-list"></div>
       <div id="detail"></div>
@@ -269,8 +412,45 @@
       </div>
     </section>
   </main>
+  <div class="modal-backdrop" id="workspace-picker" role="dialog" aria-modal="true" aria-labelledby="workspace-picker-title" hidden>
+    <div class="modal">
+      <h2 id="workspace-picker-title">Choose a workspace</h2>
+      <p class="hint">Select a folder on this machine, create a new loco project, or clone a repository to work on locally.</p>
+      <div class="modal-section">
+        <label>Recent</label>
+        <div class="folder-list" id="recent-workspaces"></div>
+      </div>
+      <div class="modal-section">
+        <label>Browse folders</label>
+        <p class="browse-path" id="browse-path"></p>
+        <div class="folder-list" id="browse-list"></div>
+        <label for="create-name">New folder name</label>
+        <input id="create-name" type="text" spellcheck="false" placeholder="my-project (optional)">
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="browse-up">Up</button>
+          <button type="button" class="secondary" id="browse-home">Home</button>
+          <button type="button" id="use-folder">Use this folder</button>
+          <button type="button" class="secondary" id="create-workspace">Create workspace</button>
+        </div>
+      </div>
+      <div class="modal-section">
+        <label for="clone-url">Clone a repository</label>
+        <input id="clone-url" type="text" spellcheck="false" placeholder="https://github.com/org/repo.git">
+        <label for="clone-parent">Clone into</label>
+        <input id="clone-parent" type="text" spellcheck="false">
+        <label for="clone-name">Folder name</label>
+        <input id="clone-name" type="text" spellcheck="false" placeholder="defaults to the repo name">
+        <p class="hint">Creates a local checkout and a .loco workspace so you can run and open PRs from this machine.</p>
+        <div class="modal-actions" style="margin-top:0.65rem">
+          <button type="button" id="clone-repo">Clone</button>
+          <button type="button" class="secondary" id="close-workspace-picker">Close</button>
+        </div>
+      </div>
+      <p class="modal-error" id="workspace-picker-error"></p>
+    </div>
+  </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "", sidebarCollapsed: false };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "" };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -282,6 +462,224 @@
     const paginationEl = document.getElementById("pagination");
     const mainEl = document.getElementById("main");
     const toggleBtn = document.getElementById("toggle-sidebar");
+    const serverFilterEl = document.getElementById("server-filter");
+    const pickerEl = document.getElementById("workspace-picker");
+    const recentEl = document.getElementById("recent-workspaces");
+    const browseListEl = document.getElementById("browse-list");
+    const browsePathEl = document.getElementById("browse-path");
+    const pickerErrorEl = document.getElementById("workspace-picker-error");
+    const workspaceEl = document.getElementById("workspace");
+    const cloneUrlEl = document.getElementById("clone-url");
+    const cloneParentEl = document.getElementById("clone-parent");
+    const cloneNameEl = document.getElementById("clone-name");
+    const createNameEl = document.getElementById("create-name");
+    let browsePath = workspaceEl.value;
+    let browseParent = "";
+
+    function joinPath(parent, name) {
+      const n = (name || "").trim();
+      if (!n) return parent;
+      return parent.endsWith("/") ? `${parent}${n}` : `${parent}/${n}`;
+    }
+
+    function folderBadges(item) {
+      const bits = [];
+      if (item.is_git) bits.push("git");
+      if (item.is_loco) bits.push("loco");
+      return bits.join(" · ");
+    }
+
+    function renderFolderButtons(target, items, emptyText, onClick) {
+      if (!items.length) {
+        target.innerHTML = `<p class="empty">${escapeHtml(emptyText)}</p>`;
+        return;
+      }
+      target.replaceChildren();
+      for (const item of items) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = target === recentEl ? "recent-item" : "folder-item";
+        const extra = folderBadges(item);
+        const hint = extra || (target === recentEl ? item.path : "");
+        const hintClass = extra ? "badge" : "path-hint";
+        button.innerHTML = `<span class="name">${escapeHtml(item.name)}</span>${hint ? `<span class="${hintClass}">${escapeHtml(hint)}</span>` : ""}`;
+        button.title = item.path;
+        button.addEventListener("click", () => onClick(item));
+        target.append(button);
+      }
+    }
+
+    async function loadRecentWorkspaces() {
+      const res = await fetch("/api/workspaces");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to list workspaces");
+      if (body.current) workspaceEl.value = body.current;
+      if (body.home && !cloneParentEl.value) {
+        cloneParentEl.value = `${body.home.replace(/\/$/, "")}/projects`;
+      }
+      renderFolderButtons(recentEl, body.workspaces || [], "No recent workspaces yet.", (item) => selectWorkspace(item.path));
+      return body;
+    }
+
+    async function loadBrowse(path) {
+      pickerErrorEl.textContent = "";
+      const query = path ? `?path=${encodeURIComponent(path)}` : "";
+      const res = await fetch(`/api/workspaces/browse${query}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to browse");
+      browsePath = body.path;
+      browseParent = body.parent || "";
+      browsePathEl.textContent = body.path;
+      document.getElementById("browse-up").disabled = !browseParent;
+      renderFolderButtons(browseListEl, body.entries || [], "No folders here.", (item) => loadBrowse(item.path).catch(showPickerError));
+      return body;
+    }
+
+    function showPickerError(err) {
+      pickerErrorEl.textContent = err.message || String(err);
+    }
+
+    async function openPicker() {
+      pickerEl.hidden = false;
+      pickerEl.classList.add("open");
+      pickerErrorEl.textContent = "";
+      try {
+        await loadRecentWorkspaces();
+        await loadBrowse(workspaceEl.value || browsePath);
+      } catch (err) {
+        showPickerError(err);
+      }
+    }
+
+    function closePicker() {
+      pickerEl.classList.remove("open");
+      pickerEl.hidden = true;
+    }
+
+    async function selectWorkspace(path) {
+      pickerErrorEl.textContent = "";
+      const res = await fetch("/api/workspaces/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to select workspace");
+      workspaceEl.value = body.current;
+      closePicker();
+    }
+
+    document.getElementById("open-workspace-picker").addEventListener("click", () => {
+      openPicker().catch(showPickerError);
+    });
+    document.getElementById("close-workspace-picker").addEventListener("click", closePicker);
+    pickerEl.addEventListener("click", (event) => {
+      if (event.target === pickerEl) closePicker();
+    });
+    document.getElementById("browse-up").addEventListener("click", () => {
+      if (!browseParent) return;
+      loadBrowse(browseParent).catch(showPickerError);
+    });
+    document.getElementById("browse-home").addEventListener("click", () => {
+      loadBrowse("").catch(showPickerError);
+    });
+    document.getElementById("use-folder").addEventListener("click", () => {
+      selectWorkspace(browsePath).catch(showPickerError);
+    });
+    document.getElementById("create-workspace").addEventListener("click", async () => {
+      try {
+        pickerErrorEl.textContent = "";
+        const res = await fetch("/api/workspaces/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: joinPath(browsePath, createNameEl.value) }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to create workspace");
+        workspaceEl.value = body.current;
+        createNameEl.value = "";
+        closePicker();
+      } catch (err) {
+        showPickerError(err);
+      }
+    });
+    document.getElementById("clone-repo").addEventListener("click", async () => {
+      try {
+        pickerErrorEl.textContent = "";
+        const res = await fetch("/api/workspaces/clone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: cloneUrlEl.value.trim(),
+            parent: cloneParentEl.value.trim() || undefined,
+            name: cloneNameEl.value.trim() || undefined,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to clone repository");
+        workspaceEl.value = body.current;
+        cloneUrlEl.value = "";
+        cloneNameEl.value = "";
+        closePicker();
+      } catch (err) {
+        showPickerError(err);
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && pickerEl.classList.contains("open")) {
+        closePicker();
+      }
+    });
+
+    function parseTime(value) {
+      if (!value) return null;
+      const raw = String(value).trim();
+      const compact = raw.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+      let date;
+      if (compact) {
+        date = new Date(`${compact[1]}-${compact[2]}-${compact[3]}T${compact[4]}:${compact[5]}:${compact[6]}Z`);
+      } else {
+        date = new Date(raw);
+      }
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatTimestamp(value) {
+      const date = parseTime(value);
+      if (!date) return value ? String(value) : "";
+      return date.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+
+    function formatDuration(ms) {
+      if (ms == null || !Number.isFinite(ms) || ms < 0) return "";
+      const total = Math.floor(ms / 1000);
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = total % 60;
+      if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+      if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+      return `${seconds}s`;
+    }
+
+    function taskDurationLabel(task) {
+      const start = parseTime(task.started_at);
+      if (!start) return "";
+      const end = task.status === "running" ? new Date() : parseTime(task.finished_at);
+      if (!end) return "";
+      const text = formatDuration(end.getTime() - start.getTime());
+      if (!text) return "";
+      return task.status === "running" ? `${text} elapsed` : text;
+    }
+
+    function timestampLabel(item) {
+      return formatTimestamp(item.created_at || item.finished_at || item.started_at || item.id);
+    }
 
     function goalText(item) {
       if (!item.goal) return "(from project goals / failing tests)";
@@ -296,23 +694,52 @@
         .replaceAll('"', "&quot;");
     }
 
+    function serverOptionLabel(server, url) {
+      if (typeof server === "object" && server && server.alias && String(server.alias).trim()) {
+        return String(server.alias).trim();
+      }
+      try {
+        return new URL(url).host;
+      } catch (_err) {
+        return url;
+      }
+    }
+
+    function serverDisplayName(server) {
+      if (typeof server === "object" && server !== null) {
+        const url = server.url || "";
+        const alias = server.alias;
+        if (alias && String(alias).trim()) return `${alias} (${url})`;
+        return url;
+      }
+      return String(server);
+    }
+
     function render() {
       const running = state.tasks.filter(t => t.status === "running").length;
       const queued = state.tasks.filter(t => t.status === "queued").length;
       countsEl.textContent = `${running} running · ${queued} queued`;
-      if (!state.tasks.length) {
+      
+      // Filter tasks by server if filter is set
+      const filteredTasks = state.serverFilter 
+        ? state.tasks.filter(t => (t.base_url || "") === state.serverFilter)
+        : state.tasks;
+      
+      if (!filteredTasks.length) {
         listEl.innerHTML = `<p class="empty">No tasks yet.</p>`;
       } else {
-        listEl.innerHTML = state.tasks.map(task => `
+        listEl.innerHTML = filteredTasks.map(task => {
+          const duration = taskDurationLabel(task);
+          return `
           <button type="button" class="task ${task.id === state.selected ? "selected" : ""}" data-id="${escapeHtml(task.id)}">
             <div class="row">
               <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
-              <span class="meta">${escapeHtml(task.started_at || task.created_at)}</span>
+              <span class="meta duration">${escapeHtml(duration || formatTimestamp(task.started_at || task.created_at))}</span>
             </div>
             <p class="goal">${escapeHtml(goalText(task))}</p>
-            <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}</p>
+            <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}${duration ? " · " + escapeHtml(formatTimestamp(task.started_at || task.created_at)) : ""}</p>
           </button>
-        `).join("");
+        `}).join("");
       }
 
       if (state.history.total === undefined) {
@@ -325,7 +752,7 @@
             <article class="task">
               <div class="row">
                 <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
-                <span class="meta">${escapeHtml(entry.id || "")}</span>
+                <span class="meta" title="${escapeHtml(entry.created_at || entry.id || "")}">${escapeHtml(timestampLabel(entry))}</span>
               </div>
               <p class="goal">${escapeHtml(goalText(entry))}</p>
               <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
@@ -344,7 +771,7 @@
             <article class="task">
               <div class="row">
                 <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
-                <span class="meta">${escapeHtml(entry.id || "")}</span>
+                <span class="meta" title="${escapeHtml(entry.created_at || entry.id || "")}">${escapeHtml(timestampLabel(entry))}</span>
               </div>
               <p class="goal">${escapeHtml(goalText(entry))}</p>
               <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
@@ -360,9 +787,10 @@
         const logs = (selected.logs || []).join("\n") || "(waiting for progress…)";
         const summary = selected.summary ? `\n\n${selected.summary}` : "";
         const extra = selected.error ? `\n\nerror: ${selected.error}` : "";
+        const duration = taskDurationLabel(selected);
         detailEl.innerHTML = `
           <label>Progress</label>
-          <p class="meta">${escapeHtml(selected.workspace)}${selected.model ? " · " + escapeHtml(selected.model) : ""}${selected.base_url ? " · " + escapeHtml(selected.base_url) : ""}${selected.commit_sha ? " · " + escapeHtml(selected.commit_sha.slice(0, 8)) : ""}</p>
+          <p class="meta">${escapeHtml(selected.workspace)}${selected.model ? " · " + escapeHtml(selected.model) : ""}${selected.base_url ? " · " + escapeHtml(selected.base_url) : ""}${selected.commit_sha ? " · " + escapeHtml(selected.commit_sha.slice(0, 8)) : ""}${duration ? " · " + escapeHtml(duration) : ""}</p>
           <pre id="log">${escapeHtml(logs + summary + extra)}</pre>
         `;
       } else {
@@ -400,6 +828,25 @@
         // Paginated format
         state.history = historyData;
       }
+      
+      // Update server filter dropdown with unique servers from tasks
+      const servers = new Set();
+      for (const task of state.tasks) {
+        if (task.base_url) {
+          servers.add(task.base_url);
+        }
+      }
+      serverFilterEl.innerHTML = '<option value="">All servers</option>';
+      for (const server of servers) {
+        const option = document.createElement("option");
+        option.value = escapeHtml(server);
+        option.textContent = escapeHtml(server);
+        if (server === state.serverFilter) {
+          option.selected = true;
+        }
+        serverFilterEl.appendChild(option);
+      }
+      
       render();
     }
 
@@ -433,6 +880,11 @@
       state.search = "";
       state.historyPage = 1;
       searchInput.value = "";
+      refresh();
+    });
+
+    serverFilterEl.addEventListener("change", (event) => {
+      state.serverFilter = event.target.value;
       refresh();
     });
 
@@ -538,12 +990,15 @@
       const current = selected || document.getElementById("base-url").value;
       historyEl.replaceChildren();
       const seen = new Set();
-      for (const url of servers || []) {
+      for (const server of servers || []) {
+        // Handle both dict format {url, alias} and string URL
+        const url = (typeof server === 'object' && server !== null) ? server.url : server;
         if (!url || seen.has(url)) continue;
         seen.add(url);
         const option = document.createElement("option");
         option.value = url;
-        option.textContent = url;
+        option.title = url;
+        option.textContent = serverOptionLabel(server, url);
         if (url === current) option.selected = true;
         historyEl.append(option);
       }
@@ -567,6 +1022,9 @@
     refresh();
     loadModels(false);
     setInterval(refresh, 1000);
+    setInterval(() => {
+      if (state.tasks.some(task => task.status === "running")) render();
+    }, 1000);
   </script>
 </body>
 </html>
