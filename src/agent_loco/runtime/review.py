@@ -21,6 +21,10 @@ Rules:
 - When a Rendered UI section is present, JavaScript errors mean the goal is unmet.
   Controls with 0x0 or tiny sizes are unmet. A template diff is not enough if the
   rendered page is blank, crushed, or throws.
+- Dead controls (a tab or button that does not reveal its panel when clicked) are
+  unmet. Markup for a Screenshots tab is not enough.
+- If capture could not click (static dump-dom) and the goal adds tabs, screenshots,
+  or other interactive controls, the goal is unmet.
 - A summary that claims the work is done does not count unless the diff shows it.
 - Use the changed-file list. A lockfile may be summarized as `package: old -> new`
   instead of a hash dump; that still counts as updating the package.
@@ -42,6 +46,8 @@ Rules:
 - When a Rendered UI section is present, JavaScript errors mean the goal is unmet.
   Controls with 0x0 or tiny sizes are unmet. A missing diff does not save a
   broken page.
+- Dead controls and static dump-dom captures of interactive UI (tabs, screenshots,
+  buttons) mean the goal is unmet.
 - A missing diff does not mean the goal is unmet if the tree already has the
   requested result (for example a lockfile already on the requested version).
 - Set met=true only if a careful reviewer would accept the current tree as complete.

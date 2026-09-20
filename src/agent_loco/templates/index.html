@@ -774,6 +774,31 @@
     .file-change-stats .diff-add,
     .file-change-stats .diff-del { font-weight: 650; }
     .file-changes .empty { margin: 0.85rem 0 0; }
+    .ui-screenshots {
+      list-style: none;
+      margin: 0.85rem 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      max-height: min(70vh, 42rem);
+      overflow: auto;
+    }
+    .ui-screenshot {
+      background: #0c0e0b;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+    }
+    .ui-screenshot img {
+      display: block;
+      width: 100%;
+      max-height: 28rem;
+      margin-top: 0.55rem;
+      object-fit: contain;
+      border-radius: 6px;
+      background: #11140f;
+    }
     .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
     .duration {
       color: var(--ink);
@@ -2000,6 +2025,21 @@
       }));
     }
 
+    function fileReviewDiff(group) {
+      const latest = group.latest || {};
+      if (latest.net_diff) {
+        return {
+          diff: latest.net_diff,
+          action: latest.net_action || latest.action || "changed",
+        };
+      }
+      const parts = (group.edits || []).map((event) => event && event.diff).filter(Boolean);
+      return {
+        diff: parts.join("\n"),
+        action: (group.edits[0] && group.edits[0].action) || latest.action || "changed",
+      };
+    }
+
     function renderFileChanges(events) {
       const groups = groupedFileChanges(events);
       if (!groups.length) {
@@ -2008,30 +2048,78 @@
       const items = groups.map((group) => {
         const key = `changes:${group.path}`;
         const open = state.closedChanges.has(key) ? "" : " open";
-        const action = group.latest.action || "changed";
-        const stats = diffStats(group.latest.diff);
+        const review = fileReviewDiff(group);
+        const stats = diffStats(review.diff);
         const edits = group.edits.length > 1 ? `${group.edits.length} edits · ` : "";
         const when = group.latest.at
           ? `<span class="timeline-when">${escapeHtml(formatTimestamp(group.latest.at) || group.latest.at)}</span>`
           : "";
-        const body = group.latest.diff
-          ? `<pre class="diff">${renderDiff(group.latest.diff)}</pre>`
+        const body = review.diff
+          ? `<pre class="diff">${renderDiff(review.diff)}</pre>`
           : `<p class="empty">No diff captured.</p>`;
-        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}<span class="file-change-path">${escapeHtml(action)} ${escapeHtml(group.path)}</span><span class="file-change-stats">${escapeHtml(edits)}<span class="diff-add">+${stats.added}</span> <span class="diff-del">−${stats.removed}</span></span></summary>${body}</details></li>`;
+        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}<span class="file-change-path">${escapeHtml(review.action)} ${escapeHtml(group.path)}</span><span class="file-change-stats">${escapeHtml(edits)}<span class="diff-add">+${stats.added}</span> <span class="diff-del">−${stats.removed}</span></span></summary>${body}</details></li>`;
       }).join("");
       return `<ol class="file-changes" id="file-changes">${items}</ol>`;
     }
 
-    function renderTaskPanes(logHtml, changesHtml, fileCount) {
-      const pane = state.taskPane === "changes" ? "changes" : "progress";
+    function taskPaneFromTab(name) {
+      if (name === "changes" || name === "screenshots") return name;
+      return "progress";
+    }
+
+    function screenshotName(event) {
+      if (event && event.screenshot_filename) return String(event.screenshot_filename);
+      const path = String((event && event.screenshot) || "");
+      const parts = path.split(/[/\\]/);
+      return parts[parts.length - 1] || "";
+    }
+
+    function screenshotEvents(events) {
+      return (events || []).filter((event) => event && event.kind === "ui" && screenshotName(event));
+    }
+
+    function screenshotSrc(name) {
+      const file = String(name || "").trim();
+      if (!file) return "";
+      const ws = encodeURIComponent(workspaceEl.value || "");
+      return `/api/ui-screenshot?workspace=${ws}&name=${encodeURIComponent(file)}`;
+    }
+
+    function screenshotHtmlFromEvents(events) {
+      const shots = screenshotEvents(events);
+      if (!shots.length) return `<p class="empty">No screenshots from UI reviews in this task.</p>`;
+      return `<ul class="ui-screenshots" aria-label="UI review screenshots">
+        ${shots.map((event, index) => {
+          const name = screenshotName(event);
+          const src = screenshotSrc(name);
+          const label = event.message || `UI review #${index + 1}`;
+          return `<li class="ui-screenshot">
+            <div class="file-change-path">${escapeHtml(label)}</div>
+            <div class="file-change-stats">${escapeHtml(name)}</div>
+            <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}">
+          </li>`;
+        }).join("")}
+      </ul>`;
+    }
+
+    function renderTaskPanes(logHtml, changesHtml, fileCount, screenshotHtml, lineStats, screenshotCount) {
+      const pane = taskPaneFromTab(state.taskPane);
       const count = fileCount ? `<span class="task-pane-count">(${fileCount})</span>` : "";
+      const lines = lineStats && (lineStats.added || lineStats.removed)
+        ? `<span class="task-pane-count"><span class="diff-add">+${lineStats.added}</span> <span class="diff-del">−${lineStats.removed}</span></span>`
+        : "";
+      const shots = screenshotCount
+        ? `<span class="task-pane-count">(${screenshotCount})</span>`
+        : "";
       return `
         <div class="task-pane-tabs" role="tablist" aria-label="Task views">
           <button type="button" class="task-pane-tab" role="tab" data-task-pane="progress" aria-selected="${pane === "progress" ? "true" : "false"}">Progress</button>
-          <button type="button" class="task-pane-tab" role="tab" data-task-pane="changes" aria-selected="${pane === "changes" ? "true" : "false"}">Changes${count ? " " + count : ""}</button>
+          <button type="button" class="task-pane-tab" role="tab" data-task-pane="changes" aria-selected="${pane === "changes" ? "true" : "false"}">Changes${count ? " " + count : ""}${lines ? " " + lines : ""}</button>
+          <button type="button" class="task-pane-tab" role="tab" data-task-pane="screenshots" aria-selected="${pane === "screenshots" ? "true" : "false"}">Screenshots${shots ? " " + shots : ""}</button>
         </div>
         <div class="task-pane" role="tabpanel" data-pane="progress"${pane === "progress" ? "" : " hidden"}>${logHtml}</div>
         <div class="task-pane" role="tabpanel" data-pane="changes"${pane === "changes" ? "" : " hidden"}>${changesHtml}</div>
+        <div class="task-pane" role="tabpanel" data-pane="screenshots"${pane === "screenshots" ? "" : " hidden"}>${screenshotHtml}</div>
       `;
     }
 
@@ -2088,10 +2176,21 @@
           ? `<pre id="log">${escapeHtml(parts.join("\n\n"))}</pre>`
           : `<pre id="log">${running ? "(waiting for progress…)" : "(no progress recorded)"}</pre>`;
       }
+      const screenshotHtml = screenshotHtmlFromEvents(events);
+      const groups = groupedFileChanges(events);
+      const lineStats = groups.reduce((totals, group) => {
+        const stats = diffStats(fileReviewDiff(group).diff);
+        totals.added += stats.added;
+        totals.removed += stats.removed;
+        return totals;
+      }, { added: 0, removed: 0 });
       return progressHtml + renderTaskPanes(
         logHtml,
         renderFileChanges(events),
-        groupedFileChanges(events).length,
+        groups.length,
+        screenshotHtml,
+        lineStats,
+        screenshotEvents(events).length,
       );
     }
 
@@ -2419,7 +2518,7 @@
     detailEl.addEventListener("click", (event) => {
       const paneTab = event.target.closest("[data-task-pane]");
       if (paneTab && detailEl.contains(paneTab)) {
-        const pane = paneTab.dataset.taskPane === "changes" ? "changes" : "progress";
+        const pane = taskPaneFromTab(paneTab.dataset.taskPane);
         if (state.taskPane === pane) return;
         state.taskPane = pane;
         render();

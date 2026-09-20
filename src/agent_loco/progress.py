@@ -18,6 +18,9 @@ ProgressToken = Token[list[dict[str, Any]] | None]
 _events: ContextVar[list[dict[str, Any]] | None] = ContextVar(
     "loco_progress_events", default=None
 )
+_originals: ContextVar[dict[str, str] | None] = ContextVar(
+    "loco_file_originals", default=None
+)
 
 
 def current_events() -> list[dict[str, Any]]:
@@ -28,12 +31,14 @@ def bind_progress(events: list[dict[str, Any]] | None = None) -> ProgressToken |
     """Attach an event list to this task/cycle. Reuses a list already bound."""
     if _events.get() is not None and events is None:
         return None
+    _originals.set({})
     return _events.set([] if events is None else events)
 
 
 def reset_progress(token: ProgressToken | None) -> None:
     if token is not None:
         _events.reset(token)
+        _originals.set(None)
 
 
 def record_event(kind: str, **fields: Any) -> dict[str, Any]:
@@ -72,9 +77,28 @@ def record_file_change(
     action = "created" if created else "updated"
     if before is None:
         diff = f"(could not read previous contents of {path})"
+        net_diff = diff
+        net_action = action
     else:
         diff = unified_file_diff(path, before, after, created=created)
-    event = record_event(kind="file", path=path, action=action, diff=diff)
+        originals = _originals.get()
+        if originals is None:
+            originals = {}
+            _originals.set(originals)
+        if path not in originals:
+            originals[path] = "" if created else before
+        original = originals[path]
+        net_created = original == ""
+        net_diff = unified_file_diff(path, original, after, created=net_created)
+        net_action = "created" if net_created else "updated"
+    event = record_event(
+        kind="file",
+        path=path,
+        action=action,
+        diff=diff,
+        net_diff=net_diff,
+        net_action=net_action,
+    )
     log.info("file %s %s", action, path)
     return event
 
