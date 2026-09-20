@@ -22,6 +22,7 @@ def test_run_log_paths_are_runtime_artifacts() -> None:
     assert is_runtime_artifact(".loco/runs")
     assert is_runtime_artifact(".loco/servers.json")
     assert is_runtime_artifact(".loco/workspaces.json")
+    assert is_runtime_artifact("history.json")
     assert not is_runtime_artifact("src/agent_loco/cli.py")
     assert not is_runtime_artifact("loco/runs/cycle.json")
 
@@ -62,6 +63,20 @@ def test_commit_skips_run_logs(tmp_path: Path) -> None:
     tracked = run_git(workspace, ["ls-files", ".loco/runs"])
     assert tracked.stdout.strip() == ""
     assert (runs / "cycle.json").exists()
+
+
+def test_commit_skips_history_json(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    (tmp_path / "history.json").write_text("[]\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    assert has_changes(workspace)
+    result = commit_changes(workspace, "update app")
+    assert result.ok
+    tracked = run_git(workspace, ["ls-files", "history.json"])
+    assert tracked.stdout.strip() == ""
+    assert (tmp_path / "history.json").exists()
 
 
 def test_run_logs_alone_are_not_changes(tmp_path: Path) -> None:

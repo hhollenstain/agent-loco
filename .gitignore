@@ -16,6 +16,7 @@ dist/
 build/
 
 # Local env and runtime
+history.json
 .loco/runs/
 .loco/servers.json
 .loco/workspaces.json

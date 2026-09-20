@@ -167,7 +167,7 @@ def is_runtime_artifact(path: Path | str) -> bool:
     posix = _posix_rel(path)
     if posix == RUN_LOG_PREFIX or posix.startswith(f"{RUN_LOG_PREFIX}/"):
         return True
-    return posix in {".loco/servers.json", ".loco/workspaces.json"}
+    return posix in {".loco/servers.json", ".loco/workspaces.json", "history.json"}
 
 
 def has_changes(workspace: Workspace) -> bool:
