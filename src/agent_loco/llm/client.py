@@ -93,11 +93,49 @@ def check_model_endpoint(base_url: str, api_key: str, timeout: float = 3.0) -> t
         payload = response.json()
     except ValueError:
         return True, f"reachable ({response.status_code})"
-    models = payload.get("data") if isinstance(payload, dict) else None
-    if isinstance(models, list):
-        names = [item.get("id", "?") for item in models[:8] if isinstance(item, dict)]
-        return True, "models: " + (", ".join(names) if names else "(none listed)")
+    names = model_ids_from_payload(payload)
+    if names:
+        shown = names[:8]
+        extra = "" if len(names) <= 8 else f" (+{len(names) - 8} more)"
+        return True, "models: " + ", ".join(shown) + extra
     return True, f"reachable ({response.status_code})"
+
+
+def list_remote_models(base_url: str, api_key: str, timeout: float = 3.0) -> list[str]:
+    """Return model ids from an OpenAI-compatible `/models` endpoint."""
+    url = base_url.rstrip("/") + "/models"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        response = httpx.get(url, headers=headers, timeout=timeout)
+    except httpx.HTTPError:
+        return []
+    if response.status_code >= 400:
+        return []
+    try:
+        payload = response.json()
+    except ValueError:
+        return []
+    return model_ids_from_payload(payload)
+
+
+def model_ids_from_payload(payload: object) -> list[str]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("id") or item.get("name")
+        if not name:
+            continue
+        text = str(name)
+        if text in seen:
+            continue
+        seen.add(text)
+        names.append(text)
+    return names
 
 
 def _parse_arguments(raw: str | None) -> dict[str, Any]:

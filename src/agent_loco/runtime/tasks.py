@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent_loco.config import Settings
-from agent_loco.llm.client import LLMClient, OpenAICompatClient
+from agent_loco.llm.client import LLMClient, OpenAICompatClient, list_remote_models
 from agent_loco.runtime.improve import CycleResult, run_cycle
 
 log = logging.getLogger("loco")
@@ -37,6 +37,7 @@ class Task:
     goal: str | None
     auto_commit: bool
     publish: bool | None
+    model_name: str
     status: str = "queued"
     created_at: str = field(default_factory=_utcnow)
     started_at: str | None = None
@@ -55,6 +56,7 @@ class Task:
             "id": self.id,
             "workspace": self.workspace,
             "goal": self.goal,
+            "model": self.model_name,
             "auto_commit": self.auto_commit,
             "publish": self.publish,
             "status": self.status,
@@ -102,6 +104,7 @@ class TaskManager:
         max_concurrent: int = 1,
         runner: Runner | None = None,
         llm_factory: Callable[[Settings], LLMClient] | None = None,
+        models_fn: Callable[[], list[str]] | None = None,
     ) -> None:
         if max_concurrent < 1:
             raise ValueError("max_concurrent must be >= 1")
@@ -109,6 +112,7 @@ class TaskManager:
         self.max_concurrent = max_concurrent
         self._runner = runner
         self._llm_factory = llm_factory or _default_llm
+        self._models_fn = models_fn
         self._lock = threading.Lock()
         self._tasks: dict[str, Task] = {}
         self._executor = ThreadPoolExecutor(
@@ -123,16 +127,19 @@ class TaskManager:
         *,
         auto_commit: bool | None = None,
         publish: bool | None = None,
+        model_name: str | None = None,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
             raise ValueError(f"workspace is not a directory: {workspace}")
+        selected_model = (model_name or "").strip() or self.settings.model_name
         task = Task(
             id=uuid4().hex,
             workspace=str(workspace),
             goal=(goal.strip() if goal and goal.strip() else None),
             auto_commit=self.settings.auto_commit if auto_commit is None else auto_commit,
             publish=publish,
+            model_name=selected_model,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -158,6 +165,19 @@ class TaskManager:
             "total": len(statuses),
         }
 
+    def list_models(self) -> list[str]:
+        if self._models_fn is not None:
+            names = list(self._models_fn())
+        else:
+            names = list_remote_models(
+                self.settings.model_base_url,
+                self.settings.model_api_key,
+            )
+        default = self.settings.model_name
+        if default and default not in names:
+            names.insert(0, default)
+        return names
+
     def shutdown(self, wait: bool = False, *, cancel_futures: bool = True) -> None:
         self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
 
@@ -167,6 +187,7 @@ class TaskManager:
         handler = _TaskLogHandler(task, threading.get_ident())
         loco_log = logging.getLogger("loco")
         loco_log.addHandler(handler)
+        log.info("task %s model=%s", task.id, task.model_name)
         try:
             result = self._execute(task)
             task.status = result.status
@@ -188,7 +209,12 @@ class TaskManager:
     def _execute(self, task: Task) -> CycleResult:
         if self._runner is not None:
             return self._runner(task)
-        settings = self.settings.model_copy(update={"auto_commit": task.auto_commit})
+        settings = self.settings.model_copy(
+            update={
+                "auto_commit": task.auto_commit,
+                "model_name": task.model_name,
+            }
+        )
         llm = self._llm_factory(settings)
         return run_cycle(
             Path(task.workspace),

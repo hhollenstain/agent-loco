@@ -25,3 +25,12 @@ def test_ui_help() -> None:
     assert result.exit_code == 0
     assert "--max-concurrent" in result.stdout
     assert "--port" in result.stdout
+    assert "--model" in result.stdout
+    assert "-m" in result.stdout
+
+
+def test_run_help_includes_model_flag() -> None:
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    assert "--model" in result.stdout
+    assert "-m" in result.stdout

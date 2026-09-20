@@ -143,7 +143,10 @@ def run(
         typer.Option("--workspace", "-w", exists=True, file_okay=False, resolve_path=True),
     ] = Path("."),
     goal: Annotated[str | None, typer.Option("--goal", "-g")] = None,
-    model_name: Annotated[str | None, typer.Option("--model")] = None,
+    model_name: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model on the connected LLM server."),
+    ] = None,
     publish: Annotated[bool | None, typer.Option("--publish/--no-publish")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
     web_ui: Annotated[
@@ -200,7 +203,10 @@ def watch_command(
         int | None,
         typer.Option("--interval", help="Seconds between cycles."),
     ] = None,
-    model_name: Annotated[str | None, typer.Option("--model")] = None,
+    model_name: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model on the connected LLM server."),
+    ] = None,
 ) -> None:
     """Keep improving a project on an interval."""
     settings = _settings(model_name=model_name, watch_interval_seconds=interval)
@@ -217,7 +223,10 @@ def ui_command(
         typer.Option("--workspace", "-w", exists=True, file_okay=False, resolve_path=True),
     ] = Path("."),
     goal: Annotated[str | None, typer.Option("--goal", "-g")] = None,
-    model_name: Annotated[str | None, typer.Option("--model")] = None,
+    model_name: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Model on the connected LLM server."),
+    ] = None,
     host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port")] = 8080,
     max_concurrent: Annotated[
