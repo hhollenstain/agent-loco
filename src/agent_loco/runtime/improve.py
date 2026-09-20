@@ -47,18 +47,17 @@ class CycleResult:
     reason: str | None
 
 
-
-def resolve_publish(
+def resolve_create_pr(
     settings: Settings,
     project: ProjectConfig,
-    cli_publish: bool | None = None,
+    cli_create_pr: bool | None = None,
 ) -> bool:
-    """`--no-publish` always wins. Otherwise CLI, env, or project config can enable it."""
-    if cli_publish is False:
+    """`--no-create-pr` always wins. Otherwise CLI, env, or project config can enable it."""
+    if cli_create_pr is False:
         return False
-    if cli_publish is True:
+    if cli_create_pr is True:
         return True
-    return bool(settings.publish or project.publish_enabled)
+    return bool(settings.create_pr or project.publish_enabled)
 
 
 def run_cycle(
@@ -68,20 +67,20 @@ def run_cycle(
     goal: str | None = None,
     *,
     mark_checkbox: bool = True,
-    cli_publish: bool | None = None,
+    cli_create_pr: bool | None = None,
 ) -> CycleResult:
     log_progress("Initializing workspace...")
     workspace = Workspace(workspace_path)
     ensure_run_gitignore(workspace.root)
     project = load_project(workspace.root)
-    allow_publish = resolve_publish(settings, project, cli_publish)
+    allow_create_pr = resolve_create_pr(settings, project, cli_create_pr)
     tools = build_tools(
         workspace,
         test_command=project.test_command,
         command_timeout_seconds=settings.command_timeout_seconds,
         git_author_name=settings.git_author_name,
         git_author_email=settings.git_author_email,
-        allow_publish=allow_publish,
+        allow_publish=allow_create_pr,
     )
 
     log_progress("Running before tests...")
@@ -110,7 +109,7 @@ def run_cycle(
     log_progress("Running coding agent...")
     agent_result = agent.run(
         selected_goal,
-        collect_context(workspace.root, project, allow_publish=allow_publish),
+        collect_context(workspace.root, project, allow_publish=allow_create_pr),
     )
 
     log_progress("Running after tests...")
@@ -122,7 +121,7 @@ def run_cycle(
                 "The test suite failed after the last changes. "
                 "Fix the failures and nothing else.\n\n"
                 + tests_after.output,
-                collect_context(workspace.root, project, allow_publish=allow_publish),
+                collect_context(workspace.root, project, allow_publish=allow_create_pr),
             )
             tests_after = _maybe_test(workspace, project, settings)
             if tests_after.ok:
@@ -191,7 +190,7 @@ def run_cycle(
         _write_run_log(workspace.root, result)
         return result
 
-    if committed and allow_publish:
+    if committed and allow_create_pr:
         log_progress("Pushing changes...")
         pushed = push_changes(workspace, project.publish_remote, project.publish_branch)
         published = pushed.ok

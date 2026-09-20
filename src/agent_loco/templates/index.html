@@ -70,7 +70,7 @@
       font: inherit;
     }
     textarea { min-height: 7.5rem; resize: vertical; }
-    .host-row { display: flex; gap: 0.45rem; align-items: stretch; }
+    .host-row { display: flex; gap: 0.45rem; align-items: stretch; margin-top: 0.4rem; }
     .host-row input { flex: 1; min-width: 0; }
     .hint { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.8rem; }
     .checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
@@ -157,12 +157,17 @@
       <label for="goal">Goal</label>
       <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
 
-      <label for="base-url">LLM server</label>
+      <label for="server-history">LLM server</label>
+      <select id="server-history" aria-label="Remembered LLM servers">
+        {% for url in known_servers %}
+        <option value="{{ url }}" {% if url == default_base_url %}selected{% endif %}>{{ url }}</option>
+        {% endfor %}
+      </select>
       <div class="host-row">
         <input id="base-url" name="base_url" type="text" spellcheck="false" required value="{{ default_base_url }}" placeholder="http://127.0.0.1:11434/v1">
         <button type="button" class="secondary" id="load-models">Load models</button>
       </div>
-      <p class="hint">Host:port or an OpenAI-compatible /v1 URL. Models are listed from this endpoint.</p>
+      <p class="hint">Pick a remembered host or type a new one (host:port or /v1 URL). Used servers are saved for the next restart.</p>
 
       <label for="model">Model</label>
       <select id="model" name="model">
@@ -174,7 +179,7 @@
           <input id="auto-commit" type="checkbox" {% if default_auto_commit %}checked{% endif %}> commit if tests pass
         </label>
         <label style="text-transform:none;letter-spacing:0;margin:0">
-          <input id="publish" type="checkbox" {% if default_publish %}checked{% endif %}> publish
+          <input id="create-pr" type="checkbox" {% if default_create_pr %}checked{% endif %}> create pull request
         </label>
       </div>
       <button type="submit" id="submit">Queue task</button>
@@ -302,10 +307,10 @@
           body: JSON.stringify({
             workspace: document.getElementById("workspace").value,
             goal: document.getElementById("goal").value,
-            model: document.getElementById("model").value,
             base_url: document.getElementById("base-url").value,
+            model: document.getElementById("model").value,
             auto_commit: document.getElementById("auto-commit").checked,
-            publish: document.getElementById("publish").checked,
+            create_pr: document.getElementById("create-pr").checked,
           }),
         });
         const body = await res.json();
@@ -324,15 +329,18 @@
       const baseUrlEl = document.getElementById("base-url");
       const loadBtn = document.getElementById("load-models");
       const previous = select.value;
-      const params = new URLSearchParams();
       const baseUrl = baseUrlEl.value.trim();
-      if (baseUrl) params.set("base_url", baseUrl);
       try {
         loadBtn.disabled = true;
-        const res = await fetch("/api/models?" + params.toString());
+        const res = await fetch("/api/models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base_url: baseUrl || undefined }),
+        });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to list models");
         if (body.base_url) baseUrlEl.value = body.base_url;
+        if (Array.isArray(body.servers)) renderServers(body.servers, body.base_url);
         const models = body.models || [];
         const selected = previous || body.default || "";
         select.replaceChildren();
@@ -349,8 +357,6 @@
           option.textContent = selected;
           option.selected = true;
           select.append(option);
-        } else if (select.options.length && select.selectedIndex < 0) {
-          select.options[0].selected = true;
         }
         if (!models.length && announceEmpty) {
           errorEl.textContent = "No models returned from that LLM server.";
@@ -364,6 +370,33 @@
       }
     }
 
+    function renderServers(servers, selected) {
+      const historyEl = document.getElementById("server-history");
+      const current = selected || document.getElementById("base-url").value;
+      historyEl.replaceChildren();
+      const seen = new Set();
+      for (const url of servers || []) {
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        const option = document.createElement("option");
+        option.value = url;
+        option.textContent = url;
+        if (url === current) option.selected = true;
+        historyEl.append(option);
+      }
+      if (current && !seen.has(current)) {
+        const option = document.createElement("option");
+        option.value = current;
+        option.textContent = current;
+        option.selected = true;
+        historyEl.prepend(option);
+      }
+    }
+
+    document.getElementById("server-history").addEventListener("change", () => {
+      document.getElementById("base-url").value = document.getElementById("server-history").value;
+      loadModels(true);
+    });
     document.getElementById("load-models").addEventListener("click", () => loadModels(true));
     document.getElementById("base-url").addEventListener("change", () => loadModels(true));
 

@@ -6,7 +6,7 @@ from tests.support import init_git_repo
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.runtime.improve import resolve_publish, run_cycle
+from agent_loco.runtime.improve import resolve_create_pr, run_cycle
 from agent_loco.runtime.project import load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.git import run_git
@@ -74,7 +74,7 @@ def test_cycle_skips_commit_when_tests_still_fail(tmp_path: Path, settings: Sett
     assert result.committed is False
 
 
-def test_no_publish_flag_wins_over_project_config(tmp_path: Path, settings: Settings) -> None:
+def test_no_create_pr_flag_wins_over_project_config(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
     config = tmp_path / ".loco" / "config.yaml"
     config.write_text(
@@ -86,9 +86,9 @@ def test_no_publish_flag_wins_over_project_config(tmp_path: Path, settings: Sett
     )
     project = load_project(tmp_path)
     assert project.publish_enabled is True
-    assert resolve_publish(settings, project, cli_publish=False) is False
-    assert resolve_publish(settings, project, cli_publish=None) is True
-    assert resolve_publish(settings, project, cli_publish=True) is True
+    assert resolve_create_pr(settings, project, cli_create_pr=False) is False
+    assert resolve_create_pr(settings, project, cli_create_pr=None) is True
+    assert resolve_create_pr(settings, project, cli_create_pr=True) is True
 
 
 def _green_project(root: Path) -> None:
@@ -127,7 +127,7 @@ def test_cycle_does_not_commit_run_logs_or_plans(tmp_path: Path, settings: Setti
             AssistantTurn(text="Still only describing the work."),
         ]
     )
-    result = run_cycle(tmp_path, settings, llm, goal="Improve the UI", cli_publish=True)
+    result = run_cycle(tmp_path, settings, llm, goal="Improve the UI", cli_create_pr=True)
     assert result.status == "skipped"
     assert result.committed is False
     assert result.published is False

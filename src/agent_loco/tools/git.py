@@ -160,9 +160,11 @@ def _git_log(workspace: Workspace, limit: int) -> ToolResult:
 
 
 def is_runtime_artifact(path: Path | str) -> bool:
-    """Cycle logs are local telemetry, not project work."""
+    """Cycle logs and local UI state are telemetry, not project work."""
     posix = _posix_rel(path)
-    return posix == RUN_LOG_PREFIX or posix.startswith(f"{RUN_LOG_PREFIX}/")
+    if posix == RUN_LOG_PREFIX or posix.startswith(f"{RUN_LOG_PREFIX}/"):
+        return True
+    return posix == ".loco/servers.json"
 
 
 def has_changes(workspace: Workspace) -> bool:

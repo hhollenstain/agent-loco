@@ -55,3 +55,4 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
     gitignore = tmp_path / ".loco" / ".gitignore"
     assert gitignore in created
     assert "runs/" in gitignore.read_text(encoding="utf-8")
+    assert "servers.json" in gitignore.read_text(encoding="utf-8")

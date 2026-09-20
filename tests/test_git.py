@@ -11,6 +11,7 @@ from agent_loco.tools.git import commit_changes, has_changes, is_runtime_artifac
 def test_run_log_paths_are_runtime_artifacts() -> None:
     assert is_runtime_artifact(".loco/runs/cycle.json")
     assert is_runtime_artifact(".loco/runs")
+    assert is_runtime_artifact(".loco/servers.json")
     assert not is_runtime_artifact("src/agent_loco/cli.py")
     assert not is_runtime_artifact("loco/runs/cycle.json")
 

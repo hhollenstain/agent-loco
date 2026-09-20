@@ -120,7 +120,7 @@ def _serve_ui(
     port: int,
     max_concurrent: int,
     default_goal: str | None = None,
-    default_publish: bool | None = None,
+    default_create_pr: bool | None = None,
 ) -> None:
     from agent_loco.web_ui import serve
 
@@ -137,7 +137,7 @@ def _serve_ui(
         port=port,
         max_concurrent=max_concurrent,
         default_goal=default_goal,
-        default_publish=default_publish,
+        default_create_pr=default_create_pr,
     )
 
 
@@ -159,7 +159,7 @@ def run(
             help="OpenAI-compatible LLM server (host:port or /v1 URL).",
         ),
     ] = None,
-    publish: Annotated[bool | None, typer.Option("--publish/--no-publish")] = None,
+    create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
     web_ui: Annotated[
         bool,
@@ -170,7 +170,7 @@ def run(
     settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
-        publish=publish,
+        create_pr=create_pr,
         auto_commit=auto_commit,
     )
     if web_ui:
@@ -181,7 +181,7 @@ def run(
             port=8080,
             max_concurrent=1,
             default_goal=goal,
-            default_publish=publish,
+            default_create_pr=create_pr,
         )
         return
     result = run_cycle(
@@ -189,7 +189,7 @@ def run(
         settings,
         _llm(settings),
         goal,
-        cli_publish=publish,
+        cli_create_pr=create_pr,
     )
     console.print(
         f"[bold]{result.status}[/bold] committed={result.committed} "
@@ -268,14 +268,14 @@ def ui_command(
             help="How many cycles may run at once. More than 1 is hard on a local machine.",
         ),
     ] = 1,
-    publish: Annotated[bool | None, typer.Option("--publish/--no-publish")] = None,
+    create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
 ) -> None:
     """Start a local web UI to queue and run tasks."""
     settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
-        publish=publish,
+        create_pr=create_pr,
         auto_commit=auto_commit,
     )
     try:
@@ -286,7 +286,7 @@ def ui_command(
             port=port,
             max_concurrent=max_concurrent,
             default_goal=goal,
-            default_publish=publish,
+            default_create_pr=create_pr,
         )
     except KeyboardInterrupt:
         console.print("stopped")

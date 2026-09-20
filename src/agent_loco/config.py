@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     max_iterations: int = Field(default=40, ge=1, le=200)
     auto_commit: bool = True
     require_tests: bool = True
-    publish: bool = False
+    create_pr: bool = False
     watch_interval_seconds: int = Field(default=300, ge=10)
     command_timeout_seconds: int = Field(default=180, ge=5)
     log_level: str = "INFO"

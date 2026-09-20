@@ -36,7 +36,7 @@ class Task:
     workspace: str
     goal: str | None
     auto_commit: bool
-    publish: bool | None
+    create_pr: bool | None
     model_name: str
     model_base_url: str
     model_api_key: str
@@ -61,7 +61,7 @@ class Task:
             "model": self.model_name,
             "base_url": self.model_base_url,
             "auto_commit": self.auto_commit,
-            "publish": self.publish,
+            "create_pr": self.create_pr,
             "status": self.status,
             "created_at": self.created_at,
             "started_at": self.started_at,
@@ -129,7 +129,7 @@ class TaskManager:
         goal: str | None,
         *,
         auto_commit: bool | None = None,
-        publish: bool | None = None,
+        create_pr: bool | None = None,
         model_name: str | None = None,
         model_base_url: str | None = None,
         model_api_key: str | None = None,
@@ -149,7 +149,7 @@ class TaskManager:
             workspace=str(workspace),
             goal=(goal.strip() if goal and goal.strip() else None),
             auto_commit=self.settings.auto_commit if auto_commit is None else auto_commit,
-            publish=publish,
+            create_pr=create_pr,
             model_name=selected_model,
             model_base_url=selected_url,
             model_api_key=selected_key,
@@ -244,5 +244,5 @@ class TaskManager:
             settings,
             llm,
             task.goal,
-            cli_publish=task.publish,
+            cli_create_pr=task.create_pr,
         )

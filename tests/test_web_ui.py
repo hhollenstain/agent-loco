@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from agent_loco.config import Settings
 from agent_loco.llm.client import model_ids_from_payload, normalize_model_base_url
 from agent_loco.runtime.improve import CycleResult
+from agent_loco.runtime.servers import remember_server
 from agent_loco.runtime.tasks import Task, TaskManager
 from agent_loco.web_ui import create_app
 
@@ -152,6 +154,7 @@ def test_web_ui_lists_models_and_queues_with_selection(
         assert home.status_code == 200
         assert b'id="model"' in home.content
         assert b'id="base-url"' in home.content
+        assert b'id="server-history"' in home.content
         assert b"Load models" in home.content
 
         models = client.get("/api/models")
@@ -203,6 +206,18 @@ def test_web_ui_lists_models_from_requested_host(
         assert body["base_url"] == "http://10.0.0.8:8000/v1"
         assert body["models"] == ["remote-coder"]
         assert settings.model_name not in body["models"]
+
+        posted = client.post("/api/models", json={"base_url": "10.0.0.8:8000"})
+        assert posted.status_code == 200
+        assert posted.json()["models"] == ["remote-coder"]
+        assert posted.json()["base_url"] == "http://10.0.0.8:8000/v1"
+        assert posted.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+
+        listed = client.get("/api/servers")
+        assert listed.status_code == 200
+        assert listed.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+        saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))
+        assert saved["servers"][0] == "http://10.0.0.8:8000/v1"
 
         created = client.post(
             "/api/tasks",
@@ -258,6 +273,19 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
         assert body[0]["goal"] == "Past goal"
     finally:
         manager.shutdown(wait=False)
+
+
+def test_remember_server_dedupes_and_keeps_newest_first(tmp_path: Path) -> None:
+    first = remember_server(tmp_path, "10.0.0.8:8000", default="http://127.0.0.1:11434/v1")
+    assert first[0] == "http://10.0.0.8:8000/v1"
+    assert "http://127.0.0.1:11434/v1" in first
+    again = remember_server(tmp_path, "http://10.0.0.8:8000/v1")
+    assert again[0] == "http://10.0.0.8:8000/v1"
+    assert again.count("http://10.0.0.8:8000/v1") == 1
+    newer = remember_server(tmp_path, "http://10.0.0.9:11434/v1")
+    assert newer[:2] == ["http://10.0.0.9:11434/v1", "http://10.0.0.8:8000/v1"]
+    gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
+    assert "servers.json" in gitignore
 
 
 def test_model_ids_from_openai_payload() -> None:
