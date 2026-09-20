@@ -446,14 +446,17 @@
         const res = await fetch("/api/models", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base_url: baseUrl || undefined }),
+          body: JSON.stringify({
+            base_url: baseUrl || undefined,
+            model: previous || undefined,
+          }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to list models");
         if (body.base_url) baseUrlEl.value = body.base_url;
         if (Array.isArray(body.servers)) renderServers(body.servers, body.base_url);
         const models = body.models || [];
-        const selected = previous || body.default || "";
+        const selected = body.last_model || previous || body.default || "";
         select.replaceChildren();
         for (const name of models) {
           const option = document.createElement("option");
@@ -510,6 +513,7 @@
     });
     document.getElementById("load-models").addEventListener("click", () => loadModels(true));
     document.getElementById("base-url").addEventListener("change", () => loadModels(true));
+    document.getElementById("model").addEventListener("change", () => loadModels(false));
 
     refresh();
     loadModels(false);

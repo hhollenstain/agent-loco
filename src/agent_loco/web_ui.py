@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
-from agent_loco.runtime.servers import list_known_servers, remember_server
+from agent_loco.runtime.servers import list_known_servers, load_selection, remember_server
 from agent_loco.runtime.tasks import TaskManager
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -32,6 +32,7 @@ class TaskCreate(BaseModel):
 class ModelsQuery(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
+    model: str | None = None
 
 
 class HistoryQuery(BaseModel):
@@ -63,34 +64,46 @@ class UiState:
             default=self.manager.settings.model_base_url,
         )
 
-    def remember_server(self, url: str) -> list[str]:
+    def selection(self) -> dict[str, str | list[str] | None]:
+        return load_selection(
+            Path(self.default_workspace),
+            default_url=self.manager.settings.model_base_url,
+            default_model=self.manager.settings.model_name,
+        )
+
+    def remember_server(self, url: str, model: str | None = None) -> list[str]:
         return remember_server(
             Path(self.default_workspace),
             url,
+            model=model,
             default=self.manager.settings.model_base_url,
         )
 
     def template_vars(self) -> dict[str, Any]:
+        selected = self.selection()
         return {
             "default_workspace": self.default_workspace,
             "default_goal": self.default_goal,
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
-            "default_model": self.manager.settings.model_name,
-            "default_base_url": self.manager.settings.model_base_url,
-            "known_servers": self.known_servers(),
+            "default_model": selected["last_model"] or self.manager.settings.model_name,
+            "default_base_url": selected["last_base_url"]
+            or self.manager.settings.model_base_url,
+            "known_servers": selected["servers"],
             "max_concurrent": self.manager.max_concurrent,
         }
 
     def meta(self) -> dict[str, Any]:
+        selected = self.selection()
         return {
             "default_workspace": self.default_workspace,
             "default_goal": self.default_goal,
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
-            "default_model": self.manager.settings.model_name,
-            "default_base_url": self.manager.settings.model_base_url,
-            "known_servers": self.known_servers(),
+            "default_model": selected["last_model"] or self.manager.settings.model_name,
+            "default_base_url": selected["last_base_url"]
+            or self.manager.settings.model_base_url,
+            "known_servers": selected["servers"],
             "max_concurrent": self.manager.max_concurrent,
             **self.manager.counts(),
         }
@@ -203,6 +216,7 @@ def create_app(
         api_key: str | None,
         *,
         remember: bool = False,
+        model: str | None = None,
     ) -> Any:
         try:
             resolved = normalize_model_base_url(
@@ -211,9 +225,14 @@ def create_app(
             names = ui.manager.list_models(base_url=resolved, api_key=api_key)
         except ValueError as exc:
             return JSONResponse({"error": str(exc), "models": []}, status_code=400)
-        servers = ui.remember_server(resolved) if remember else ui.known_servers()
+        if remember:
+            servers = ui.remember_server(resolved, model=model)
+        else:
+            servers = ui.known_servers()
+        selected = ui.selection()
         return {
             "default": ui.manager.settings.model_name,
+            "last_model": selected["last_model"],
             "base_url": resolved,
             "models": names,
             "servers": servers,
@@ -238,14 +257,18 @@ def create_app(
             body.base_url,
             body.api_key,
             remember=True,
+            model=body.model,
         )
 
     @app.get("/api/servers")
     def servers(request: Request) -> dict[str, Any]:
         ui: UiState = request.app.state.ui
+        selected = ui.selection()
         return {
             "default": ui.manager.settings.model_base_url,
-            "servers": ui.known_servers(),
+            "servers": selected["servers"],
+            "last_base_url": selected["last_base_url"],
+            "last_model": selected["last_model"],
         }
 
     @app.get("/api/tasks")
@@ -279,7 +302,7 @@ def create_app(
                 model_base_url=body.base_url,
                 model_api_key=body.api_key,
             )
-            ui.remember_server(task.model_base_url)
+            ui.remember_server(task.model_base_url, model=task.model_name)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(task.to_dict(), status_code=201)

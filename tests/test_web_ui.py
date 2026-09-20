@@ -208,17 +208,28 @@ def test_web_ui_lists_models_from_requested_host(
         assert body["models"] == ["remote-coder"]
         assert settings.model_name not in body["models"]
 
-        posted = client.post("/api/models", json={"base_url": "10.0.0.8:8000"})
+        posted = client.post(
+            "/api/models",
+            json={"base_url": "10.0.0.8:8000", "model": "remote-coder"},
+        )
         assert posted.status_code == 200
         assert posted.json()["models"] == ["remote-coder"]
         assert posted.json()["base_url"] == "http://10.0.0.8:8000/v1"
         assert posted.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert posted.json()["last_model"] == "remote-coder"
 
         listed = client.get("/api/servers")
         assert listed.status_code == 200
         assert listed.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert listed.json()["last_base_url"] == "http://10.0.0.8:8000/v1"
+        assert listed.json()["last_model"] == "remote-coder"
         saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))
         assert saved["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert saved["last_model"] == "remote-coder"
+
+        home = client.get("/")
+        assert b"http://10.0.0.8:8000/v1" in home.content
+        assert b"remote-coder" in home.content
 
         created = client.post(
             "/api/tasks",
@@ -292,6 +303,11 @@ def test_remember_server_dedupes_and_keeps_newest_first(tmp_path: Path) -> None:
     assert newer[:2] == ["http://10.0.0.9:11434/v1", "http://10.0.0.8:8000/v1"]
     gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
     assert "servers.json" in gitignore
+    remember_server(tmp_path, "http://10.0.0.8:8000/v1", model="remote-coder")
+    remember_server(tmp_path, "http://10.0.0.8:8000/v1")
+    saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))
+    assert saved["last_base_url"] == "http://10.0.0.8:8000/v1"
+    assert saved["last_model"] == "remote-coder"
 
 
 def test_model_ids_from_openai_payload() -> None:
