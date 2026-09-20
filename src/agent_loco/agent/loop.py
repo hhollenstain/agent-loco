@@ -18,17 +18,18 @@ MAX_PLAN_NUDGES = 3
 MAX_UNFINISHED_NUDGES = 4
 MAX_INSPECT_ROUNDS = 3
 CONTINUE_NUDGE = (
-    "You have not changed any files yet. Inspection is over. "
-    "Call write_file now and implement the goal in the workspace. "
-    "Do not summarize, do not only run tests, and do not stop until a file is written."
+    "You have not changed any files that implement the goal. Inspection is over. "
+    "Call write_file and implement this exact goal — not a placeholder, status note, "
+    "verification test, or a different task you noticed in the repo."
 )
 UNFINISHED_NUDGE = (
-    "That reply is not a finish. You still have work left. "
+    "That reply is not a finish. You still have work left on the stated goal. "
     "Call a tool now and apply the next edit. Do not narrate the change; write_file it."
 )
 INSPECT_NUDGE = (
     "You have been inspecting the repo without changing files. "
-    "Stop reading. Call write_file now and implement the goal."
+    "Stop reading. Call write_file and implement this exact goal. "
+    "Do not write placeholder, status, or verification files."
 )
 _UNFINISHED_RE = re.compile(
     r"(?is)("
@@ -110,14 +111,14 @@ class CodingAgent:
                     if not mutated and inspect_rounds >= MAX_INSPECT_ROUNDS:
                         inspect_rounds = 0
                         log.info("nudging agent to stop inspecting and write files")
-                        messages.append({"role": "user", "content": INSPECT_NUDGE})
+                        messages.append({"role": "user", "content": _nudge(INSPECT_NUDGE, goal)})
                 continue
 
             if not mutated and plan_nudges < MAX_PLAN_NUDGES:
                 plan_nudges += 1
                 log.info("nudging agent to keep working after a plan-only turn")
                 messages.append({"role": "assistant", "content": turn.text or ""})
-                messages.append({"role": "user", "content": CONTINUE_NUDGE})
+                messages.append({"role": "user", "content": _nudge(CONTINUE_NUDGE, goal)})
                 continue
 
             if looks_unfinished(turn.text) and unfinished_nudges < MAX_UNFINISHED_NUDGES:
@@ -125,7 +126,7 @@ class CodingAgent:
                 log.info("nudging agent after an unfinished reply")
                 record_event(kind="step", message="Agent tried to stop mid-work; continuing.")
                 messages.append({"role": "assistant", "content": turn.text or ""})
-                messages.append({"role": "user", "content": UNFINISHED_NUDGE})
+                messages.append({"role": "user", "content": _nudge(UNFINISHED_NUDGE, goal)})
                 continue
 
             summary = (turn.text or "").strip() or "Agent finished without a summary."
@@ -143,6 +144,13 @@ class CodingAgent:
             tool_calls=tool_calls,
             stopped_reason="max_iterations",
         )
+
+
+def _nudge(template: str, goal: str) -> str:
+    return (
+        f"{template}\n\nGoal:\n{goal.strip()}\n\n"
+        "Only edit files that implement that goal."
+    )
 
 
 def _assistant_tool_message(turn: AssistantTurn) -> dict:

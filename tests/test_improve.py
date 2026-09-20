@@ -195,6 +195,25 @@ def test_cycle_retries_when_agent_inspects_but_goal_is_unmet(
     assert result.committed is True
 
 
+def test_retry_prompts_forbid_placeholder_work() -> None:
+    from agent_loco.runtime.improve import _empty_diff_retry_prompt, _goal_retry_prompt
+
+    empty = _empty_diff_retry_prompt(
+        "Add a task progress bar",
+        "no progress bar was added",
+    )
+    assert "Add a task progress bar" in empty
+    assert "placeholder" in empty.lower()
+    retry = _goal_retry_prompt(
+        "Add a task progress bar",
+        "only a verification test was added",
+        "diff --git a/tests/test_write_verification.py",
+    )
+    assert "Add a task progress bar" in retry
+    assert "verification" in retry.lower()
+    assert "unrelated" in retry.lower()
+
+
 def test_cycle_create_pr_uses_feature_branch_not_main(
     tmp_path: Path, settings: Settings, monkeypatch
 ) -> None:

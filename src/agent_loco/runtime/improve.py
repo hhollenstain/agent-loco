@@ -502,9 +502,10 @@ def _handle_empty_diff(
 
 def _empty_diff_retry_prompt(goal: str, reason: str) -> str:
     return (
-        "You inspected the repo but did not change any files. "
+        "You inspected the repo but did not change any files that implement the goal. "
         "The goal is not already done. Do not summarize. Do not only read more files "
-        "or run tests. Call write_file now and implement the goal.\n\n"
+        "or run tests. Do not write a placeholder, status note, or verification test. "
+        "Call write_file and implement this exact goal.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}"
     )
@@ -599,7 +600,10 @@ def _ensure_goal_met(
 
 def _goal_retry_prompt(goal: str, reason: str, diff: str) -> str:
     return (
-        "The stated goal is not done. Do not summarize. Finish the goal.\n\n"
+        "The stated goal is not done. The current diff does not fulfill it. "
+        "Do not summarize. Do not switch to a different task. "
+        "Do not write placeholder, status, or verification files. "
+        "If the diff is unrelated, replace or remove it and implement this exact goal.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}\n\n"
         f"Current diff:\n{diff}"

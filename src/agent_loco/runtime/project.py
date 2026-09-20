@@ -51,7 +51,7 @@ def load_project(root: Path) -> ProjectConfig:
         publish_branch=publish.get("branch"),
         create_pr=bool(publish.get("create_pr", False)),
         goals_file=str(raw.get("goals_file") or "goals.md"),
-        max_repair_attempts=int(raw.get("max_repair_attempts") or 1),
+        max_repair_attempts=int(raw.get("max_repair_attempts") or 2),
     )
 
 
@@ -119,7 +119,7 @@ def write_default_project_files(root: Path) -> list[Path]:
             (
                 f"name: {root.name}\n"
                 f"test_command: {test_command}\n"
-                "max_repair_attempts: 1\n"
+                "max_repair_attempts: 2\n"
                 "publish:\n"
                 "  enabled: false\n"
                 "  remote: origin\n"

@@ -146,6 +146,8 @@ def test_agent_nudges_after_plan_only_turn(tmp_path: Path) -> None:
         if message.get("role") == "user" and isinstance(message.get("content"), str)
     ]
     assert any("have not changed any files" in content for content in contents)
+    assert any("Add a progress UI" in content for content in contents)
+    assert any("placeholder" in content.lower() for content in contents)
 
 
 def test_agent_nudges_through_multiple_plan_turns(tmp_path: Path) -> None:

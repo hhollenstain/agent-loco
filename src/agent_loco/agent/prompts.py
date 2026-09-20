@@ -33,6 +33,9 @@ Rules:
   does not change the workspace.
 - Do not stop after only reading files or running tests. If the goal is not
   already done in the tree, write the implementation. Inspection is not a finish.
+- Never write placeholder files, IMPLEMENTATION_STATUS notes, write-verification
+  tests, or docs that describe a different task. Only change files that implement
+  the stated goal.
 - Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """
@@ -48,7 +51,8 @@ def user_prompt(goal: str, context: str) -> str:
     parts.extend(
         [
             "",
-            "Work until the goal is done or you are blocked. Test your changes. "
+            "Work until THIS goal is done or you are blocked. Do not switch to a "
+            "different task you notice in the repo. Test your changes. "
             "Do not commit on main/master; the cycle commits after review. "
             "A later review will reject a PR if the diff does not fulfill this goal.",
         ]
