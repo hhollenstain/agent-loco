@@ -84,7 +84,11 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert home.status_code == 200
         assert home.content.strip().startswith(b"<!DOCTYPE html>")
         assert b"</html>" in home.content
-        assert b"loco task runner" in home.content
+        assert b"loco" in home.content
+        assert b"<title>" in home.content
+        assert b"<header>" not in home.content
+        assert b'id="toggle-sidebar"' in home.content
+        assert b'id="sidebar"' in home.content
         assert b"\n  10|" not in home.content
 
         created = client.post(

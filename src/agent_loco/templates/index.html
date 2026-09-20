@@ -25,33 +25,61 @@
       color: var(--ink);
       font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif;
     }
-    header {
-      padding: 1.25rem 1.5rem 0.75rem;
-      border-bottom: 1px solid var(--line);
+    main {
+      display: grid;
+      grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+      min-height: 100vh;
     }
-    header h1 {
+    main.collapsed {
+      grid-template-columns: 2.75rem minmax(0, 1fr);
+    }
+    .sidebar, .tasks {
+      min-width: 0;
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 0.85rem 0;
+    }
+    .sidebar-title {
       margin: 0;
-      font-size: 1.15rem;
+      font-size: 0.95rem;
       font-weight: 650;
       letter-spacing: 0.02em;
     }
-    header p {
-      margin: 0.35rem 0 0;
-      color: var(--muted);
-      max-width: 52rem;
+    .sidebar-toggle {
+      flex: 0 0 auto;
+      padding: 0.4rem 0.55rem;
+      min-width: 2.1rem;
     }
-    main {
-      display: grid;
-      grid-template-columns: minmax(18rem, 22rem) 1fr;
-      min-height: calc(100vh - 5.5rem);
+    main.collapsed .sidebar-title,
+    main.collapsed #task-form {
+      display: none;
+    }
+    main.collapsed .sidebar-bar {
+      justify-content: center;
+      padding: 0.75rem 0.35rem;
     }
     @media (max-width: 840px) {
-      main { grid-template-columns: 1fr; }
+      main, main.collapsed { grid-template-columns: 1fr; }
+      main.collapsed .sidebar { min-height: 0; }
     }
     form, .tasks {
       padding: 1.25rem 1.5rem;
     }
-    form { border-right: 1px solid var(--line); }
+    #task-form {
+      overflow-y: auto;
+      flex: 1;
+    }
     label {
       display: block;
       margin: 0.85rem 0 0.3rem;
@@ -137,13 +165,13 @@
     }
     .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
     .history { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
-    .search-row {
+    .history .search-row {
       display: flex;
       gap: 0.6rem;
       margin: 0.65rem 0 0.5rem;
       align-items: center;
     }
-    .search-row input[type="text"] {
+    .history .search-row input[type="text"] {
       flex: 1;
       max-width: 30rem;
     }
@@ -171,17 +199,13 @@
   </style>
 </head>
 <body>
-  <header>
-    <h1>loco task runner</h1>
-    <p>
-      Queue coding-agent cycles against a local workspace. By default only
-      <strong id="max-label">{{ max_concurrent }}</strong> run at a time;
-      extra tasks wait. Parallel runs on this machine will fight over CPU, RAM,
-      and the model server.
-    </p>
-  </header>
-  <main>
-    <form id="task-form">
+  <main id="main">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-bar">
+        <button type="button" class="secondary sidebar-toggle" id="toggle-sidebar" aria-controls="task-form" aria-expanded="true" title="Collapse sidebar">‹</button>
+        <h1 class="sidebar-title">loco</h1>
+      </div>
+      <form id="task-form">
       <label for="workspace">Workspace</label>
       <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
 
@@ -216,10 +240,13 @@
       <button type="submit" id="submit">Queue task</button>
       <p class="error" id="form-error"></p>
       <p class="note">
-        A running cycle calls the model, edits files, and runs the project's
-        tests. Start another only if you accept the slowdown.
+        By default only <strong id="max-label">{{ max_concurrent }}</strong>
+        run at a time; extra tasks wait. A running cycle calls the model, edits
+        files, and runs tests. Start another only if you accept the slowdown
+        on CPU, RAM, and the model server.
       </p>
     </form>
+    </aside>
     <section class="tasks">
       <div class="row">
         <label style="margin:0">Tasks</label>
@@ -243,7 +270,7 @@
     </section>
   </main>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "" };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "", sidebarCollapsed: false };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -253,6 +280,8 @@
     const submitEl = document.getElementById("submit");
     const searchInput = document.getElementById("history-search");
     const paginationEl = document.getElementById("pagination");
+    const mainEl = document.getElementById("main");
+    const toggleBtn = document.getElementById("toggle-sidebar");
 
     function goalText(item) {
       if (!item.goal) return "(from project goals / failing tests)";
@@ -406,6 +435,26 @@
       searchInput.value = "";
       refresh();
     });
+
+    toggleBtn.addEventListener("click", () => applySidebar(!state.sidebarCollapsed));
+
+    function applySidebar(collapsed) {
+      state.sidebarCollapsed = collapsed;
+      mainEl.classList.toggle("collapsed", collapsed);
+      toggleBtn.textContent = collapsed ? "›" : "‹";
+      toggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      toggleBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+      try {
+        localStorage.setItem("loco-sidebar-collapsed", collapsed ? "1" : "0");
+      } catch (_err) {
+        /* ignore quota / private mode */
+      }
+    }
+    try {
+      applySidebar(localStorage.getItem("loco-sidebar-collapsed") === "1");
+    } catch (_err) {
+      applySidebar(false);
+    }
 
     document.getElementById("task-form").addEventListener("submit", async (event) => {
       event.preventDefault();
