@@ -49,14 +49,19 @@ def test_remember_and_restore_workspaces(tmp_path: Path) -> None:
     assert saved[0]["path"] == str(first.resolve())
     saved = remember_workspace(tmp_path, second)
     assert [item["path"] for item in saved[:2]] == [
-        str(second.resolve()),
         str(first.resolve()),
+        str(second.resolve()),
+    ]
+    again = remember_workspace(tmp_path, first)
+    assert [item["path"] for item in again[:2]] == [
+        str(first.resolve()),
+        str(second.resolve()),
     ]
     payload = json.loads((tmp_path / ".loco" / "workspaces.json").read_text(encoding="utf-8"))
-    assert payload["last"] == str(second.resolve())
+    assert payload["last"] == str(first.resolve())
     gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
     assert "workspaces.json" in gitignore
-    assert last_workspace(tmp_path) == str(second.resolve())
+    assert last_workspace(tmp_path) == str(first.resolve())
     gone = tmp_path / "gone"
     (tmp_path / ".loco" / "workspaces.json").write_text(
         json.dumps({"last": str(gone), "workspaces": [{"path": str(gone)}]}),
@@ -74,6 +79,7 @@ def test_create_workspace_inits_loco_and_git(tmp_path: Path) -> None:
     assert created["is_loco"] is True
     assert created["is_git"] is True
     assert (target / ".loco" / "config.yaml").exists()
+    assert (target / ".loco" / "guidelines.md").exists()
     assert (target / ".git").exists()
 
 

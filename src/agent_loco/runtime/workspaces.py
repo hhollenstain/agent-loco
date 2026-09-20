@@ -5,7 +5,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from agent_loco.runtime.project import ensure_run_gitignore, write_default_project_files
+from agent_loco.runtime.project import (
+    ensure_run_gitignore,
+    guidelines_are_custom,
+    load_guidelines,
+    write_default_project_files,
+)
 from agent_loco.tools.files import SKIP_DIR_NAMES
 
 MAX_WORKSPACES = 20
@@ -46,6 +51,8 @@ def _entry(path: Path) -> dict[str, str | bool]:
         "name": path.name or str(path),
         "is_git": (path / ".git").exists(),
         "is_loco": (path / ".loco" / "config.yaml").exists(),
+        "guidelines": load_guidelines(path),
+        "custom_guidelines": guidelines_are_custom(path),
     }
 
 
@@ -96,12 +103,11 @@ def last_workspace(root: Path, *, default: str | Path | None = None) -> str:
 
 def remember_workspace(store_root: Path, path: str | Path) -> list[dict[str, str | bool]]:
     resolved = _normalize_dir(path)
-    existing = [
-        item
-        for item in load_workspaces(store_root)
-        if str(item["path"]) != str(resolved)
-    ]
-    saved = [_entry(resolved), *existing][:MAX_WORKSPACES]
+    existing = load_workspaces(store_root)
+    if any(str(item["path"]) == str(resolved) for item in existing):
+        saved = existing
+    else:
+        saved = [*existing, _entry(resolved)][-MAX_WORKSPACES:]
     payload = {
         "workspaces": [{"path": item["path"]} for item in saved],
         "last": str(resolved),

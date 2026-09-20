@@ -3,11 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent_loco.runtime.project import (
+    default_guidelines,
+    guidelines_are_custom,
     infer_test_command,
     load_goals,
+    load_guidelines,
     load_project,
     mark_goal_done,
     render_tree,
+    save_guidelines,
     write_default_project_files,
 )
 
@@ -57,3 +61,21 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
     assert "runs/" in gitignore.read_text(encoding="utf-8")
     assert "servers.json" in gitignore.read_text(encoding="utf-8")
     assert "workspaces.json" in gitignore.read_text(encoding="utf-8")
+    guidelines = tmp_path / ".loco" / "guidelines.md"
+    assert guidelines in created
+    assert "You are loco" in guidelines.read_text(encoding="utf-8")
+
+
+def test_guidelines_default_until_overridden(tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert load_guidelines(empty) == default_guidelines()
+    assert guidelines_are_custom(empty) is False
+    saved = save_guidelines(empty, "Stay in Python. Prefer pytest.")
+    assert "Stay in Python" in saved
+    assert guidelines_are_custom(empty) is True
+    assert load_guidelines(empty).strip() == "Stay in Python. Prefer pytest."
+    restored = save_guidelines(empty, "")
+    assert restored == default_guidelines()
+    assert guidelines_are_custom(empty) is False
+    assert not (empty / ".loco" / "guidelines.md").exists()

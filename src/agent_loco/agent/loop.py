@@ -36,14 +36,17 @@ class CodingAgent:
         tools: list[ToolSpec],
         *,
         max_iterations: int,
+        system_prompt: str | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
         self.max_iterations = max_iterations
+        prompt = (system_prompt or "").strip()
+        self.system_prompt = prompt or SYSTEM_PROMPT.strip()
 
     def run(self, goal: str, context: str = "") -> AgentResult:
         messages: list[dict] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_prompt(goal, context)},
         ]
         schemas = [tool.openai_schema() for tool in self.tools]

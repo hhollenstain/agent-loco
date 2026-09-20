@@ -19,6 +19,11 @@ from agent_loco.runtime.servers import (
     remember_server,
     update_server_alias,
 )
+from agent_loco.runtime.project import (
+    default_guidelines,
+    guidelines_are_custom,
+    save_guidelines,
+)
 from agent_loco.runtime.tasks import TaskManager
 from agent_loco.runtime.workspaces import (
     browse_directory,
@@ -67,12 +72,19 @@ class UrlCreate(BaseModel):
 
 class WorkspaceSelect(BaseModel):
     path: str
+    guidelines: str | None = None
+
+
+class WorkspaceGuidelines(BaseModel):
+    path: str | None = None
+    guidelines: str | None = None
 
 
 class WorkspaceClone(BaseModel):
     url: str
     parent: str | None = None
     name: str | None = None
+    guidelines: str | None = None
 
 
 class UiState:
@@ -113,7 +125,9 @@ class UiState:
 
     def set_workspace(self, path: str) -> list[dict[str, str | bool]]:
         remembered = remember_workspace(Path(self.store_root), path)
-        self.default_workspace = str(remembered[0]["path"])
+        self.default_workspace = last_workspace(
+            Path(self.store_root), default=path
+        )
         return remembered
 
     def remember_server(self, url: str, model: str | None = None) -> list[dict[str, str]]:
@@ -127,9 +141,16 @@ class UiState:
     def template_vars(self) -> dict[str, Any]:
         selected = self.selection()
         workspaces = self.remember_current_workspace()
+        current = next(
+            (item for item in workspaces if item["path"] == self.default_workspace),
+            None,
+        )
         return {
             "default_workspace": self.default_workspace,
             "known_workspaces": workspaces,
+            "guidelines": (current or {}).get("guidelines") or default_guidelines(),
+            "custom_guidelines": bool((current or {}).get("custom_guidelines")),
+            "default_guidelines": default_guidelines(),
             "default_goal": self.default_goal,
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
@@ -429,13 +450,29 @@ def create_app(
         }
 
     def _workspace_payload(ui: UiState) -> dict[str, Any]:
+        workspaces = load_workspaces(
+            Path(ui.store_root), default=ui.default_workspace
+        )
+        current = next(
+            (item for item in workspaces if item["path"] == ui.default_workspace),
+            None,
+        )
         return {
             "current": ui.default_workspace,
             "home": str(Path.home()),
-            "workspaces": load_workspaces(
-                Path(ui.store_root), default=ui.default_workspace
-            ),
+            "default_guidelines": default_guidelines(),
+            "guidelines": (current or {}).get("guidelines") or default_guidelines(),
+            "custom_guidelines": bool((current or {}).get("custom_guidelines")),
+            "workspaces": workspaces,
         }
+
+    def _seed_guidelines(path: str, text: str | None) -> None:
+        if text is None:
+            return
+        root = Path(path)
+        if guidelines_are_custom(root):
+            return
+        save_guidelines(root, text)
 
     @app.get("/api/workspaces")
     def list_workspaces(request: Request) -> dict[str, Any]:
@@ -452,6 +489,7 @@ def create_app(
     def select_workspace(request: Request, payload: WorkspaceSelect) -> Any:
         ui: UiState = request.app.state.ui
         try:
+            _seed_guidelines(payload.path, payload.guidelines)
             ui.set_workspace(payload.path)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
@@ -462,6 +500,7 @@ def create_app(
         ui: UiState = request.app.state.ui
         try:
             created = create_workspace(payload.path)
+            _seed_guidelines(str(created["path"]), payload.guidelines)
             ui.set_workspace(str(created["path"]))
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
@@ -473,10 +512,25 @@ def create_app(
         parent = payload.parent or str(Path.home() / "projects")
         try:
             cloned = clone_workspace(payload.url, parent, name=payload.name)
+            _seed_guidelines(str(cloned["path"]), payload.guidelines)
             ui.set_workspace(str(cloned["path"]))
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return {**_workspace_payload(ui), "created": cloned}
+
+    @app.put("/api/workspaces/guidelines")
+    def update_workspace_guidelines(
+        request: Request, payload: WorkspaceGuidelines | None = None
+    ) -> Any:
+        ui: UiState = request.app.state.ui
+        body = payload or WorkspaceGuidelines()
+        path = body.path or ui.default_workspace
+        try:
+            save_guidelines(Path(path), body.guidelines)
+            ui.set_workspace(path)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return _workspace_payload(ui)
 
     return app
 

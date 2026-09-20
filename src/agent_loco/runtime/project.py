@@ -5,7 +5,10 @@ from pathlib import Path
 
 import yaml
 
+from agent_loco.agent.prompts import SYSTEM_PROMPT
 from agent_loco.tools.files import SKIP_DIR_NAMES
+
+GUIDELINES_FILE = "guidelines.md"
 
 
 @dataclass(frozen=True)
@@ -134,6 +137,10 @@ def write_default_project_files(root: Path) -> list[Path]:
             encoding="utf-8",
         )
         created.append(goals_path)
+    guidelines = guidelines_path(root)
+    if not guidelines.exists():
+        guidelines.write_text(_default_guidelines_text(), encoding="utf-8")
+        created.append(guidelines)
     gitignore = ensure_run_gitignore(root)
     if gitignore is not None:
         created.append(gitignore)
@@ -157,6 +164,56 @@ def ensure_run_gitignore(root: Path) -> Path | None:
         return None
     path.write_text("".join(f"{marker}\n" for marker in markers), encoding="utf-8")
     return path
+
+
+def guidelines_path(root: Path) -> Path:
+    return Path(root) / ".loco" / GUIDELINES_FILE
+
+
+def _default_guidelines_text() -> str:
+    text = SYSTEM_PROMPT.strip()
+    return f"{text}\n"
+
+
+def default_guidelines() -> str:
+    return _default_guidelines_text()
+
+
+def load_guidelines(root: Path) -> str:
+    """Return workspace rules, or the built-in default when none are set."""
+    path = guidelines_path(root)
+    try:
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            if text.strip():
+                return text
+    except OSError:
+        pass
+    return _default_guidelines_text()
+
+
+def guidelines_are_custom(root: Path) -> bool:
+    path = guidelines_path(root)
+    try:
+        if not path.exists():
+            return False
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    return bool(text) and text != SYSTEM_PROMPT.strip()
+
+
+def save_guidelines(root: Path, text: str | None) -> str:
+    """Persist custom rules, or restore the default when the text is empty."""
+    path = guidelines_path(root)
+    content = (text or "").strip()
+    if not content or content == SYSTEM_PROMPT.strip():
+        if path.exists():
+            path.unlink()
+        return _default_guidelines_text()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{content}\n", encoding="utf-8")
+    return path.read_text(encoding="utf-8")
 
 
 def collect_context(

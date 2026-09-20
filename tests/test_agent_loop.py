@@ -39,6 +39,25 @@ def test_agent_writes_file_then_stops(tmp_path: Path) -> None:
     assert result.summary == "Wrote note.txt"
 
 
+def test_agent_uses_custom_system_prompt(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient([AssistantTurn(text="ok")])
+    CodingAgent(
+        llm,
+        tools,
+        max_iterations=2,
+        system_prompt="Prefer Rust. Never touch Python.",
+    ).run("Say hi")
+    assert llm.calls[0][0]["content"] == "Prefer Rust. Never touch Python."
+
+
 def test_agent_logs_llm_response_time(tmp_path: Path, caplog) -> None:
     import logging
 

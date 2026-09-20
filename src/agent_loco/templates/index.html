@@ -24,11 +24,15 @@
       background: var(--bg);
       color: var(--ink);
       font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
     main {
       display: grid;
       grid-template-columns: minmax(20rem, 24rem) minmax(0, 1fr);
-      min-height: 100vh;
+      flex: 1;
+      min-height: 0;
     }
     main.collapsed {
       grid-template-columns: 2.75rem minmax(0, 1fr);
@@ -39,7 +43,7 @@
     .sidebar {
       border-right: 1px solid var(--line);
       background: var(--bg);
-      min-height: 100vh;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -126,6 +130,63 @@
       font-size: 0.78rem;
     }
     .hint { margin: 0.4rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+    .workspace-tabs {
+      display: flex;
+      align-items: stretch;
+      gap: 0.4rem;
+      padding: 0.5rem 4.1rem 0 0.75rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+      flex: 0 0 auto;
+    }
+    .workspace-tab-list {
+      display: flex;
+      gap: 0.3rem;
+      overflow-x: auto;
+      flex: 1;
+      min-width: 0;
+      padding-bottom: 0;
+    }
+    .workspace-tab {
+      flex: 0 0 auto;
+      max-width: 14rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-bottom: 0;
+      border-radius: 7px 7px 0 0;
+      padding: 0.5rem 0.8rem;
+      font: 600 0.82rem/1.2 inherit;
+    }
+    .workspace-tab.active {
+      background: var(--panel);
+      color: var(--ink);
+      border-color: var(--line);
+    }
+    .workspace-tab-add {
+      flex: 0 0 auto;
+      width: 2.15rem;
+      min-width: 2.15rem;
+      height: 2.15rem;
+      padding: 0;
+      margin: 0.1rem 0 0.15rem;
+      background: var(--panel-2);
+      color: var(--ink);
+      border: 1px dashed var(--line);
+      border-radius: 7px;
+      font-size: 1.2rem;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .workspace-tab-add:hover, .workspace-tab:hover, .workspace-tab:focus {
+      border-color: var(--accent);
+      color: var(--ink);
+    }
+    .guidelines-actions { display: flex; gap: 0.45rem; margin-top: 0.5rem; }
+    #guidelines, #picker-guidelines { min-height: 8rem; font-size: 0.82rem; line-height: 1.4; }
     .workspace-row { display: flex; gap: 0.45rem; align-items: stretch; }
     .workspace-row input { flex: 1; min-width: 0; font-size: 0.82rem; }
     .modal-backdrop {
@@ -510,6 +571,14 @@
   </style>
 </head>
 <body>
+  <nav class="workspace-tabs" id="workspace-tabs" aria-label="Workspaces">
+    <div class="workspace-tab-list" id="workspace-tab-list" role="tablist">
+      {% for ws in known_workspaces %}
+      <button type="button" class="workspace-tab{% if ws.path == default_workspace %} active{% endif %}" role="tab" data-path="{{ ws.path }}" aria-selected="{{ 'true' if ws.path == default_workspace else 'false' }}" title="{{ ws.path }}">{{ ws.name }}</button>
+      {% endfor %}
+    </div>
+    <button type="button" class="workspace-tab-add" id="add-workspace-tab" aria-label="Add workspace" title="Add workspace">+</button>
+  </nav>
   <main id="main">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-bar">
@@ -523,6 +592,15 @@
         <button type="button" class="secondary" id="open-workspace-picker">Browse</button>
       </div>
       <p class="hint">Pick a local folder or clone a git repo to work on it here.</p>
+
+      <label for="guidelines">Rules / guidelines</label>
+      <textarea id="guidelines" name="guidelines" spellcheck="false">{{ guidelines }}</textarea>
+      <p class="hint" id="guidelines-status">{% if custom_guidelines %}Custom rules for this workspace.{% else %}Using default rules.{% endif %}</p>
+      <div class="guidelines-actions">
+        <button type="button" class="secondary" id="save-guidelines">Save guidelines</button>
+        <button type="button" class="secondary" id="reset-guidelines">Use defaults</button>
+      </div>
+      <p class="hint">Override the agent rules for this workspace. New workspaces start with the defaults unless you change them when adding the tab.</p>
 
       <label for="goal">Goal</label>
       <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
@@ -622,6 +700,11 @@
         </div>
       </div>
       <div class="modal-section">
+        <label for="picker-guidelines">Rules / guidelines</label>
+        <textarea id="picker-guidelines" spellcheck="false">{{ default_guidelines }}</textarea>
+        <p class="hint">Applied when you add this workspace. Leave as-is for loco defaults. Existing custom rules on a folder are kept.</p>
+      </div>
+      <div class="modal-section">
         <label for="clone-url">Clone a repository</label>
         <input id="clone-url" type="text" spellcheck="false" placeholder="https://github.com/org/repo.git">
         <label for="clone-parent">Clone into</label>
@@ -655,7 +738,7 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), taskStatus: {}, notifications: [] };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -674,6 +757,10 @@
     const browsePathEl = document.getElementById("browse-path");
     const pickerErrorEl = document.getElementById("workspace-picker-error");
     const workspaceEl = document.getElementById("workspace");
+    const guidelinesEl = document.getElementById("guidelines");
+    const guidelinesStatusEl = document.getElementById("guidelines-status");
+    const workspaceTabListEl = document.getElementById("workspace-tab-list");
+    const pickerGuidelinesEl = document.getElementById("picker-guidelines");
     const cloneUrlEl = document.getElementById("clone-url");
     const cloneParentEl = document.getElementById("clone-parent");
     const cloneNameEl = document.getElementById("clone-name");
@@ -886,12 +973,47 @@
       const res = await fetch("/api/workspaces");
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "failed to list workspaces");
+      applyWorkspacePayload(body);
+      renderFolderButtons(recentEl, body.workspaces || [], "No recent workspaces yet.", (item) => selectWorkspace(item.path, { seed: true }));
+      return body;
+    }
+
+    function applyWorkspacePayload(body) {
+      if (body.default_guidelines) state.defaultGuidelines = body.default_guidelines;
       if (body.current) workspaceEl.value = body.current;
       if (body.home && !cloneParentEl.value) {
         cloneParentEl.value = `${body.home.replace(/\/$/, "")}/projects`;
       }
-      renderFolderButtons(recentEl, body.workspaces || [], "No recent workspaces yet.", (item) => selectWorkspace(item.path));
-      return body;
+      renderWorkspaceTabs(body.workspaces || [], body.current);
+      setGuidelinesEditor(body.guidelines, body.custom_guidelines);
+    }
+
+    function renderWorkspaceTabs(workspaces, current) {
+      workspaceTabListEl.replaceChildren();
+      for (const item of workspaces) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "workspace-tab" + (item.path === current ? " active" : "");
+        button.setAttribute("role", "tab");
+        button.dataset.path = item.path;
+        button.title = item.path;
+        button.setAttribute("aria-selected", item.path === current ? "true" : "false");
+        button.textContent = item.name || item.path;
+        button.addEventListener("click", () => {
+          if (item.path === workspaceEl.value) return;
+          selectWorkspace(item.path, { close: false }).catch((err) => notify("error", err.message, { title: "Could not switch workspace" }));
+        });
+        workspaceTabListEl.append(button);
+      }
+    }
+
+    function setGuidelinesEditor(text, custom) {
+      guidelinesEl.value = text || state.defaultGuidelines;
+      guidelinesStatusEl.textContent = custom ? "Custom rules for this workspace." : "Using default rules.";
+    }
+
+    function addingGuidelines() {
+      return pickerGuidelinesEl.value;
     }
 
     async function loadBrowse(path) {
@@ -916,6 +1038,7 @@
       pickerEl.hidden = false;
       pickerEl.classList.add("open");
       pickerErrorEl.replaceChildren();
+      pickerGuidelinesEl.value = state.defaultGuidelines;
       try {
         await loadRecentWorkspaces();
         await loadBrowse(workspaceEl.value || browsePath);
@@ -929,21 +1052,30 @@
       pickerEl.hidden = true;
     }
 
-    async function selectWorkspace(path) {
+    async function selectWorkspace(path, opts = {}) {
       pickerErrorEl.replaceChildren();
+      const payload = { path };
+      if (opts.seed) payload.guidelines = addingGuidelines();
       const res = await fetch("/api/workspaces/select", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
+        body: JSON.stringify(payload),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "failed to select workspace");
-      workspaceEl.value = body.current;
-      closePicker();
-      notify("success", body.current, { title: "Workspace selected" });
+      applyWorkspacePayload(body);
+      if (opts.close !== false) closePicker();
+      state.historyPage = 1;
+      await refresh();
+      if (opts.close !== false) {
+        notify("success", body.current, { title: "Workspace selected" });
+      }
     }
 
     document.getElementById("open-workspace-picker").addEventListener("click", () => {
+      openPicker().catch(showPickerError);
+    });
+    document.getElementById("add-workspace-tab").addEventListener("click", () => {
       openPicker().catch(showPickerError);
     });
     document.getElementById("close-workspace-picker").addEventListener("click", closePicker);
@@ -958,21 +1090,61 @@
       loadBrowse("").catch(showPickerError);
     });
     document.getElementById("use-folder").addEventListener("click", () => {
-      selectWorkspace(browsePath).catch(showPickerError);
+      selectWorkspace(browsePath, { seed: true }).catch(showPickerError);
     });
+    document.getElementById("save-guidelines").addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/workspaces/guidelines", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: workspaceEl.value,
+            guidelines: guidelinesEl.value,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to save guidelines");
+        applyWorkspacePayload(body);
+        notify("success", body.custom_guidelines ? "Custom rules saved for this workspace." : "Using default rules.", { title: "Guidelines saved" });
+      } catch (err) {
+        notify("error", err.message, { title: "Could not save guidelines" });
+      }
+    });
+    document.getElementById("reset-guidelines").addEventListener("click", async () => {
+      guidelinesEl.value = state.defaultGuidelines;
+      try {
+        const res = await fetch("/api/workspaces/guidelines", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: workspaceEl.value, guidelines: "" }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to reset guidelines");
+        applyWorkspacePayload(body);
+        notify("info", "Restored default rules for this workspace.", { title: "Guidelines reset" });
+      } catch (err) {
+        notify("error", err.message, { title: "Could not reset guidelines" });
+      }
+    });
+
     document.getElementById("create-workspace").addEventListener("click", async () => {
       try {
         pickerErrorEl.replaceChildren();
         const res = await fetch("/api/workspaces/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: joinPath(browsePath, createNameEl.value) }),
+          body: JSON.stringify({
+            path: joinPath(browsePath, createNameEl.value),
+            guidelines: addingGuidelines(),
+          }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to create workspace");
-        workspaceEl.value = body.current;
+        applyWorkspacePayload(body);
         createNameEl.value = "";
         closePicker();
+        state.historyPage = 1;
+        await refresh();
         notify("success", body.current, { title: "Workspace created" });
       } catch (err) {
         showPickerError(err);
@@ -988,14 +1160,17 @@
             url: cloneUrlEl.value.trim(),
             parent: cloneParentEl.value.trim() || undefined,
             name: cloneNameEl.value.trim() || undefined,
+            guidelines: addingGuidelines(),
           }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to clone repository");
-        workspaceEl.value = body.current;
+        applyWorkspacePayload(body);
         cloneUrlEl.value = "";
         cloneNameEl.value = "";
         closePicker();
+        state.historyPage = 1;
+        await refresh();
         notify("success", body.current, { title: "Repository cloned" });
       } catch (err) {
         showPickerError(err);
@@ -1520,6 +1695,7 @@
 
     renderNotificationHistory();
     refresh();
+    loadRecentWorkspaces().catch(() => {});
     loadModels(false);
     setInterval(refresh, 1000);
     setInterval(() => {

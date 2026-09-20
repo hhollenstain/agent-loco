@@ -397,6 +397,9 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert home.status_code == 200
         assert b'id="open-workspace-picker"' in home.content
         assert b'id="workspace-picker"' in home.content
+        assert b'id="workspace-tabs"' in home.content
+        assert b'id="add-workspace-tab"' in home.content
+        assert b'id="guidelines"' in home.content
         assert b"Clone a repository" in home.content
 
         listed = client.get("/api/workspaces")
@@ -433,6 +436,66 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert missing.status_code == 400
         empty_clone = client.post("/api/workspaces/clone", json={"url": "  "})
         assert empty_clone.status_code == 400
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_workspace_guidelines_and_tabs(
+    settings: Settings, tmp_path: Path
+) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert home.status_code == 200
+        listed = client.get("/api/workspaces")
+        body = listed.json()
+        assert body["current"] == str(tmp_path.resolve())
+        assert "You are loco" in body["default_guidelines"]
+        assert body["custom_guidelines"] is False
+        saved = client.put(
+            "/api/workspaces/guidelines",
+            json={
+                "path": str(tmp_path),
+                "guidelines": "Prefer pytest. Never skip tests.",
+            },
+        )
+        assert saved.status_code == 200
+        assert saved.json()["custom_guidelines"] is True
+        assert "Prefer pytest" in saved.json()["guidelines"]
+        created = client.post(
+            "/api/workspaces/create",
+            json={
+                "path": str(tmp_path / "fresh-rules"),
+                "guidelines": "Use Go modules.",
+            },
+        )
+        assert created.status_code == 200
+        fresh = tmp_path / "fresh-rules"
+        payload = created.json()
+        assert payload["current"] == str(fresh.resolve())
+        assert payload["custom_guidelines"] is True
+        assert "Use Go modules" in payload["guidelines"]
+        paths = [item["path"] for item in payload["workspaces"]]
+        assert paths[0] == str(tmp_path.resolve())
+        assert str(fresh.resolve()) in paths
+        switched = client.post(
+            "/api/workspaces/select", json={"path": str(tmp_path)}
+        )
+        assert switched.status_code == 200
+        assert switched.json()["current"] == str(tmp_path.resolve())
+        assert [item["path"] for item in switched.json()["workspaces"]][:2] == [
+            str(tmp_path.resolve()),
+            str(fresh.resolve()),
+        ]
+        assert switched.json()["custom_guidelines"] is True
+        reset = client.put(
+            "/api/workspaces/guidelines",
+            json={"path": str(tmp_path), "guidelines": ""},
+        )
+        assert reset.status_code == 200
+        assert reset.json()["custom_guidelines"] is False
     finally:
         manager.shutdown(wait=False)
 

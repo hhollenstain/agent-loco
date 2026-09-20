@@ -14,6 +14,7 @@ from agent_loco.runtime.project import (
     collect_context,
     ensure_run_gitignore,
     load_goals,
+    load_guidelines,
     load_project,
     mark_goal_done,
 )
@@ -140,7 +141,12 @@ def _run_cycle(
     log_progress("Fetching current SHA...")
     sha_before = current_sha(workspace)
     log_progress("Initializing coding agent...")
-    agent = CodingAgent(llm, tools, max_iterations=settings.max_iterations)
+    agent = CodingAgent(
+        llm,
+        tools,
+        max_iterations=settings.max_iterations,
+        system_prompt=load_guidelines(workspace.root),
+    )
     log_progress("Running coding agent...")
     agent_result = agent.run(
         selected_goal,
