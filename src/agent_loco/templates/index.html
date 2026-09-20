@@ -754,17 +754,6 @@
       </div>
       <button type="submit" id="submit">Queue task</button>
       <div class="notice-slot" id="form-error"></div>
-      <div class="notice notice-warning form-note" role="status">
-        <span class="notice-kind">Warning</span>
-        <div class="notice-body">
-          <p class="notice-message">
-            By default only <strong id="max-label">{{ max_concurrent }}</strong>
-            run at a time; extra tasks wait. A running cycle calls the model, edits
-            files, and runs tests. Start another only if you accept the slowdown
-            on CPU, RAM, and the model server.
-          </p>
-        </div>
-      </div>
     </form>
     </aside>
     <section class="tasks">
