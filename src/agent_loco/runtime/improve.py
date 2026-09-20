@@ -30,6 +30,7 @@ from agent_loco.tools.git import (
     current_sha,
     default_base_branch,
     ensure_pr_branch,
+    extract_pr_url,
     has_changes,
     is_protected_branch,
     push_changes,
@@ -55,6 +56,7 @@ class CycleResult:
     published: bool
     commit_sha: str | None
     reason: str | None
+    pr_url: str | None = None
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -121,7 +123,7 @@ def _run_cycle(
     )
 
     log_progress("Running before tests...")
-    tests_before = _maybe_test(workspace, project, settings)
+    tests_before = _maybe_test(workspace, project, settings, phase="before")
     selected_goal = goal or _choose_goal(project, tests_before)
     if not selected_goal:
         log_progress("No pending goals and tests are green.")
@@ -156,7 +158,7 @@ def _run_cycle(
     )
 
     log_progress("Running after tests...")
-    tests_after = _maybe_test(workspace, project, settings)
+    tests_after = _maybe_test(workspace, project, settings, phase="after")
     if tests_after and not tests_after.ok:
         for attempt in range(project.max_repair_attempts):
             log_progress(f"Repair attempt {attempt + 1}")
@@ -166,7 +168,7 @@ def _run_cycle(
                 + tests_after.output,
                 collect_context(workspace.root, project, allow_publish=allow_create_pr),
             )
-            tests_after = _maybe_test(workspace, project, settings)
+            tests_after = _maybe_test(workspace, project, settings, phase="repair")
             if tests_after.ok:
                 break
 
@@ -241,6 +243,7 @@ def _run_cycle(
     log_progress("Goal confirmed; checking for publishable changes...")
     committed = False
     published = False
+    pr_url = None
     sha = current_sha(workspace)
     if sha_before and sha and sha != sha_before:
         committed = True
@@ -342,6 +345,7 @@ def _run_cycle(
             base=base,
         )
         published = pr.ok
+        pr_url = extract_pr_url(pr.output) if pr.ok else None
         if not pr.ok:
             log_progress(f"PR creation failed: {pr.output}")
             result = CycleResult(
@@ -358,6 +362,8 @@ def _run_cycle(
             _append_to_history(workspace.root, result)
             return result
         log_progress(pr.output)
+        if pr_url:
+            record_event(kind="pr", url=pr_url, message=pr.output)
 
     if committed and mark_checkbox:
         log_progress("Marking goal as done...")
@@ -373,6 +379,7 @@ def _run_cycle(
         published=published,
         commit_sha=sha,
         reason=agent_result.stopped_reason,
+        pr_url=pr_url,
     )
     _write_run_log(workspace.root, result)
     _append_to_history(workspace.root, result)
@@ -499,7 +506,7 @@ def _ensure_goal_met(
         )
         if follow.summary:
             summary = follow.summary
-        tests_after = _maybe_test(workspace, project, settings)
+        tests_after = _maybe_test(workspace, project, settings, phase="retry")
         tests_passed = None if tests_after is None else tests_after.ok
         if settings.require_tests and tests_after is not None and not tests_after.ok:
             return {
@@ -543,12 +550,21 @@ def _choose_goal(project: ProjectConfig, tests_before) -> str | None:
     return goals[0] if goals else None
 
 
-def _maybe_test(workspace: Workspace, project: ProjectConfig, settings: Settings):
+def _maybe_test(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    *,
+    phase: str = "tests",
+):
     if not project.test_command:
         return None
-    result = run_project_tests(workspace, project.test_command, settings.command_timeout_seconds)
-    log.info("tests ok=%s", result.ok)
-    return result
+    return run_project_tests(
+        workspace,
+        project.test_command,
+        settings.command_timeout_seconds,
+        phase=phase,
+    )
 
 
 def _commit_message(goal: str, summary: str) -> str:

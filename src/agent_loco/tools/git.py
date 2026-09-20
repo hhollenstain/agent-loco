@@ -16,6 +16,21 @@ PROTECTED_COMMIT_REFUSAL = (
 )
 RUN_LOG_PREFIX = ".loco/runs"
 PROTECTED_BRANCHES = frozenset({"main", "master", "trunk"})
+_PR_URL_RE = re.compile(
+    r"https://(?:www\.)?github\.com/[\w.-]+/[\w.-]+/pull/\d+"
+    r"|https://[^\s<>\"']+/(?:pull|merge_requests)/\d+",
+    re.IGNORECASE,
+)
+
+
+def extract_pr_url(text: str | None) -> str | None:
+    """Return the first GitHub/GitLab-style pull-request URL in command output."""
+    if not text:
+        return None
+    match = _PR_URL_RE.search(text)
+    if not match:
+        return None
+    return match.group(0).rstrip(").,;")
 
 
 @dataclass(frozen=True)

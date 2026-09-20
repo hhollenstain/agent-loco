@@ -2,23 +2,50 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 from agent_loco.agent.prompts import SYSTEM_PROMPT, user_prompt
 from agent_loco.llm.client import AssistantTurn, LLMClient, ToolCall
 from agent_loco.llm.toolparse import parse_tool_calls
-from agent_loco.progress import timed_complete
+from agent_loco.progress import record_event, timed_complete
 from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
 
 MUTATING_TOOLS = {"write_file"}
 MAX_PLAN_NUDGES = 3
+MAX_UNFINISHED_NUDGES = 4
+MAX_INSPECT_ROUNDS = 8
 CONTINUE_NUDGE = (
     "You have not changed any files yet. That reply was a plan, not a finish. "
     "Call write_file now and implement the goal. Do not summarize, and do not "
     "commit `.loco/runs/` logs."
 )
+UNFINISHED_NUDGE = (
+    "That reply is not a finish. You still have work left. "
+    "Call a tool now and apply the next edit. Do not narrate the change; write_file it."
+)
+INSPECT_NUDGE = (
+    "You have been inspecting the repo without changing files. "
+    "Call write_file now and implement the goal. Do not only read and summarize."
+)
+_UNFINISHED_RE = re.compile(
+    r"(?is)("
+    r"\blet me\b|"
+    r"\bi(?:'m about to|'ll| will| am going to)\b|"
+    r"\bi need to (?:fix|update|write|add|change|edit|run|implement|adjust)\b"
+    r")"
+)
+
+
+def looks_unfinished(text: str) -> bool:
+    value = (text or "").strip()
+    if not value:
+        return False
+    if value.endswith(":") or value.endswith("..."):
+        return True
+    return bool(_UNFINISHED_RE.search(value))
 
 
 @dataclass
@@ -54,6 +81,8 @@ class CodingAgent:
         tool_calls = 0
         mutated = False
         plan_nudges = 0
+        unfinished_nudges = 0
+        inspect_rounds = 0
 
         for iteration in range(1, self.max_iterations + 1):
             turn = timed_complete(self.llm, messages, schemas, purpose="agent")
@@ -64,6 +93,7 @@ class CodingAgent:
                     messages.append(_assistant_tool_message(turn))
                 else:
                     messages.append({"role": "assistant", "content": turn.text or ""})
+                wrote = False
                 for call in calls:
                     tool_calls += 1
                     result = execute_tool(self.tools, call.name, call.arguments)
@@ -71,7 +101,16 @@ class CodingAgent:
                     log.debug("%s args=%s", call.name, call.arguments)
                     if call.name in MUTATING_TOOLS and result.ok:
                         mutated = True
+                        wrote = True
                     messages.append(_tool_result_message(call, result.output, native=native))
+                if wrote:
+                    inspect_rounds = 0
+                else:
+                    inspect_rounds += 1
+                    if not mutated and inspect_rounds >= MAX_INSPECT_ROUNDS:
+                        inspect_rounds = 0
+                        log.info("nudging agent to stop inspecting and write files")
+                        messages.append({"role": "user", "content": INSPECT_NUDGE})
                 continue
 
             if not mutated and plan_nudges < MAX_PLAN_NUDGES:
@@ -79,6 +118,14 @@ class CodingAgent:
                 log.info("nudging agent to keep working after a plan-only turn")
                 messages.append({"role": "assistant", "content": turn.text or ""})
                 messages.append({"role": "user", "content": CONTINUE_NUDGE})
+                continue
+
+            if looks_unfinished(turn.text) and unfinished_nudges < MAX_UNFINISHED_NUDGES:
+                unfinished_nudges += 1
+                log.info("nudging agent after an unfinished reply")
+                record_event(kind="step", message="Agent tried to stop mid-work; continuing.")
+                messages.append({"role": "assistant", "content": turn.text or ""})
+                messages.append({"role": "user", "content": UNFINISHED_NUDGE})
                 continue
 
             summary = (turn.text or "").strip() or "Agent finished without a summary."
