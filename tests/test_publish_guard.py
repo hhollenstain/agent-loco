@@ -34,9 +34,20 @@ def test_git_push_available_when_publish_enabled(tmp_path: Path) -> None:
 def test_run_command_refuses_push_when_publish_disabled(tmp_path: Path) -> None:
     result = run_command(
         Workspace(tmp_path),
-        "git push origin main",
+        "git push origin feature",
         timeout_seconds=5,
         allow_publish=False,
     )
     assert result.ok is False
     assert "publish is disabled" in result.output
+
+
+def test_run_command_refuses_push_to_main_even_when_publish_enabled(tmp_path: Path) -> None:
+    result = run_command(
+        Workspace(tmp_path),
+        "git push origin main",
+        timeout_seconds=5,
+        allow_publish=True,
+    )
+    assert result.ok is False
+    assert "refusing to push directly to main" in result.output

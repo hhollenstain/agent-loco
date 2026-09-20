@@ -5,7 +5,16 @@ from pathlib import Path
 from tests.support import init_git_repo
 
 from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import commit_changes, has_changes, is_runtime_artifact, run_git
+from agent_loco.tools.git import (
+    commit_changes,
+    current_branch,
+    current_sha,
+    ensure_pr_branch,
+    has_changes,
+    is_runtime_artifact,
+    push_changes,
+    run_git,
+)
 
 
 def test_run_log_paths_are_runtime_artifacts() -> None:
@@ -64,4 +73,32 @@ def test_run_logs_alone_are_not_changes(tmp_path: Path) -> None:
     assert not has_changes(workspace)
     result = commit_changes(workspace, "should not commit logs")
     assert not result.ok
+
+
+def test_push_refuses_protected_branches(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    for name in ("main", "master"):
+        result = push_changes(workspace, "origin", name)
+        assert result.ok is False
+        assert "refusing" in result.output
+
+
+def test_ensure_pr_branch_moves_commits_off_main(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("one\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    protected = current_branch(workspace)
+    sha_before = current_sha(workspace)
+    (tmp_path / "app.py").write_text("two\n", encoding="utf-8")
+    committed = commit_changes(workspace, "change app")
+    assert committed.ok
+    after = current_sha(workspace)
+    result = ensure_pr_branch(workspace, "Improve the adder", sha_before)
+    assert result.ok
+    assert result.output.startswith("loco/")
+    assert current_branch(workspace) == result.output
+    assert current_sha(workspace) == after
+    assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == sha_before
 

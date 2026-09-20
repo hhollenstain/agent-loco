@@ -12,7 +12,7 @@ def settings() -> Settings:
         model_base_url="http://127.0.0.1:9/v1",
         auto_commit=True,
         require_tests=True,
-        publish=False,
+        create_pr=False,
         max_iterations=8,
         command_timeout_seconds=30,
         git_author_name="loco-test",

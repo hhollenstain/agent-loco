@@ -88,7 +88,7 @@ That writes:
 
 If `test_command` is omitted, loco infers one (`pytest`, `npm test`, `make test`, `cargo test`, `go test`).
 
-Publish is off until you turn it on in `.loco/config.yaml` or pass `--publish`. Commits still require a green test run when `LOCO_REQUIRE_TESTS=true`.
+Publish/create-PR is off until you turn it on in `.loco/config.yaml` or pass `--create-pr`. That option opens a feature branch and pull request; it never pushes to `main`. Commits still require a green test run when `LOCO_REQUIRE_TESTS=true`.
 
 ## Containerized
 
@@ -133,7 +133,7 @@ A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LOCO_MODEL_NAME
 - Likely secrets (`.env`, keys, `credentials.json`) cannot be committed.
 - Force-push and `--no-verify` are not available.
 - Auto-commit is skipped when tests fail and `LOCO_REQUIRE_TESTS` is on.
-- Publish defaults to off.
+- Create-PR never pushes to `main`/`master`. It opens a `loco/*` branch and a pull request instead.
 
 This is still a coding agent with a shell inside a trusted workspace. Do not point it at a tree you would not edit yourself.
 

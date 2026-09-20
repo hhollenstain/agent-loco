@@ -170,7 +170,7 @@ def collect_context(
         f"Project: {project.name}",
         f"Root: {root}",
         f"Test command: {project.test_command or '(none)'}",
-        f"Publish: {'on' if publish_on else 'off'} via {project.publish_remote}",
+        f"Create PR: {'on' if publish_on else 'off'} via {project.publish_remote} (never pushes to main)",
     ]
     goals = load_goals(root, project.goals_file)
     if goals:

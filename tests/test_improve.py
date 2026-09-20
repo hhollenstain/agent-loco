@@ -9,7 +9,8 @@ from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
 from agent_loco.runtime.improve import resolve_create_pr, run_cycle
 from agent_loco.runtime.project import load_project
 from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import run_git
+from agent_loco.tools.base import ToolResult
+from agent_loco.tools.git import current_branch, current_sha, run_git
 
 
 def _broken_project(root: Path) -> None:
@@ -59,7 +60,10 @@ def test_cycle_commits_when_scripted_fix_passes(tmp_path: Path, settings: Settin
     assert result.status == "success"
     assert result.tests_passed is True
     assert result.committed is True
+    assert result.published is False
     assert result.commit_sha
+    branch = current_branch(Workspace(tmp_path))
+    assert branch in {"main", "master"}
     assert (tmp_path / "app.py").read_text(encoding="utf-8") == (
         "def add(left, right):\n    return left + right\n"
     )
@@ -135,3 +139,60 @@ def test_cycle_does_not_commit_run_logs_or_plans(tmp_path: Path, settings: Setti
     tracked = run_git(Workspace(tmp_path), ["ls-files", ".loco/runs"])
     assert tracked.stdout.strip() == ""
     assert (tmp_path / ".loco" / "runs" / "old.json").exists()
+
+
+def test_cycle_create_pr_uses_feature_branch_not_main(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _broken_project(tmp_path)
+    workspace = Workspace(tmp_path)
+    protected = current_branch(workspace)
+    initial = current_sha(workspace)
+    captured: dict[str, str | None] = {}
+
+    def fake_push(ws, remote="origin", branch=None):
+        captured["push_branch"] = branch
+        captured["push_current"] = current_branch(ws)
+        return ToolResult(True, "pushed")
+
+    def fake_pr(ws, title, body, *, base=None):
+        captured["title"] = title
+        captured["body"] = body
+        captured["base"] = base
+        captured["pr_branch"] = current_branch(ws)
+        return ToolResult(True, "https://example.test/pull/1")
+
+    monkeypatch.setattr("agent_loco.runtime.improve.push_changes", fake_push)
+    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add and verified with python3 check.py."),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, cli_create_pr=True)
+    assert result.status == "success"
+    assert result.committed is True
+    assert result.published is True
+    assert captured["push_branch"]
+    assert str(captured["push_branch"]).startswith("loco/")
+    assert captured["push_branch"] != protected
+    assert captured["push_current"] == captured["push_branch"]
+    assert captured["pr_branch"] == captured["push_branch"]
+    assert captured["base"] == protected
+    assert "## Summary" in str(captured["body"])
+    assert "## Test plan" in str(captured["body"])
+    assert current_branch(workspace).startswith("loco/")
+    assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == initial

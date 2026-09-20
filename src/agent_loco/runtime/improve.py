@@ -22,8 +22,12 @@ from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
     commit_changes,
     create_pull_request,
+    current_branch,
     current_sha,
+    default_base_branch,
+    ensure_pr_branch,
     has_changes,
+    is_protected_branch,
     push_changes,
 )
 from agent_loco.tools.tests import run_project_tests
@@ -80,7 +84,7 @@ def run_cycle(
         command_timeout_seconds=settings.command_timeout_seconds,
         git_author_name=settings.git_author_name,
         git_author_email=settings.git_author_email,
-        allow_publish=allow_create_pr,
+        allow_publish=False,
     )
 
     log_progress("Running before tests...")
@@ -151,6 +155,28 @@ def run_cycle(
     sha = current_sha(workspace)
     if sha_before and sha and sha != sha_before:
         committed = True
+
+    will_commit = settings.auto_commit and has_changes(workspace)
+    if allow_create_pr and (committed or will_commit):
+        log_progress("Moving work onto a pull-request branch...")
+        branched = ensure_pr_branch(workspace, selected_goal, sha_before)
+        if not branched.ok:
+            log_progress(f"Could not create PR branch: {branched.output}")
+            result = CycleResult(
+                status="failed",
+                goal=selected_goal,
+                summary=agent_result.summary,
+                tests_passed=tests_passed,
+                committed=False,
+                published=False,
+                commit_sha=sha,
+                reason=f"could not leave main: {branched.output}",
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return result
+        log_progress(f"On branch {branched.output}")
+
     if settings.auto_commit and has_changes(workspace):
         log_progress("Committing changes...")
         message = _commit_message(selected_goal, agent_result.summary)
@@ -195,20 +221,70 @@ def run_cycle(
         return result
 
     if committed and allow_create_pr:
-        log_progress("Pushing changes...")
-        pushed = push_changes(workspace, project.publish_remote, project.publish_branch)
-        published = pushed.ok
+        branch = current_branch(workspace)
+        if is_protected_branch(branch):
+            log_progress(f"Refusing to publish {branch} directly.")
+            result = CycleResult(
+                status="failed",
+                goal=selected_goal,
+                summary=agent_result.summary,
+                tests_passed=tests_passed,
+                committed=committed,
+                published=False,
+                commit_sha=sha,
+                reason=f"refusing to push commits on {branch}",
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return result
+        log_progress(f"Pushing branch {branch}...")
+        pushed = push_changes(workspace, project.publish_remote, branch)
         if not pushed.ok:
             log_progress(f"Push failed: {pushed.output}")
-        elif project.create_pr:
-            log_progress("Creating pull request...")
-            pr = create_pull_request(
-                workspace,
-                _commit_message(selected_goal, agent_result.summary),
-                agent_result.summary,
+            result = CycleResult(
+                status="failed",
+                goal=selected_goal,
+                summary=agent_result.summary,
+                tests_passed=tests_passed,
+                committed=committed,
+                published=False,
+                commit_sha=sha,
+                reason=f"push failed: {pushed.output}",
             )
-            if not pr.ok:
-                log_progress(f"PR creation failed: {pr.output}")
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return result
+        base = default_base_branch(workspace, project.publish_branch)
+        log_progress("Opening pull request...")
+        pr = create_pull_request(
+            workspace,
+            _commit_message(selected_goal, agent_result.summary),
+            _pr_body(
+                selected_goal,
+                agent_result.summary,
+                tests_passed=tests_passed,
+                commit_sha=sha,
+                branch=branch or "",
+            ),
+            base=base,
+        )
+        published = pr.ok
+        if not pr.ok:
+            log_progress(f"PR creation failed: {pr.output}")
+            result = CycleResult(
+                status="failed",
+                goal=selected_goal,
+                summary=agent_result.summary,
+                tests_passed=tests_passed,
+                committed=committed,
+                published=False,
+                commit_sha=sha,
+                reason=f"PR failed: {pr.output}",
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return result
+        log_progress(pr.output)
 
     if committed and mark_checkbox:
         log_progress("Marking goal as done...")
@@ -251,6 +327,42 @@ def _commit_message(goal: str, summary: str) -> str:
     if first_goal_line.lower().startswith("make the project's test suite pass"):
         return first_summary
     return first_goal_line
+
+
+def _pr_body(
+    goal: str,
+    summary: str,
+    *,
+    tests_passed: bool | None,
+    commit_sha: str | None,
+    branch: str,
+) -> str:
+    detail = (summary or "").strip() or goal.strip()
+    if tests_passed is True:
+        tests_line = "- [x] Project tests passed locally"
+    elif tests_passed is False:
+        tests_line = "- [ ] Project tests failed locally — do not merge until green"
+    else:
+        tests_line = "- [ ] No project test command; verify manually"
+    lines = [
+        "## Summary",
+        "",
+        detail,
+        "",
+        "## Goal",
+        "",
+        goal.strip(),
+        "",
+        "## Test plan",
+        "",
+        tests_line,
+        "- [ ] Review this feature branch; do not merge unreviewed commits to main",
+    ]
+    if commit_sha:
+        lines.extend(["", f"Commit: `{commit_sha}`"])
+    if branch:
+        lines.append(f"Branch: `{branch}`")
+    return "\n".join(lines)
 
 
 def _git_env(settings: Settings) -> dict[str, str]:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agent_loco.sandbox import Workspace
@@ -9,6 +11,7 @@ from agent_loco.tools.files import is_probably_secret_path
 
 SECRET_REFUSAL = "refusing to commit likely secrets: {paths}"
 RUN_LOG_PREFIX = ".loco/runs"
+PROTECTED_BRANCHES = frozenset({"main", "master", "trunk"})
 
 
 def git_tools(
@@ -74,7 +77,7 @@ def git_tools(
         tools.append(
             ToolSpec(
                 name="git_push",
-                description="Push the current HEAD to the given remote. Never force-pushes.",
+                description="Push the current feature branch. Refuses main/master.",
                 parameters=object_schema(
                     {
                         "remote": {
@@ -185,6 +188,56 @@ def _is_project_change(path: Path | str) -> bool:
     return not is_runtime_artifact(posix)
 
 
+def current_branch(workspace: Workspace) -> str | None:
+    result = run_git(workspace, ["rev-parse", "--abbrev-ref", "HEAD"])
+    if result.returncode != 0:
+        return None
+    name = result.stdout.strip()
+    return name or None
+
+
+def is_protected_branch(name: str | None) -> bool:
+    if not name:
+        return False
+    return name.lower() in PROTECTED_BRANCHES
+
+
+def default_base_branch(workspace: Workspace, configured: str | None = None) -> str:
+    if configured and configured.strip():
+        return configured.strip()
+    for candidate in ("main", "master"):
+        exists = run_git(workspace, ["show-ref", "--verify", "--quiet", f"refs/heads/{candidate}"])
+        if exists.returncode == 0:
+            return candidate
+    return current_branch(workspace) or "main"
+
+
+def _branch_slug(goal: str) -> str:
+    first = goal.strip().splitlines()[0] if goal.strip() else "change"
+    slug = re.sub(r"[^a-z0-9]+", "-", first.lower()).strip("-")
+    return (slug[:40].strip("-") or "change")
+
+
+def ensure_pr_branch(
+    workspace: Workspace,
+    goal: str,
+    sha_before: str | None,
+) -> ToolResult:
+    """Put this cycle's work on a loco/* branch. Does not leave new commits on main."""
+    current = current_branch(workspace)
+    if current and current != "HEAD" and not is_protected_branch(current):
+        return ToolResult(True, current)
+    name = f"loco/{_branch_slug(goal)}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    created = run_git(workspace, ["checkout", "-b", name])
+    if created.returncode != 0:
+        return ToolResult(False, _output(created))
+    if current and sha_before and is_protected_branch(current):
+        moved = run_git(workspace, ["branch", "-f", current, sha_before])
+        if moved.returncode != 0:
+            return ToolResult(False, _output(moved))
+    return ToolResult(True, name)
+
+
 def current_sha(workspace: Workspace) -> str | None:
     result = run_git(workspace, ["rev-parse", "HEAD"])
     if result.returncode != 0:
@@ -231,16 +284,31 @@ def push_changes(
 ) -> ToolResult:
     if not remote:
         remote = "origin"
-    args = ["push", remote]
-    if branch:
-        args.append(f"HEAD:{branch}")
-    result = run_git(workspace, args)
+    target = (branch or current_branch(workspace) or "").strip()
+    if not target or target == "HEAD":
+        return ToolResult(False, "no branch to push")
+    if is_protected_branch(target):
+        return ToolResult(False, f"refusing to push directly to {target}")
+    result = run_git(workspace, ["push", "-u", remote, f"HEAD:{target}"])
     return ToolResult(result.returncode == 0, _output(result))
 
 
-def create_pull_request(workspace: Workspace, title: str, body: str) -> ToolResult:
+def create_pull_request(
+    workspace: Workspace,
+    title: str,
+    body: str,
+    *,
+    base: str | None = None,
+) -> ToolResult:
+    title = " ".join(title.split()).strip() or "loco changes"
+    head = current_branch(workspace)
+    if is_protected_branch(head):
+        return ToolResult(False, f"refusing to open a PR from {head}")
+    args = ["gh", "pr", "create", "--title", title, "--body", body or title]
+    if base:
+        args.extend(["--base", base])
     result = subprocess.run(
-        ["gh", "pr", "create", "--title", title, "--body", body],
+        args,
         cwd=workspace.root,
         check=False,
         capture_output=True,
