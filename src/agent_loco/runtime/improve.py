@@ -9,6 +9,7 @@ from pathlib import Path
 from agent_loco.agent.loop import CodingAgent
 from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient
+from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
 from agent_loco.runtime.project import (
     ProjectConfig,
     collect_context,
@@ -18,8 +19,8 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
 )
-from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
-from agent_loco.runtime.review import collect_work_diff, review_goal
+from agent_loco.runtime.review import review_goal, review_reason
+from agent_loco.runtime.workdiff import collect_work_diff
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
@@ -394,20 +395,26 @@ def _ensure_goal_met(
     allow_create_pr: bool,
 ) -> dict[str, object]:
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    work_diff = collect_work_diff(workspace, sha_before, goal=goal)
     verdict = review_goal(
         llm,
         goal,
-        diff=collect_work_diff(workspace, sha_before),
+        diff=work_diff,
         summary=summary,
         tests_passed=tests_passed,
     )
-    log_progress(f"Goal review: met={verdict.met} ({verdict.reason})")
+    log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     attempts = 0
-    while not verdict.met and attempts < project.max_repair_attempts:
+    while (
+        not verdict.met
+        and verdict.parsed
+        and attempts < project.max_repair_attempts
+    ):
         attempts += 1
         log_progress(f"Goal retry {attempts}/{project.max_repair_attempts}: {verdict.reason}")
+        work_diff = collect_work_diff(workspace, sha_before, goal=goal)
         follow = agent.run(
-            _goal_retry_prompt(goal, verdict.reason, collect_work_diff(workspace, sha_before)),
+            _goal_retry_prompt(goal, verdict.reason, work_diff),
             context,
         )
         if follow.summary:
@@ -422,17 +429,18 @@ def _ensure_goal_met(
                 "tests_passed": False,
                 "tests_failed": True,
             }
+        work_diff = collect_work_diff(workspace, sha_before, goal=goal)
         verdict = review_goal(
             llm,
             goal,
-            diff=collect_work_diff(workspace, sha_before),
+            diff=work_diff,
             summary=summary,
             tests_passed=tests_passed,
         )
-        log_progress(f"Goal review: met={verdict.met} ({verdict.reason})")
+        log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     return {
         "met": verdict.met,
-        "reason": verdict.reason,
+        "reason": review_reason(verdict),
         "summary": summary,
         "tests_passed": tests_passed,
         "tests_failed": False,
@@ -543,7 +551,7 @@ def _append_to_history(root: Path, result: CycleResult) -> None:
     # Read existing history
     try:
         if history_file.exists():
-            with open(history_file, "r", encoding="utf-8") as f:
+            with open(history_file, encoding="utf-8") as f:
                 history = json.load(f)
         else:
             history = []

@@ -7,6 +7,7 @@ from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 
 _PUBLISH_COMMAND = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+create\b", re.IGNORECASE)
+_COMMIT_COMMAND = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
 _PROTECTED_PUSH = re.compile(
     r"\bgit\s+push\b.*(\bmain\b|\bmaster\b|HEAD:main|HEAD:master)",
     re.IGNORECASE,
@@ -60,6 +61,8 @@ def run_command(
         return ToolResult(False, "command is required")
     if _PROTECTED_PUSH.search(command):
         return ToolResult(False, "refusing to push directly to main/master")
+    if _COMMIT_COMMAND.search(command):
+        return ToolResult(False, "use the git_commit tool instead of git commit")
     if not allow_publish and _PUBLISH_COMMAND.search(command):
         return ToolResult(
             False,

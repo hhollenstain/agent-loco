@@ -5,11 +5,9 @@ import re
 from dataclasses import dataclass
 
 from agent_loco.llm.client import LLMClient
-from agent_loco.progress import timed_complete
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import is_runtime_artifact, run_git
+from agent_loco.progress import record_event, timed_complete
 
-DIFF_LIMIT = 16_000
+REVIEW_RAW_LIMIT = 8_000
 
 REVIEW_SYSTEM = """You are a strict reviewer for an unattended coding agent.
 
@@ -21,11 +19,19 @@ Rules:
 - If the goal asks for a user-visible control, it must be visible and wired, not
   display:none or otherwise non-functional.
 - A summary that claims the work is done does not count unless the diff shows it.
+- Use the changed-file list. A lockfile may be summarized as `package: old -> new`
+  instead of a hash dump; that still counts as updating the package.
+- Do not infer that a dependency was not updated just because hashes were omitted.
 - Set met=true only when a careful reviewer would accept the work as complete.
 
 Reply with ONLY a JSON object:
 {"met": true or false, "reason": "one sentence"}
 """
+
+REVIEW_JSON_NUDGE = (
+    "Your previous reply was not valid. Reply with ONLY this JSON object and "
+    'no other text:\n{"met": true or false, "reason": "one sentence"}'
+)
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 
@@ -35,6 +41,7 @@ class GoalReview:
     met: bool
     reason: str
     raw: str = ""
+    parsed: bool = True
 
 
 def is_test_suite_goal(goal: str) -> bool:
@@ -42,45 +49,10 @@ def is_test_suite_goal(goal: str) -> bool:
     return first.startswith("make the project's test suite pass")
 
 
-def collect_work_diff(workspace: Workspace, sha_before: str | None) -> str:
-    """Diff of this cycle's work: commits after sha_before plus the working tree."""
-    parts: list[str] = []
-    status = run_git(workspace, ["status", "--short", "--branch"])
-    if status.stdout.strip():
-        parts.append(status.stdout.strip())
-    diff_args = ["diff"]
-    if sha_before:
-        diff_args.append(sha_before)
-    else:
-        diff_args.append("HEAD")
-    diff = run_git(workspace, diff_args)
-    if diff.stdout.strip():
-        parts.append(diff.stdout.strip())
-    untracked = run_git(workspace, ["ls-files", "--others", "--exclude-standard"])
-    for rel in untracked.stdout.splitlines():
-        path = rel.strip()
-        if not path or is_runtime_artifact(path):
-            continue
-        full = workspace.root / path
-        if not full.is_file():
-            parts.append(f"untracked: {path}")
-            continue
-        try:
-            body = full.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            parts.append(f"untracked binary: {path}")
-            continue
-        parts.append(f"--- /dev/null\n+++ b/{path}\n{body}")
-    text = "\n\n".join(parts).strip() or "(no diff)"
-    if len(text) > DIFF_LIMIT:
-        return text[:DIFF_LIMIT] + "\n... truncated"
-    return text
-
-
 def parse_review(text: str | None) -> GoalReview:
     raw = (text or "").strip()
     if not raw:
-        return GoalReview(False, "reviewer returned no verdict", "")
+        return GoalReview(False, "reviewer returned no verdict", "", parsed=False)
     for blob in _candidate_blobs(raw):
         try:
             data = json.loads(blob)
@@ -94,8 +66,13 @@ def parse_review(text: str | None) -> GoalReview:
         reason = str(data.get("reason") or data.get("why") or "").strip()
         if not reason:
             reason = "goal met" if met else "goal not met"
-        return GoalReview(met, reason, raw)
-    return GoalReview(False, 'reviewer did not return a {"met": ...} verdict', raw)
+        return GoalReview(met, reason, raw, parsed=True)
+    return GoalReview(
+        False,
+        'reviewer did not return a {"met": ...} verdict',
+        raw,
+        parsed=False,
+    )
 
 
 def review_goal(
@@ -107,7 +84,9 @@ def review_goal(
     tests_passed: bool | None,
 ) -> GoalReview:
     if is_test_suite_goal(goal) and tests_passed is True:
-        return GoalReview(True, "project tests passed after the change")
+        verdict = GoalReview(True, "project tests passed after the change")
+        _record_review(verdict, attempt=1)
+        return verdict
     user = "\n".join(
         [
             "Goal:",
@@ -122,16 +101,48 @@ def review_goal(
             diff.strip() or "(no diff)",
         ]
     )
-    turn = timed_complete(
-        llm,
-        [
-            {"role": "system", "content": REVIEW_SYSTEM},
-            {"role": "user", "content": user},
-        ],
-        [],
-        purpose="review",
+    messages: list[dict] = [
+        {"role": "system", "content": REVIEW_SYSTEM},
+        {"role": "user", "content": user},
+    ]
+    turn = timed_complete(llm, messages, [], purpose="review")
+    verdict = parse_review(turn.text)
+    _record_review(verdict, attempt=1)
+    if verdict.parsed:
+        return verdict
+    messages.append({"role": "assistant", "content": turn.text or ""})
+    messages.append({"role": "user", "content": REVIEW_JSON_NUDGE})
+    turn = timed_complete(llm, messages, [], purpose="review")
+    verdict = parse_review(turn.text)
+    _record_review(verdict, attempt=2)
+    return verdict
+
+
+def review_reason(verdict: GoalReview) -> str:
+    """Human-readable review outcome, including a raw snippet when JSON parse failed."""
+    if verdict.parsed or not verdict.raw:
+        return verdict.reason
+    snippet = " ".join(verdict.raw.split())
+    if len(snippet) > 240:
+        snippet = snippet[:240] + "..."
+    return f"{verdict.reason} ({snippet})"
+
+
+def _record_review(verdict: GoalReview, *, attempt: int) -> None:
+    record_event(
+        kind="review",
+        attempt=attempt,
+        met=verdict.met,
+        parsed=verdict.parsed,
+        reason=verdict.reason,
+        raw=_clip_raw(verdict.raw),
     )
-    return parse_review(turn.text)
+
+
+def _clip_raw(text: str, limit: int = REVIEW_RAW_LIMIT) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n... truncated"
 
 
 def _as_bool(value: object) -> bool | None:

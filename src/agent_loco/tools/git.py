@@ -10,6 +10,9 @@ from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 from agent_loco.tools.files import is_probably_secret_path
 
 SECRET_REFUSAL = "refusing to commit likely secrets: {paths}"
+PROTECTED_COMMIT_REFUSAL = (
+    "refusing to commit on {branch}; the cycle commits after review passes"
+)
 RUN_LOG_PREFIX = ".loco/runs"
 PROTECTED_BRANCHES = frozenset({"main", "master", "trunk"})
 
@@ -31,7 +34,10 @@ def git_tools(
         ),
         ToolSpec(
             name="git_diff",
-            description="Show the unstaged and staged diff. Optionally limit to one path.",
+            description=(
+                "Show the unstaged and staged diff. Optionally limit to one path. "
+                "Lockfiles are summarized as package version changes."
+            ),
             parameters=object_schema(
                 {
                     "path": {
@@ -58,8 +64,9 @@ def git_tools(
         ToolSpec(
             name="git_commit",
             description=(
-                "Stage workspace changes and create a commit. Refuses secrets and empty commits. "
-                "Do not use this until tests have passed if the project has a test command."
+                "Stage workspace changes and create a commit. Refuses secrets, empty commits, "
+                "and commits on main/master/trunk. Do not commit on a protected branch; the "
+                "cycle commits after tests pass and review confirms the goal."
             ),
             parameters=object_schema(
                 {
@@ -70,7 +77,7 @@ def git_tools(
                 },
                 ["message"],
             ),
-            handler=lambda message: commit_changes(workspace, message, env_extras),
+            handler=lambda message: agent_commit(workspace, message, env_extras),
         ),
     ]
     if allow_publish:
@@ -150,11 +157,31 @@ def _git_status(workspace: Workspace) -> ToolResult:
 
 
 def _git_diff(workspace: Workspace, path: str | None) -> ToolResult:
-    args = ["diff", "HEAD"]
+    from agent_loco.runtime.workdiff import (
+        collect_work_diff,
+        is_lockfile,
+        summarize_lockfile_pair,
+    )
+
+    if path and is_lockfile(path):
+        old = run_git(workspace, ["show", f"HEAD:{path}"])
+        new_path = workspace.root / path
+        try:
+            new = new_path.read_text(encoding="utf-8") if new_path.is_file() else ""
+        except (OSError, UnicodeDecodeError):
+            new = ""
+        summary = summarize_lockfile_pair(
+            path,
+            old.stdout if old.returncode == 0 else "",
+            new,
+        )
+        return ToolResult(True, summary or "(no diff)")
     if path:
-        args.extend(["--", str(workspace.resolve(path))])
-    result = run_git(workspace, args)
-    return ToolResult(result.returncode == 0, _output(result) or "(no diff)")
+        result = run_git(workspace, ["diff", "HEAD", "--", str(workspace.resolve(path))])
+        if result.returncode != 0:
+            return ToolResult(False, _output(result))
+        return ToolResult(True, result.stdout.strip() or "(no diff)")
+    return ToolResult(True, collect_work_diff(workspace, None) or "(no diff)")
 
 
 def _git_log(workspace: Workspace, limit: int) -> ToolResult:
@@ -243,6 +270,21 @@ def current_sha(workspace: Workspace) -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def agent_commit(
+    workspace: Workspace,
+    message: str,
+    env: dict[str, str] | None = None,
+) -> ToolResult:
+    """Commit from the coding agent. Refuses protected branches until cycle review."""
+    branch = current_branch(workspace)
+    if is_protected_branch(branch):
+        return ToolResult(
+            False,
+            PROTECTED_COMMIT_REFUSAL.format(branch=branch or "HEAD"),
+        )
+    return commit_changes(workspace, message, env)
 
 
 def commit_changes(

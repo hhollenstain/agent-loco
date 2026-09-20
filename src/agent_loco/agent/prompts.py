@@ -16,6 +16,8 @@ Rules:
   open a feature-branch pull request only after tests pass AND a separate
   review confirms the goal is actually done. Tests passing is not enough.
 - Never push to main or master.
+- Never commit on main, master, or trunk. Leave commits to the cycle after
+  review. Use git_commit only on a feature branch; never `git commit` via the shell.
 - Do not invent dependencies, APIs, or files you have not seen.
 - If you cannot complete the goal safely, stop and explain what blocked you.
 - When you are done, summarize what changed, how you verified it, and what is still open.
@@ -39,9 +41,8 @@ def user_prompt(goal: str, context: str) -> str:
         [
             "",
             "Work until the goal is done or you are blocked. Test your changes. "
-            "Only commit if tests pass (or the project has no test command) "
-            "and the diff is intentional. A later review will reject a PR "
-            "if the diff does not fulfill this goal.",
+            "Do not commit on main/master; the cycle commits after review. "
+            "A later review will reject a PR if the diff does not fulfill this goal.",
         ]
     )
     return "\n".join(parts)

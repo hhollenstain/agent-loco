@@ -42,6 +42,17 @@ def test_run_command_refuses_push_when_publish_disabled(tmp_path: Path) -> None:
     assert "publish is disabled" in result.output
 
 
+def test_run_command_refuses_git_commit(tmp_path: Path) -> None:
+    result = run_command(
+        Workspace(tmp_path),
+        "git commit -m 'skip review'",
+        timeout_seconds=5,
+        allow_publish=False,
+    )
+    assert result.ok is False
+    assert "git_commit" in result.output
+
+
 def test_run_command_refuses_push_to_main_even_when_publish_enabled(tmp_path: Path) -> None:
     result = run_command(
         Workspace(tmp_path),

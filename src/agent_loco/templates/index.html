@@ -1296,6 +1296,13 @@
         if (event.ok === false) return `LLM ${purpose} failed${wait ? " after " + wait : ""}`;
         return `LLM ${purpose} response${wait ? " in " + wait : ""}`;
       }
+      if (event.kind === "review") {
+        const attempt = event.attempt && event.attempt > 1 ? ` #${event.attempt}` : "";
+        if (event.parsed === false) {
+          return `Goal review${attempt}: unparsed (${event.reason || "no verdict"})`;
+        }
+        return `Goal review${attempt}: met=${event.met} (${event.reason || ""})`;
+      }
       if (event.kind === "step") return event.message || "step";
       return event.message || event.kind || "event";
     }
@@ -1310,6 +1317,11 @@
           const key = `${event.kind}:${event.path || ""}:${event.at || ""}`;
           const open = running && lastFile === event || state.openDiffs.has(key) ? " open" : "";
           return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${renderDiff(event.diff)}</pre></details></li>`;
+        }
+        if (event.kind === "review" && event.raw) {
+          const key = `${event.kind}:${event.attempt || 1}:${event.at || ""}`;
+          const open = state.openDiffs.has(key) ? " open" : "";
+          return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${escapeHtml(event.raw)}</pre></details></li>`;
         }
         return `<li class="timeline-item">${when}${title}</li>`;
       }).join("");

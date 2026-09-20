@@ -6,6 +6,7 @@ from tests.support import init_git_repo
 
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.git import (
+    agent_commit,
     commit_changes,
     current_branch,
     current_sha,
@@ -89,6 +90,40 @@ def test_run_logs_alone_are_not_changes(tmp_path: Path) -> None:
     assert not has_changes(workspace)
     result = commit_changes(workspace, "should not commit logs")
     assert not result.ok
+
+
+def test_agent_commit_refuses_protected_branch(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    result = agent_commit(workspace, "update app")
+    assert result.ok is False
+    assert "refusing to commit" in result.output
+    assert has_changes(workspace)
+    assert current_branch(workspace) in {"main", "master"}
+
+
+def test_agent_commit_allows_feature_branch(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    result = agent_commit(workspace, "update app")
+    assert result.ok
+    assert "committed" in result.output
+    assert not has_changes(workspace)
+
+
+def test_cycle_commit_helper_still_works_on_protected_branch(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    result = commit_changes(workspace, "update app")
+    assert result.ok
+    assert current_branch(workspace) in {"main", "master"}
 
 
 def test_push_refuses_protected_branches(tmp_path: Path) -> None:

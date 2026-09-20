@@ -54,6 +54,7 @@ def test_cycle_commits_when_scripted_fix_passes(tmp_path: Path, settings: Settin
                 ],
             ),
             AssistantTurn(text="Implemented add and verified with python3 check.py."),
+            _review_turn(True, "adder returns 5 and tests passed"),
         ]
     )
     result = run_cycle(tmp_path, settings, llm)
@@ -64,6 +65,11 @@ def test_cycle_commits_when_scripted_fix_passes(tmp_path: Path, settings: Settin
     assert result.commit_sha
     kinds = [event["kind"] for event in result.events]
     assert "llm" in kinds
+    assert "review" in kinds
+    assert any(
+        event["kind"] == "review" and event["parsed"] is True and event["met"] is True
+        for event in result.events
+    )
     assert any(
         event["kind"] == "file" and event["path"] == "app.py" and event["action"] == "updated"
         for event in result.events
@@ -191,6 +197,7 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
                 ],
             ),
             AssistantTurn(text="Implemented add and verified with python3 check.py."),
+            _review_turn(True, "adder returns 5 and tests passed"),
         ]
     )
     result = run_cycle(tmp_path, settings, llm, cli_create_pr=True)
@@ -311,3 +318,108 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
     assert "Goal review confirmed" in str(captured["body"])
     assert "<header>" not in (tmp_path / "ui.html").read_text(encoding="utf-8")
     assert "toggle-sidebar" in (tmp_path / "ui.html").read_text(encoding="utf-8")
+
+
+def test_cycle_does_not_agent_retry_unparsed_review(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "max_repair_attempts: 0\n",
+            "max_repair_attempts: 1\n",
+        ),
+        encoding="utf-8",
+    )
+    leftover = AssistantTurn(text="SHOULD NOT BE CONSUMED")
+    llm = ScriptedClient(
+        [
+            _write_file_turn("app.py", "def add(left, right):\n    return left + right\n# note\n"),
+            AssistantTurn(text="Tweaked the adder."),
+            AssistantTurn(text="Looks done to me."),
+            AssistantTurn(text="Still looks done."),
+            leftover,
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="Remove the top header and make the sidebar collapsible",
+    )
+    assert result.status == "failed"
+    assert result.committed is False
+    assert "verdict" in (result.reason or "")
+    assert "Still looks done" in (result.reason or "")
+    reviews = [event for event in result.events if event["kind"] == "review"]
+    assert len(reviews) == 2
+    assert reviews[0]["parsed"] is False
+    assert reviews[0]["raw"] == "Looks done to me."
+    assert leftover in llm._turns
+
+
+def test_cycle_review_prompt_includes_lockfile_versions(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    hashes = ",\n".join(f'                "sha256:{index:064x}"' for index in range(80))
+    (tmp_path / "Pipfile.lock").write_text(
+        "{\n"
+        '    "default": {\n'
+        '        "discord.py": {\n'
+        f'            "hashes": [\n{hashes}\n            ],\n'
+        '            "version": "==2.3.2"\n'
+        "        }\n"
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "setup.py").write_text("INSTALL = ['discord.py==2.3.2']\n", encoding="utf-8")
+    run_git(Workspace(tmp_path), ["add", "-A"])
+    run_git(Workspace(tmp_path), ["commit", "-m", "lockfiles"])
+    new_lock = (
+        "{\n"
+        '    "default": {\n'
+        '        "discord.py": {\n'
+        f'            "hashes": [\n{hashes}\n            ],\n'
+        '            "version": "==2.7.1"\n'
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+    llm = ScriptedClient(
+        [
+            _write_file_turn("setup.py", "INSTALL = ['discord.py==2.7.1']\n"),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-2",
+                        name="write_file",
+                        arguments={"path": "Pipfile.lock", "content": new_lock},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Updated discord.py to 2.7.1."),
+            _review_turn(True, "discord.py 2.3.2 -> 2.7.1"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="This repo is using a really outdated version of discord.py",
+    )
+    assert result.status == "success"
+    review_messages = [
+        message["content"]
+        for batch in llm.calls
+        for message in batch
+        if message.get("role") == "user" and "Diff:" in str(message.get("content") or "")
+    ]
+    assert review_messages
+    diff_text = str(review_messages[0])
+    assert "discord.py: 2.3.2 -> 2.7.1" in diff_text
+    assert "setup.py" in diff_text
+    assert diff_text.count("sha256") < 3
