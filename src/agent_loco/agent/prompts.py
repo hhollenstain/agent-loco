@@ -13,7 +13,8 @@ Rules:
 - Never commit secrets (.env, keys, credentials, pem files).
 - Never force-push, never skip git hooks, never rewrite published history.
 - Do not push or open a PR yourself. If create-pr is on, the cycle will
-  open a feature-branch pull request after tests pass.
+  open a feature-branch pull request only after tests pass AND a separate
+  review confirms the goal is actually done. Tests passing is not enough.
 - Never push to main or master.
 - Do not invent dependencies, APIs, or files you have not seen.
 - If you cannot complete the goal safely, stop and explain what blocked you.
@@ -39,7 +40,8 @@ def user_prompt(goal: str, context: str) -> str:
             "",
             "Work until the goal is done or you are blocked. Test your changes. "
             "Only commit if tests pass (or the project has no test command) "
-            "and the diff is intentional.",
+            "and the diff is intentional. A later review will reject a PR "
+            "if the diff does not fulfill this goal.",
         ]
     )
     return "\n".join(parts)

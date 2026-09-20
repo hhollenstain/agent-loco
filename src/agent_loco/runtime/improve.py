@@ -17,6 +17,7 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
 )
+from agent_loco.runtime.review import collect_work_diff, review_goal
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
@@ -150,6 +151,61 @@ def run_cycle(
         return result
 
     log_progress("Checking for changes...")
+    sha = current_sha(workspace)
+    has_work = has_changes(workspace) or bool(sha_before and sha and sha != sha_before)
+    if not has_work:
+        log_progress("No project files changed; skipping commit and publish.")
+        result = CycleResult(
+            status="skipped",
+            goal=selected_goal,
+            summary=agent_result.summary,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=sha,
+            reason="no project files changed; commit skipped",
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return result
+
+    review = _ensure_goal_met(
+        workspace,
+        settings,
+        project,
+        llm,
+        agent,
+        selected_goal,
+        agent_result.summary,
+        sha_before,
+        tests_passed,
+        allow_create_pr,
+    )
+    tests_passed = review["tests_passed"]
+    agent_result_summary = review["summary"]
+    if not review["met"]:
+        log_progress(f"Goal not met: {review['reason']}")
+        reason = (
+            "tests failed; commit skipped"
+            if review.get("tests_failed")
+            else f"goal not met; PR skipped: {review['reason']}"
+        )
+        result = CycleResult(
+            status="failed",
+            goal=selected_goal,
+            summary=agent_result_summary,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=current_sha(workspace),
+            reason=reason,
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return result
+    agent_result.summary = agent_result_summary
+
+    log_progress("Goal confirmed; checking for publishable changes...")
     committed = False
     published = False
     sha = current_sha(workspace)
@@ -203,22 +259,6 @@ def run_cycle(
         committed = True
         sha = current_sha(workspace)
         log_progress(f"Committed SHA: {sha}")
-
-    if not committed and not has_changes(workspace):
-        log_progress("No project files changed; skipping commit and publish.")
-        result = CycleResult(
-            status="skipped",
-            goal=selected_goal,
-            summary=agent_result.summary,
-            tests_passed=tests_passed,
-            committed=False,
-            published=False,
-            commit_sha=sha,
-            reason="no project files changed; commit skipped",
-        )
-        _write_run_log(workspace.root, result)
-        _append_to_history(workspace.root, result)
-        return result
 
     if committed and allow_create_pr:
         branch = current_branch(workspace)
@@ -306,6 +346,73 @@ def run_cycle(
     return result
 
 
+def _ensure_goal_met(
+    workspace: Workspace,
+    settings: Settings,
+    project: ProjectConfig,
+    llm: LLMClient,
+    agent: CodingAgent,
+    goal: str,
+    summary: str,
+    sha_before: str | None,
+    tests_passed: bool | None,
+    allow_create_pr: bool,
+) -> dict[str, object]:
+    context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    verdict = review_goal(
+        llm,
+        goal,
+        diff=collect_work_diff(workspace, sha_before),
+        summary=summary,
+        tests_passed=tests_passed,
+    )
+    log_progress(f"Goal review: met={verdict.met} ({verdict.reason})")
+    attempts = 0
+    while not verdict.met and attempts < project.max_repair_attempts:
+        attempts += 1
+        log_progress(f"Goal retry {attempts}/{project.max_repair_attempts}: {verdict.reason}")
+        follow = agent.run(
+            _goal_retry_prompt(goal, verdict.reason, collect_work_diff(workspace, sha_before)),
+            context,
+        )
+        if follow.summary:
+            summary = follow.summary
+        tests_after = _maybe_test(workspace, project, settings)
+        tests_passed = None if tests_after is None else tests_after.ok
+        if settings.require_tests and tests_after is not None and not tests_after.ok:
+            return {
+                "met": False,
+                "reason": "tests failed after goal retry",
+                "summary": summary,
+                "tests_passed": False,
+                "tests_failed": True,
+            }
+        verdict = review_goal(
+            llm,
+            goal,
+            diff=collect_work_diff(workspace, sha_before),
+            summary=summary,
+            tests_passed=tests_passed,
+        )
+        log_progress(f"Goal review: met={verdict.met} ({verdict.reason})")
+    return {
+        "met": verdict.met,
+        "reason": verdict.reason,
+        "summary": summary,
+        "tests_passed": tests_passed,
+        "tests_failed": False,
+    }
+
+
+def _goal_retry_prompt(goal: str, reason: str, diff: str) -> str:
+    return (
+        "The stated goal is not done. Do not summarize. Finish the goal.\n\n"
+        f"Goal:\n{goal.strip()}\n\n"
+        f"Why it is not done:\n{reason.strip()}\n\n"
+        f"Current diff:\n{diff}"
+    )
+
+
 def _choose_goal(project: ProjectConfig, tests_before) -> str | None:
     if tests_before is not None and not tests_before.ok:
         return "Make the project's test suite pass.\n\n" + tests_before.output
@@ -356,6 +463,7 @@ def _pr_body(
         "## Test plan",
         "",
         tests_line,
+        "- [x] Goal review confirmed the requested outcome",
         "- [ ] Review this feature branch; do not merge unreviewed commits to main",
     ]
     if commit_sha:
