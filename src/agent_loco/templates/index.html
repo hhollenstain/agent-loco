@@ -196,6 +196,17 @@
       border: 1px solid var(--accent);
       pointer-events: none;
     }
+    .server-filter {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed var(--line);
+    }
+    .server-filter label {
+      margin-top: 0;
+    }
+    .server-filter select {
+      max-width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -214,8 +225,10 @@
 
       <label for="server-history">LLM server</label>
       <select id="server-history" aria-label="Remembered LLM servers">
-        {% for url in known_servers %}
-        <option value="{{ url }}" {% if url == default_base_url %}selected{% endif %}>{{ url }}</option>
+        {% for server in known_servers %}
+        {% set server_url = server.url if server is mapping else server %}
+        {% set server_alias = server.alias if server is mapping else None %}
+        <option value="{{ server_url }}" {% if server_url == default_base_url %}selected{% endif %}>{{ server_alias or server_url }}</option>
         {% endfor %}
       </select>
       <div class="host-row">
@@ -252,6 +265,12 @@
         <label style="margin:0">Tasks</label>
         <span class="meta" id="counts"></span>
       </div>
+      <div class="server-filter">
+        <label for="server-filter">Filter by server:</label>
+        <select id="server-filter" aria-label="Filter tasks by server">
+          <option value="">All servers</option>
+        </select>
+      </div>
       <div id="task-list" class="task-list"></div>
       <div id="detail"></div>
       <div class="history">
@@ -270,7 +289,7 @@
     </section>
   </main>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "", sidebarCollapsed: false };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "" };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -282,6 +301,7 @@
     const paginationEl = document.getElementById("pagination");
     const mainEl = document.getElementById("main");
     const toggleBtn = document.getElementById("toggle-sidebar");
+    const serverFilterEl = document.getElementById("server-filter");
 
     function goalText(item) {
       if (!item.goal) return "(from project goals / failing tests)";
@@ -296,14 +316,33 @@
         .replaceAll('"', "&quot;");
     }
 
+    function serverDisplayName(server) {
+      // Handle both dict format {url, alias} and string URL
+      if (typeof server === 'object' && server !== null) {
+        const url = server.url || "";
+        const alias = server.alias;
+        if (alias && alias.trim()) {
+          return `${alias} (${url})`;
+        }
+        return url;
+      }
+      return String(server);
+    }
+
     function render() {
       const running = state.tasks.filter(t => t.status === "running").length;
       const queued = state.tasks.filter(t => t.status === "queued").length;
       countsEl.textContent = `${running} running · ${queued} queued`;
-      if (!state.tasks.length) {
+      
+      // Filter tasks by server if filter is set
+      const filteredTasks = state.serverFilter 
+        ? state.tasks.filter(t => (t.base_url || "") === state.serverFilter)
+        : state.tasks;
+      
+      if (!filteredTasks.length) {
         listEl.innerHTML = `<p class="empty">No tasks yet.</p>`;
       } else {
-        listEl.innerHTML = state.tasks.map(task => `
+        listEl.innerHTML = filteredTasks.map(task => `
           <button type="button" class="task ${task.id === state.selected ? "selected" : ""}" data-id="${escapeHtml(task.id)}">
             <div class="row">
               <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
@@ -400,6 +439,25 @@
         // Paginated format
         state.history = historyData;
       }
+      
+      // Update server filter dropdown with unique servers from tasks
+      const servers = new Set();
+      for (const task of state.tasks) {
+        if (task.base_url) {
+          servers.add(task.base_url);
+        }
+      }
+      serverFilterEl.innerHTML = '<option value="">All servers</option>';
+      for (const server of servers) {
+        const option = document.createElement("option");
+        option.value = escapeHtml(server);
+        option.textContent = escapeHtml(server);
+        if (server === state.serverFilter) {
+          option.selected = true;
+        }
+        serverFilterEl.appendChild(option);
+      }
+      
       render();
     }
 
@@ -433,6 +491,11 @@
       state.search = "";
       state.historyPage = 1;
       searchInput.value = "";
+      refresh();
+    });
+
+    serverFilterEl.addEventListener("change", (event) => {
+      state.serverFilter = event.target.value;
       refresh();
     });
 
@@ -538,12 +601,18 @@
       const current = selected || document.getElementById("base-url").value;
       historyEl.replaceChildren();
       const seen = new Set();
-      for (const url of servers || []) {
+      for (const server of servers || []) {
+        // Handle both dict format {url, alias} and string URL
+        const url = (typeof server === 'object' && server !== null) ? server.url : server;
         if (!url || seen.has(url)) continue;
         seen.add(url);
         const option = document.createElement("option");
         option.value = url;
-        option.textContent = url;
+        // Display alias if available, otherwise URL
+        const displayName = (typeof server === 'object' && server !== null && server.alias) 
+          ? `${server.alias} (${url})` 
+          : url;
+        option.textContent = displayName || url;
         if (url === current) option.selected = true;
         historyEl.append(option);
       }
