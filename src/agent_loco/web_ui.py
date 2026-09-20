@@ -7,7 +7,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -25,6 +25,7 @@ from agent_loco.runtime.servers import (
     update_server_alias,
 )
 from agent_loco.runtime.tasks import TaskManager
+from agent_loco.runtime.uireview import resolve_ui_screenshot
 from agent_loco.runtime.workspaces import (
     archive_workspace,
     browse_directory,
@@ -429,6 +430,19 @@ def create_app(
             page_size=page_size,
             search=search,
         )
+
+    @app.get("/api/ui-screenshot", response_model=None)
+    def ui_screenshot(
+        request: Request,
+        name: str,
+        workspace: str | None = None,
+    ) -> Any:
+        ui: UiState = request.app.state.ui
+        root = Path(workspace or ui.default_workspace).expanduser()
+        path = resolve_ui_screenshot(root, name)
+        if path is None:
+            return JSONResponse({"error": "screenshot not found"}, status_code=404)
+        return FileResponse(path, media_type="image/png")
 
     @app.post("/api/servers/alias")
     def update_alias(

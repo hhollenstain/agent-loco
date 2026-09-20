@@ -103,7 +103,11 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'event.kind === "pr"' in home.content
         assert b'event.kind === "ui"' in home.content
         assert b"function renderFileChanges(" in home.content
+        assert b"function fileReviewDiff(" in home.content
         assert b'data-task-pane="changes"' in home.content
+        assert b'data-task-pane="screenshots"' in home.content
+        assert b"function taskPaneFromTab(" in home.content
+        assert b"/api/ui-screenshot" in home.content
         assert b'id="file-changes"' in home.content
         assert b"function focusTimelineStage(" in home.content
         assert b'data-stage="' in home.content
@@ -760,7 +764,32 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
         assert b"timeline-item think" in home.content
         assert b"function renderFileChanges(" in home.content
         assert b'data-task-pane="changes"' in home.content
+        assert b'data-task-pane="screenshots"' in home.content
         assert b"No file changes in this task." in home.content
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_ui_screenshot_api_serves_pngs(settings: Settings, tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    shots = loco / "ui-screenshots"
+    shots.mkdir(parents=True)
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+    (loco / "ui-review.png").write_bytes(png)
+    (shots / "ui-review_goal.png").write_bytes(png)
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        legacy = client.get("/api/ui-screenshot", params={"name": "ui-review.png"})
+        assert legacy.status_code == 200
+        assert legacy.content[:8] == b"\x89PNG\r\n\x1a\n"
+        unique = client.get("/api/ui-screenshot", params={"name": "ui-review_goal.png"})
+        assert unique.status_code == 200
+        missing = client.get("/api/ui-screenshot", params={"name": "missing.png"})
+        assert missing.status_code == 404
+        traversal = client.get("/api/ui-screenshot", params={"name": "../config.yaml"})
+        assert traversal.status_code == 404
     finally:
         manager.shutdown(wait=False)
 

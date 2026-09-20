@@ -11,9 +11,10 @@ def browser_tools(workspace: Workspace) -> list[ToolSpec]:
         ToolSpec(
             name="review_ui",
             description=(
-                "Render the UI in a headless browser and report JavaScript errors, "
-                "visible controls, and crushed/zero-size elements. Use this after "
-                "HTML, CSS, JS, or template edits. Optional url, HTML path, and click selector."
+                "Render the UI in a headless browser, click new tabs/buttons, and "
+                "report JavaScript errors, dead controls, and crushed/zero-size "
+                "elements. Use this after HTML, CSS, JS, or template edits. Optional "
+                "url, HTML path, and click selector."
             ),
             parameters=object_schema(
                 {

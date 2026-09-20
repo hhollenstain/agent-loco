@@ -41,6 +41,10 @@ def test_write_file_records_create_and_update_diffs(tmp_path: Path) -> None:
     assert "--- a/note.txt" in events[1]["diff"]
     assert "-alpha" in events[1]["diff"]
     assert "+beta" in events[1]["diff"]
+    assert events[1]["net_action"] == "created"
+    assert events[1]["net_diff"].startswith("--- /dev/null")
+    assert "+beta" in events[1]["net_diff"]
+    assert "-alpha" not in events[1]["net_diff"]
     assert events[0]["at"].endswith("Z")
 
 
@@ -56,17 +60,30 @@ def test_str_replace_updates_unique_match(tmp_path: Path) -> None:
             old_string="<header>old</header>",
             new_string="<header>new</header>",
         )
+        second = _tool(workspace, "str_replace").handler(
+            path="ui.html",
+            old_string="<main></main>",
+            new_string="<main>body</main>",
+        )
         events = current_events()
     finally:
         reset_progress(token)
     assert result.ok
     assert "1 replacement" in result.output
+    assert second.ok
     assert (tmp_path / "ui.html").read_text(encoding="utf-8") == (
-        "<header>new</header>\n<main></main>\n"
+        "<header>new</header>\n<main>body</main>\n"
     )
     assert events[0]["action"] == "updated"
     assert "-<header>old</header>" in events[0]["diff"]
     assert "+<header>new</header>" in events[0]["diff"]
+    assert len(events) == 2
+    assert "-<main></main>" in events[1]["diff"]
+    assert "+<main>body</main>" in events[1]["diff"]
+    assert "-<header>old</header>" in events[1]["net_diff"]
+    assert "+<header>new</header>" in events[1]["net_diff"]
+    assert "+<main>body</main>" in events[1]["net_diff"]
+    assert events[1]["net_action"] == "updated"
 
 
 def test_str_replace_requires_unique_match_unless_replace_all(tmp_path: Path) -> None:

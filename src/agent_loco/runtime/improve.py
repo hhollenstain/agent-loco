@@ -25,6 +25,7 @@ from agent_loco.runtime.uireview import (
     collect_ui_evidence,
     format_ui_evidence,
     ui_review_needed,
+    unverified_interactive_ui,
 )
 from agent_loco.runtime.workdiff import collect_current_evidence, collect_work_diff
 from agent_loco.sandbox import Workspace
@@ -364,6 +365,7 @@ def _run_cycle(
                 tests_passed=tests_passed,
                 commit_sha=sha,
                 branch=branch or "",
+                screenshots=_pr_screenshot_names(),
             ),
             base=base,
         )
@@ -597,6 +599,11 @@ def _review_goal(
         )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
+    unverified = unverified_interactive_ui(goal, ui_evidence) if ui_evidence else None
+    if verdict.met and unverified:
+        overridden = GoalReview(False, unverified, parsed=True)
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
     return verdict
 
 
@@ -676,7 +683,8 @@ def _goal_retry_prompt(goal: str, reason: str, diff: str) -> str:
         "Do not write placeholder, status, or verification files. "
         "If the diff is unrelated, replace or remove it and implement this exact goal. "
         "Use str_replace for surgical edits; do not rewrite large files. "
-        "If this is a UI change, call review_ui after editing and fix render errors.\n\n"
+        "If this is a UI change, call review_ui after editing, click new tabs, "
+        "and fix render errors or dead controls.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}\n\n"
         f"Current diff:\n{diff}"
@@ -715,6 +723,21 @@ def _commit_message(goal: str, summary: str) -> str:
     return first_goal_line
 
 
+def _pr_screenshot_names() -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for event in current_events():
+        if event.get("kind") != "ui":
+            continue
+        name = str(event.get("screenshot_filename") or "").strip()
+        if not name:
+            name = Path(str(event.get("screenshot") or "")).name
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
 def _pr_body(
     goal: str,
     summary: str,
@@ -722,6 +745,7 @@ def _pr_body(
     tests_passed: bool | None,
     commit_sha: str | None,
     branch: str,
+    screenshots: list[str] | None = None,
 ) -> str:
     detail = (summary or "").strip() or goal.strip()
     if tests_passed is True:
@@ -745,6 +769,16 @@ def _pr_body(
         "- [x] Goal review confirmed the requested outcome",
         "- [ ] Review this feature branch; do not merge unreviewed commits to main",
     ]
+    shots = [Path(name).name for name in (screenshots or []) if str(name).strip()]
+    if shots:
+        lines.extend(["", "## Screenshots", ""])
+        for name in shots:
+            rel = (
+                f".loco/{name}"
+                if name == "ui-review.png"
+                else f".loco/ui-screenshots/{name}"
+            )
+            lines.append(f"![{name}]({rel})")
     if commit_sha:
         lines.extend(["", f"Commit: `{commit_sha}`"])
     if branch:

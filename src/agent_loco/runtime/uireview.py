@@ -9,8 +9,10 @@ import socket
 import subprocess
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -28,7 +30,12 @@ UI_FILE_RE = re.compile(
 )
 UI_GOAL_RE = re.compile(
     r"\b(ui|ux|css|html|layout|sidebar|progress bar|template|frontend|"
-    r"web page|web-ui|web ui|button|panel|dark mode|responsive)\b",
+    r"web page|web-ui|web ui|button|panel|dark mode|responsive|"
+    r"screenshot|screen shot|tab)\b",
+    re.IGNORECASE,
+)
+INTERACTIVE_UI_RE = re.compile(
+    r"\b(tab|tabs|screenshot|screen shot|panel|modal|button)\b",
     re.IGNORECASE,
 )
 MAX_SNAPSHOT_CHARS = 6_000
@@ -37,11 +44,21 @@ PAGE_EVAL = """() => {
     'button, a, [role="tab"], [role="button"], h1, h2, h3, label, input,'
     + ' select, textarea, .progress-stage, .task, .task-card'
   )];
-  return {
+    return {
     title: document.title || "",
     url: location.href,
     text: (document.body && document.body.innerText || "").slice(0, 8000),
     errors: window.__locoErrors || [],
+    tabs: [...document.querySelectorAll("[data-task-pane]")].slice(0, 12).map((el) => {
+      const pane = el.getAttribute("data-task-pane") || "";
+      const panel = pane ? document.querySelector('[data-pane="' + pane + '"]') : null;
+      return {
+        name: (el.innerText || "").trim().slice(0, 80),
+        pane,
+        selected: el.getAttribute("aria-selected") === "true",
+        panelHidden: panel ? Boolean(panel.hidden) : null,
+      };
+    }),
     elements: nodes.slice(0, 80).map((el) => {
       const box = el.getBoundingClientRect();
       const name = (
@@ -81,10 +98,13 @@ class UiEvidence:
     page_errors: list[str] = field(default_factory=list)
     console_errors: list[str] = field(default_factory=list)
     smashed: list[str] = field(default_factory=list)
+    dead_controls: list[str] = field(default_factory=list)
+    clicked: list[str] = field(default_factory=list)
     snapshot: str = ""
     screenshot: str | None = None
     screenshot_filename: str | None = None
     notes: str = ""
+    interactive: bool = True
 
     @property
     def summary(self) -> str:
@@ -98,7 +118,11 @@ class UiEvidence:
             bits.append(f"{len(errors)} JS error(s)")
         if self.smashed:
             bits.append(f"{len(self.smashed)} unreadable control(s)")
-        if not errors and not self.smashed:
+        if self.dead_controls:
+            bits.append(f"{len(self.dead_controls)} dead control(s)")
+        if not self.interactive:
+            bits.append("static capture, clicks unverified")
+        if not errors and not self.smashed and not self.dead_controls and self.interactive:
             bits.append("no console errors")
         return " · ".join(bits)
 
@@ -130,6 +154,16 @@ def format_ui_evidence(evidence: UiEvidence | None) -> str:
     if evidence.smashed:
         lines.append("Controls with no usable size (hidden, crushed, or off-screen):")
         lines.extend(f"- {item}" for item in evidence.smashed[:12])
+    if evidence.dead_controls:
+        lines.append("Controls that did not reveal their panel when clicked:")
+        lines.extend(f"- {item}" for item in evidence.dead_controls[:12])
+    if not evidence.interactive:
+        lines.append(
+            "Capture could not click controls (static dump-dom). "
+            "New tabs, panels, and buttons are unverified."
+        )
+    if evidence.clicked:
+        lines.append("Clicked: " + ", ".join(evidence.clicked[:8]))
     if evidence.snapshot:
         lines.append("Visible page:")
         lines.append(evidence.snapshot.strip())
@@ -138,6 +172,28 @@ def format_ui_evidence(evidence: UiEvidence | None) -> str:
     if evidence.screenshot_filename:
         lines.append(f"Screenshot (for PRs): ui-screenshots/{evidence.screenshot_filename}")
     return "\n".join(lines)
+
+
+def resolve_ui_screenshot(workspace: Path, name: str) -> Path | None:
+    filename = Path(str(name or "").strip()).name
+    if not filename or filename in {".", ".."}:
+        return None
+    if "/" in filename or "\\" in filename:
+        return None
+    if not filename.lower().endswith(".png"):
+        return None
+    root = Path(workspace).expanduser().resolve()
+    loco = (root / ".loco").resolve()
+    for candidate in (loco / "ui-screenshots" / filename, loco / filename):
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if loco not in resolved.parents and resolved.parent != loco:
+            continue
+        if resolved.is_file():
+            return resolved
+    return None
 
 
 def collect_ui_evidence(
@@ -150,13 +206,9 @@ def collect_ui_evidence(
     click: str | None = None,
     wait_ms: int = 4000,
 ) -> UiEvidence:
-    from datetime import datetime
-
-    import uuid
-
     screenshot_dir = workspace.root / ".loco" / "ui-screenshots"
     screenshot_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     goal_slug = re.sub(r"\W+", "-", goal.strip().lower())[:40] or "untitled"
     screenshot_name = f"ui-review_{goal_slug}_{timestamp}_{uuid.uuid4().hex[:6]}.png"
     screenshot = screenshot_dir / screenshot_name
@@ -176,12 +228,16 @@ def collect_ui_evidence(
             target = preview.url
         page: UiEvidence = capture_page(
             target,
-            click=click or _default_click(workspace.root),
+            click=click,
+            clicks=_default_clicks(workspace.root) if not click else None,
             screenshot=screenshot,
             wait_ms=wait_ms,
         )
-        if page.screenshot and screenshot.exists():
+        if screenshot.exists():
+            page.screenshot = str(screenshot)
             page.screenshot_filename = screenshot.name
+        elif page.screenshot:
+            page.screenshot_filename = page.screenshot_filename or Path(page.screenshot).name
         record_event(
             kind="ui",
             ok=page.ok,
@@ -227,11 +283,15 @@ def capture_page(
     url: str,
     *,
     click: str | None = None,
+    clicks: list[str] | None = None,
     screenshot: Path | None = None,
     wait_ms: int = 4000,
 ) -> UiEvidence:
+    selectors = [item for item in [click, *(clicks or [])] if item]
     try:
-        return _playwright_capture(url, click=click, screenshot=screenshot, wait_ms=wait_ms)
+        return _playwright_capture(
+            url, clicks=selectors, screenshot=screenshot, wait_ms=wait_ms
+        )
     except Exception as exc:
         log.info("playwright UI capture unavailable: %s", exc)
     try:
@@ -243,7 +303,7 @@ def capture_page(
 def _playwright_capture(
     url: str,
     *,
-    click: str | None,
+    clicks: list[str],
     screenshot: Path | None,
     wait_ms: int,
 ) -> UiEvidence:
@@ -262,16 +322,23 @@ def _playwright_capture(
         )
         page.goto(url, wait_until="domcontentloaded", timeout=max(wait_ms, 8000))
         page.wait_for_timeout(min(wait_ms, 2500))
-        if click:
-            _playwright_click(page, click, wait_ms)
-            page.wait_for_timeout(400)
+        clicked, dead = _playwright_probe(page, clicks, wait_ms)
         raw = page.evaluate(PAGE_EVAL)
         shot = None
         if screenshot is not None:
             page.screenshot(path=str(screenshot), full_page=False)
             shot = str(screenshot)
         browser.close()
-    return _from_eval(url, raw, page_errors=page_errors, console_errors=console, screenshot=shot)
+    return _from_eval(
+        url,
+        raw,
+        page_errors=page_errors,
+        console_errors=console,
+        screenshot=shot,
+        clicked=clicked,
+        dead_controls=dead,
+        interactive=True,
+    )
 
 
 def _launch_playwright(playwright: Any) -> Any:
@@ -294,6 +361,59 @@ def _playwright_click(page: Any, click: str, wait_ms: int) -> None:
                 return
         except Exception:  # noqa: BLE001 - try the next locator
             continue
+
+
+def _playwright_has(page: Any, click: str) -> bool:
+    for probe in (
+        lambda: page.locator(click).count() > 0,
+        lambda: page.get_by_role("button", name=click).count() > 0,
+    ):
+        try:
+            if probe():
+                return True
+        except Exception:  # noqa: BLE001 - try the next locator
+            continue
+    return False
+
+
+def _pane_from_selector(selector: str) -> str | None:
+    match = re.search(r'data-task-pane=["\']([^"\']+)', selector)
+    return match.group(1) if match else None
+
+
+def _playwright_probe(
+    page: Any, clicks: list[str], wait_ms: int
+) -> tuple[list[str], list[str]]:
+    clicked: list[str] = []
+    dead: list[str] = []
+    for selector in clicks:
+        if not _playwright_has(page, selector):
+            continue
+        _playwright_click(page, selector, wait_ms)
+        page.wait_for_timeout(400)
+        clicked.append(selector)
+        pane = _pane_from_selector(selector)
+        if not pane:
+            continue
+        state = page.evaluate(
+            """(name) => {
+              const tab = document.querySelector('[data-task-pane="' + name + '"]');
+              const panel = document.querySelector('[data-pane="' + name + '"]');
+              return {
+                selected: tab ? tab.getAttribute("aria-selected") : null,
+                hidden: panel ? Boolean(panel.hidden) : null,
+              };
+            }""",
+            pane,
+        )
+        if not isinstance(state, dict):
+            continue
+        if state.get("selected") != "true" or state.get("hidden") is True:
+            dead.append(
+                f"{selector} did not show the {pane} pane "
+                f"(aria-selected={state.get('selected')}, hidden={state.get('hidden')})"
+            )
+    return clicked, dead
 
 
 def _chrome_capture(url: str, *, screenshot: Path | None, wait_ms: int) -> UiEvidence:
@@ -335,6 +455,7 @@ def _chrome_capture(url: str, *, screenshot: Path | None, wait_ms: int) -> UiEvi
         screenshot=str(screenshot) if screenshot and screenshot.exists() else None,
         notes="Captured with Chrome --dump-dom (console coverage is limited).",
         smashed=smashed,
+        interactive=False,
     )
 
 
@@ -345,9 +466,13 @@ def _from_eval(
     page_errors: list[str],
     console_errors: list[str],
     screenshot: str | None,
+    clicked: list[str] | None = None,
+    dead_controls: list[str] | None = None,
+    interactive: bool = True,
 ) -> UiEvidence:
     data = raw if isinstance(raw, dict) else {}
     elements = data.get("elements") if isinstance(data.get("elements"), list) else []
+    tabs = data.get("tabs") if isinstance(data.get("tabs"), list) else []
     smashed = []
     for item in elements:
         if not isinstance(item, dict):
@@ -360,21 +485,34 @@ def _from_eval(
     injected = data.get("errors") if isinstance(data.get("errors"), list) else []
     errors = [str(item) for item in [*page_errors, *injected] if str(item).strip()]
     text = str(data.get("text") or "")
-    snapshot = _format_snapshot(text, elements)
+    dead = list(dead_controls or [])
+    snapshot = _format_snapshot(text, elements, tabs)
     return UiEvidence(
-        ok=not errors and not smashed,
+        ok=not errors and not smashed and not dead,
         url=str(data.get("url") or url),
         title=str(data.get("title") or ""),
         page_errors=errors,
         console_errors=[item for item in console_errors if item],
         smashed=smashed,
+        dead_controls=dead,
+        clicked=list(clicked or []),
         snapshot=snapshot,
         screenshot=screenshot,
+        interactive=interactive,
     )
 
 
-def _format_snapshot(text: str, elements: list[Any]) -> str:
+def _format_snapshot(text: str, elements: list[Any], tabs: list[Any] | None = None) -> str:
     lines: list[str] = []
+    for item in tabs or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("pane") or "tab").strip()
+        if not name:
+            continue
+        lines.append(
+            f"tab: {name} selected={item.get('selected')} panelHidden={item.get('panelHidden')}"
+        )
     for item in elements:
         if not isinstance(item, dict):
             continue
@@ -392,6 +530,25 @@ def _format_snapshot(text: str, elements: list[Any]) -> str:
     if len(snapshot) > MAX_SNAPSHOT_CHARS:
         return snapshot[:MAX_SNAPSHOT_CHARS] + "\n... truncated"
     return snapshot
+
+
+def unverified_interactive_ui(goal: str, evidence: UiEvidence) -> str | None:
+    if evidence.dead_controls:
+        return f"Rendered UI control did not work: {evidence.dead_controls[0]}"
+    if not evidence.interactive and INTERACTIVE_UI_RE.search(goal or ""):
+        return (
+            "Rendered UI could not click tabs or buttons (static dump-dom capture); "
+            "interactive controls are unverified"
+        )
+    snapshot = evidence.snapshot or ""
+    clicked = " ".join(evidence.clicked).lower()
+    if re.search(r"screenshot|screen shot", goal or "", re.I):
+        if re.search(r"tab:.*screenshots", snapshot, re.I) and "screenshots" not in clicked:
+            return (
+                "Rendered UI never exercised the Screenshots tab; "
+                "the control was not clicked"
+            )
+    return None
 
 
 class _TextParser(HTMLParser):
@@ -472,10 +629,14 @@ def _first_html_file(root: Path) -> Path | None:
     return None
 
 
-def _default_click(root: Path) -> str | None:
+def _default_clicks(root: Path) -> list[str]:
     if _is_loco_project(root):
-        return "#history-list button.task"
-    return None
+        return [
+            "#history-list button.task",
+            '[data-task-pane="changes"]',
+            '[data-task-pane="screenshots"]',
+        ]
+    return []
 
 
 def _free_port() -> int:
