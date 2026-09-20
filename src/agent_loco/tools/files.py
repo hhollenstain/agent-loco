@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from agent_loco.progress import record_file_change
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 
@@ -155,12 +156,21 @@ def _write_file(workspace: Workspace, path: str, content: str) -> ToolResult:
     encoded = content.encode("utf-8")
     if len(encoded) > MAX_WRITE_BYTES:
         return ToolResult(False, f"refusing to write more than {MAX_WRITE_BYTES} bytes")
+    rel = workspace.relative(file_path)
+    created = not file_path.exists()
+    before: str | None = ""
+    if not created:
+        try:
+            before = file_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            before = None
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(content, encoding="utf-8")
     except OSError as exc:
         return ToolResult(False, f"write failed: {exc}")
-    return ToolResult(True, f"wrote {workspace.relative(file_path)} ({len(encoded)} bytes)")
+    record_file_change(rel, before=before, after=content, created=created)
+    return ToolResult(True, f"wrote {rel} ({len(encoded)} bytes)")
 
 
 def _search_text(workspace: Workspace, query: str, glob: str | None) -> ToolResult:

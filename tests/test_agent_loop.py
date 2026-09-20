@@ -39,6 +39,38 @@ def test_agent_writes_file_then_stops(tmp_path: Path) -> None:
     assert result.summary == "Wrote note.txt"
 
 
+def test_agent_logs_llm_response_time(tmp_path: Path, caplog) -> None:
+    import logging
+
+    workspace = Workspace(tmp_path)
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={"path": "note.txt", "content": "done\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Wrote note.txt"),
+        ]
+    )
+    caplog.set_level(logging.INFO, logger="loco")
+    CodingAgent(llm, tools, max_iterations=5).run("Write note.txt")
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(message.startswith("llm agent response in ") for message in messages)
+
+
 def test_agent_accepts_json_text_tool_calls(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     tools = build_tools(

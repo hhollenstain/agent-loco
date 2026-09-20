@@ -219,6 +219,11 @@ class UiState:
                         item.get("status", ""),
                         item.get("id", ""),
                         item.get("created_at", ""),
+                        " ".join(
+                            str(event.get("path") or event.get("message") or "")
+                            for event in item.get("events") or []
+                            if isinstance(event, dict)
+                        ),
                     ]
                 )
             ]

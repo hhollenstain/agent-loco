@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from agent_loco.agent.prompts import SYSTEM_PROMPT, user_prompt
 from agent_loco.llm.client import AssistantTurn, LLMClient, ToolCall
 from agent_loco.llm.toolparse import parse_tool_calls
+from agent_loco.progress import timed_complete
 from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
@@ -52,7 +53,7 @@ class CodingAgent:
         plan_nudges = 0
 
         for iteration in range(1, self.max_iterations + 1):
-            turn = self.llm.complete(messages, schemas)
+            turn = timed_complete(self.llm, messages, schemas, purpose="agent")
             calls = turn.tool_calls or parse_tool_calls(turn.text, known_names)
             if calls:
                 native = bool(turn.tool_calls)

@@ -89,7 +89,14 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"<title>" in home.content
         assert b"<header>" not in home.content
         assert b'id="toggle-sidebar"' in home.content
-        assert b'id="sidebar"' in home.content
+        assert b'id="toasts"' in home.content
+        assert b'id="notify-toggle"' in home.content
+        assert b'id="notify-history"' in home.content
+        assert b"notice-success" in home.content
+        assert b"notice-error" in home.content
+        assert b"notice-warning" in home.content
+        assert b"notice-skipped" in home.content
+        assert b"function notify(" in home.content
         assert b"\n  10|" not in home.content
 
         created = client.post(
@@ -491,3 +498,57 @@ def test_web_ui_clones_repository_into_local_workspace(
         assert again.status_code == 400
     finally:
         manager.shutdown(wait=False)
+
+
+def test_web_ui_progress_includes_file_history_and_timestamps(
+    settings: Settings, tmp_path: Path
+) -> None:
+    from agent_loco.progress import record_event
+
+    def runner(task: Task) -> CycleResult:
+        record_event(
+            kind="file",
+            path="hello.py",
+            action="created",
+            diff="--- /dev/null\n+++ b/hello.py\n+print('hi')\n",
+        )
+        record_event(kind="llm", purpose="agent", ok=True, elapsed_ms=12)
+        return _ok_result(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert b".timeline" in home.content
+        assert b"data-history-key" in home.content
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Show diffs", "auto_commit": False},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        body = None
+        for _ in range(50):
+            match = next(
+                (item for item in client.get("/api/tasks").json() if item["id"] == task_id),
+                None,
+            )
+            if match and match["status"] not in {"queued", "running"}:
+                body = match
+                break
+            time.sleep(0.05)
+        assert body is not None
+        assert body["logs"]
+        assert body["logs"][0][:4].isdigit()
+        assert body["logs"][0].split(" ", 1)[0].endswith("Z")
+        kinds = [event["kind"] for event in body["events"]]
+        assert "file" in kinds
+        assert "llm" in kinds
+        file_event = next(event for event in body["events"] if event["kind"] == "file")
+        assert file_event["path"] == "hello.py"
+        assert "print('hi')" in file_event["diff"]
+    finally:
+        manager.shutdown(wait=False)
+

@@ -62,6 +62,17 @@ def test_cycle_commits_when_scripted_fix_passes(tmp_path: Path, settings: Settin
     assert result.committed is True
     assert result.published is False
     assert result.commit_sha
+    kinds = [event["kind"] for event in result.events]
+    assert "llm" in kinds
+    assert any(
+        event["kind"] == "file" and event["path"] == "app.py" and event["action"] == "updated"
+        for event in result.events
+    )
+    file_event = next(event for event in result.events if event["kind"] == "file")
+    assert "return left + right" in file_event["diff"]
+    llm_event = next(event for event in result.events if event["kind"] == "llm")
+    assert "elapsed_ms" in llm_event
+    assert llm_event["at"].endswith("Z")
     branch = current_branch(Workspace(tmp_path))
     assert branch in {"main", "master"}
     assert (tmp_path / "app.py").read_text(encoding="utf-8") == (

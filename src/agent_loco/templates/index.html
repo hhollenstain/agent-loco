@@ -228,6 +228,152 @@
       font-size: 0.86rem;
     }
     .error { color: var(--bad); font-size: 0.9rem; min-height: 1.2rem; }
+    .toasts {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      width: 100%;
+      pointer-events: none;
+    }
+    .toasts .notice { pointer-events: auto; animation: toast-in 0.18s ease-out; }
+    .notify-dock {
+      position: fixed;
+      top: 0.85rem;
+      right: 0.85rem;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.55rem;
+      width: min(24rem, calc(100vw - 1.7rem));
+      pointer-events: none;
+    }
+    .notify-toggle, .notify-panel, .toasts .notice { pointer-events: auto; }
+    .notify-toggle {
+      position: relative;
+      width: 2.4rem;
+      min-width: 2.4rem;
+      height: 2.4rem;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+    }
+    .notify-toggle[aria-expanded="true"] { border-color: var(--accent); }
+    .notify-toggle svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .notify-badge {
+      position: absolute;
+      top: -0.3rem;
+      right: -0.3rem;
+      min-width: 1.15rem;
+      height: 1.15rem;
+      padding: 0 0.28rem;
+      border-radius: 999px;
+      background: var(--bad);
+      color: #1a120f;
+      font-size: 0.68rem;
+      font-weight: 700;
+      line-height: 1.15rem;
+      text-align: center;
+    }
+    .notify-badge[hidden] { display: none; }
+    .notify-panel {
+      display: none;
+      width: 100%;
+      max-height: min(28rem, calc(100vh - 5rem));
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+    }
+    .notify-panel.open { display: flex; flex-direction: column; }
+    .notify-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      padding: 0.7rem 0.8rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .notify-panel-head h2 {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 650;
+    }
+    .notify-panel-head button { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+    .notify-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      padding: 0.65rem 0.7rem 0.8rem;
+    }
+    .notify-list .notice { box-shadow: none; }
+    .notify-empty { margin: 0; padding: 0.85rem 0.2rem; color: var(--muted); font-size: 0.86rem; text-align: center; }
+    .notify-when { display: block; margin-top: 0.25rem; color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(-0.4rem); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .notice {
+      display: flex;
+      gap: 0.65rem;
+      align-items: flex-start;
+      margin: 0;
+      padding: 0.7rem 0.8rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #141910;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+      color: var(--ink);
+    }
+    .notice-kind {
+      flex: 0 0 auto;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.16rem 0.4rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .notice-body { flex: 1; min-width: 0; }
+    .notice-title { margin: 0; font-weight: 650; font-size: 0.9rem; }
+    .notice-message { margin: 0.15rem 0 0; font-size: 0.86rem; line-height: 1.4; }
+    .notice-title + .notice-message { margin-top: 0.2rem; }
+    .notice:not(:has(.notice-title)) .notice-message { margin-top: 0; }
+    .notice-dismiss {
+      flex: 0 0 auto;
+      background: transparent;
+      color: inherit;
+      border: 0;
+      padding: 0 0.2rem;
+      min-width: 1.4rem;
+      font-size: 1.15rem;
+      font-weight: 400;
+      line-height: 1;
+      opacity: 0.7;
+    }
+    .notice-dismiss:hover, .notice-dismiss:focus { opacity: 1; }
+    .notice-slot { margin: 0.55rem 0 0; }
+    .notice-slot:empty { display: none; }
+    .notice-slot .notice { box-shadow: none; }
+    .notice-success { border-color: #4f7c46; background: #1b2618; }
+    .notice-success .notice-kind { background: rgba(143, 202, 122, 0.2); color: var(--ok); }
+    .notice-error, .notice-failed { border-color: #8a4a3c; background: #2a1b17; }
+    .notice-error .notice-kind, .notice-failed .notice-kind { background: rgba(224, 139, 115, 0.2); color: var(--bad); }
+    .notice-warning { border-color: #8a6d3b; background: #272015; }
+    .notice-warning .notice-kind { background: rgba(230, 192, 123, 0.2); color: var(--warn); }
+    .notice-info { border-color: #4d5f3a; background: #1a2116; }
+    .notice-info .notice-kind { background: rgba(196, 227, 138, 0.16); color: var(--accent); }
+    .notice-skipped { border-color: #4a5244; background: #1b1f19; }
+    .notice-skipped .notice-kind { background: rgba(154, 165, 142, 0.18); color: var(--muted); }
+    .notice-queued { border-color: #3d5a72; background: #172028; }
+    .notice-queued .notice-kind { background: rgba(142, 180, 212, 0.2); color: var(--queued); }
+    .notice-running { border-color: #8a6d3b; background: #272015; }
+    .notice-running .notice-kind { background: rgba(230, 192, 123, 0.2); color: var(--warn); }
+    .form-note { margin-top: 1rem; }
     .task-list { display: flex; flex-direction: column; gap: 0.65rem; }
     .task {
       background: var(--panel);
@@ -264,6 +410,43 @@
       font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
       white-space: pre-wrap;
     }
+    .timeline {
+      list-style: none;
+      margin: 0.85rem 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      max-height: min(70vh, 42rem);
+      overflow: auto;
+    }
+    .timeline-item {
+      background: #0c0e0b;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.55rem 0.75rem;
+    }
+    .timeline-item summary {
+      cursor: pointer;
+      list-style: none;
+    }
+    .timeline-item summary::-webkit-details-marker { display: none; }
+    .timeline-when {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+      margin-right: 0.55rem;
+    }
+    .timeline-title { font-weight: 600; }
+    .timeline-item pre.diff {
+      margin: 0.55rem 0 0;
+      max-height: 18rem;
+      padding: 0.65rem 0.7rem;
+      border-color: #3a4334;
+    }
+    .diff-add { color: var(--ok); }
+    .diff-del { color: var(--bad); }
+    .diff-meta { color: var(--muted); }
     .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
     .duration {
       color: var(--ink);
@@ -373,13 +556,18 @@
         </label>
       </div>
       <button type="submit" id="submit">Queue task</button>
-      <p class="error" id="form-error"></p>
-      <p class="note">
-        By default only <strong id="max-label">{{ max_concurrent }}</strong>
-        run at a time; extra tasks wait. A running cycle calls the model, edits
-        files, and runs tests. Start another only if you accept the slowdown
-        on CPU, RAM, and the model server.
-      </p>
+      <div class="notice-slot" id="form-error"></div>
+      <div class="notice notice-warning form-note" role="status">
+        <span class="notice-kind">Warning</span>
+        <div class="notice-body">
+          <p class="notice-message">
+            By default only <strong id="max-label">{{ max_concurrent }}</strong>
+            run at a time; extra tasks wait. A running cycle calls the model, edits
+            files, and runs tests. Start another only if you accept the slowdown
+            on CPU, RAM, and the model server.
+          </p>
+        </div>
+      </div>
     </form>
     </aside>
     <section class="tasks">
@@ -446,11 +634,28 @@
           <button type="button" class="secondary" id="close-workspace-picker">Close</button>
         </div>
       </div>
-      <p class="modal-error" id="workspace-picker-error"></p>
+      <div class="notice-slot" id="workspace-picker-error"></div>
     </div>
   </div>
+  <div class="notify-dock">
+    <button type="button" class="secondary notify-toggle" id="notify-toggle" aria-label="Notification history" aria-expanded="false" aria-controls="notify-history" title="Notification history">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 9a6 6 0 1 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path d="M10 20a2 2 0 0 0 4 0" stroke-linecap="round"></path>
+      </svg>
+      <span class="notify-badge" id="notify-badge" hidden>0</span>
+    </button>
+    <div class="notify-panel" id="notify-history" hidden>
+      <div class="notify-panel-head">
+        <h2>Notifications</h2>
+        <button type="button" class="secondary" id="notify-clear">Clear</button>
+      </div>
+      <div class="notify-list" id="notify-list"></div>
+    </div>
+    <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
+  </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "" };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), taskStatus: {}, notifications: [] };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -473,8 +678,176 @@
     const cloneParentEl = document.getElementById("clone-parent");
     const cloneNameEl = document.getElementById("clone-name");
     const createNameEl = document.getElementById("create-name");
+    const toastsEl = document.getElementById("toasts");
+    const notifyDockEl = document.querySelector(".notify-dock");
+    const notifyToggleEl = document.getElementById("notify-toggle");
+    const notifyPanelEl = document.getElementById("notify-history");
+    const notifyListEl = document.getElementById("notify-list");
+    const notifyBadgeEl = document.getElementById("notify-badge");
     let browsePath = workspaceEl.value;
     let browseParent = "";
+
+    const NOTICE_KINDS = {
+      success: "Success",
+      error: "Error",
+      failed: "Failed",
+      warning: "Warning",
+      info: "Info",
+      skipped: "Skipped",
+      queued: "Queued",
+      running: "Running",
+    };
+
+    function normalizeKind(kind) {
+      const key = String(kind || "info").toLowerCase();
+      if (key === "failure" || key === "fail") return "failed";
+      if (key === "warn") return "warning";
+      if (key === "ok" || key === "done") return "success";
+      return NOTICE_KINDS[key] ? key : "info";
+    }
+
+    function noticeElement({ kind, title, message, dismissible = true }) {
+      const resolved = normalizeKind(kind);
+      const article = document.createElement("article");
+      article.className = `notice notice-${resolved}`;
+      article.setAttribute("role", resolved === "error" || resolved === "failed" ? "alert" : "status");
+      const body = document.createElement("div");
+      body.className = "notice-body";
+      const kindEl = document.createElement("span");
+      kindEl.className = "notice-kind";
+      kindEl.textContent = NOTICE_KINDS[resolved];
+      if (title) {
+        const heading = document.createElement("p");
+        heading.className = "notice-title";
+        heading.textContent = title;
+        body.append(heading);
+      }
+      if (message) {
+        const text = document.createElement("p");
+        text.className = "notice-message";
+        text.textContent = message;
+        body.append(text);
+      }
+      article.append(kindEl, body);
+      if (dismissible) {
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "notice-dismiss";
+        close.setAttribute("aria-label", "Dismiss");
+        close.textContent = "×";
+        close.addEventListener("click", () => article.remove());
+        article.append(close);
+      }
+      return article;
+    }
+
+    function clearNotice(slot) {
+      slot.replaceChildren();
+    }
+
+    function showNotice(slot, kind, message, options = {}) {
+      clearNotice(slot);
+      if (!message && !options.title) return;
+      slot.append(noticeElement({
+        kind,
+        title: options.title,
+        message,
+        dismissible: false,
+      }));
+    }
+
+    function notifyPanelOpen() {
+      return notifyPanelEl.classList.contains("open");
+    }
+
+    function unreadCount() {
+      return state.notifications.filter((item) => !item.read).length;
+    }
+
+    function renderNotificationHistory() {
+      const unread = unreadCount();
+      notifyBadgeEl.hidden = unread === 0;
+      notifyBadgeEl.textContent = unread > 99 ? "99+" : String(unread);
+      notifyToggleEl.setAttribute("aria-label", unread ? `Notification history, ${unread} unread` : "Notification history");
+      if (!state.notifications.length) {
+        notifyListEl.innerHTML = `<p class="notify-empty">No notifications this session.</p>`;
+        return;
+      }
+      notifyListEl.replaceChildren();
+      for (const item of state.notifications) {
+        const article = noticeElement({
+          kind: item.kind,
+          title: item.title,
+          message: item.message,
+          dismissible: false,
+        });
+        const when = document.createElement("span");
+        when.className = "notify-when";
+        when.textContent = formatTimestamp(item.at) || item.at;
+        article.querySelector(".notice-body")?.append(when);
+        notifyListEl.append(article);
+      }
+    }
+
+    function setNotifyPanel(open) {
+      notifyPanelEl.classList.toggle("open", open);
+      notifyPanelEl.hidden = !open;
+      notifyToggleEl.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) {
+        for (const item of state.notifications) item.read = true;
+        renderNotificationHistory();
+      }
+    }
+
+    function notify(kind, message, options = {}) {
+      const resolved = normalizeKind(kind);
+      const entry = {
+        id: `${Date.now()}-${state.notifications.length}`,
+        at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        kind: resolved,
+        title: options.title || "",
+        message: message || "",
+        read: notifyPanelOpen(),
+      };
+      state.notifications.unshift(entry);
+      if (state.notifications.length > 100) state.notifications.length = 100;
+      renderNotificationHistory();
+      const toast = noticeElement({
+        kind: resolved,
+        title: options.title,
+        message,
+        dismissible: true,
+      });
+      toast.classList.add("toast");
+      toastsEl.prepend(toast);
+      const sticky = options.sticky || options.timeout === 0;
+      const timeout = sticky
+        ? 0
+        : (options.timeout ?? (resolved === "error" || resolved === "failed" ? 8000 : 4500));
+      if (timeout) {
+        window.setTimeout(() => toast.remove(), timeout);
+      }
+      return toast;
+    }
+
+    function announceTaskStatus(task, previous) {
+      if (!previous || previous === task.status) return;
+      if (previous === "queued" && task.status === "running") {
+        notify("running", goalText(task), { title: "Task running" });
+        return;
+      }
+      if (task.status === "queued" || task.status === "running") return;
+      const titles = {
+        success: "Task finished",
+        failed: "Task failed",
+        skipped: "Task skipped",
+        error: "Task error",
+      };
+      const kind = NOTICE_KINDS[task.status] ? task.status : (task.status === "error" ? "error" : "info");
+      notify(kind, task.reason || task.error || task.summary || goalText(task), {
+        title: titles[kind] || "Task update",
+      });
+    }
 
     function joinPath(parent, name) {
       const n = (name || "").trim();
@@ -522,7 +895,7 @@
     }
 
     async function loadBrowse(path) {
-      pickerErrorEl.textContent = "";
+      pickerErrorEl.replaceChildren();
       const query = path ? `?path=${encodeURIComponent(path)}` : "";
       const res = await fetch(`/api/workspaces/browse${query}`);
       const body = await res.json();
@@ -536,13 +909,13 @@
     }
 
     function showPickerError(err) {
-      pickerErrorEl.textContent = err.message || String(err);
+      showNotice(pickerErrorEl, "error", err && (err.message || String(err)));
     }
 
     async function openPicker() {
       pickerEl.hidden = false;
       pickerEl.classList.add("open");
-      pickerErrorEl.textContent = "";
+      pickerErrorEl.replaceChildren();
       try {
         await loadRecentWorkspaces();
         await loadBrowse(workspaceEl.value || browsePath);
@@ -557,7 +930,7 @@
     }
 
     async function selectWorkspace(path) {
-      pickerErrorEl.textContent = "";
+      pickerErrorEl.replaceChildren();
       const res = await fetch("/api/workspaces/select", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -567,6 +940,7 @@
       if (!res.ok) throw new Error(body.error || "failed to select workspace");
       workspaceEl.value = body.current;
       closePicker();
+      notify("success", body.current, { title: "Workspace selected" });
     }
 
     document.getElementById("open-workspace-picker").addEventListener("click", () => {
@@ -588,7 +962,7 @@
     });
     document.getElementById("create-workspace").addEventListener("click", async () => {
       try {
-        pickerErrorEl.textContent = "";
+        pickerErrorEl.replaceChildren();
         const res = await fetch("/api/workspaces/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -599,13 +973,14 @@
         workspaceEl.value = body.current;
         createNameEl.value = "";
         closePicker();
+        notify("success", body.current, { title: "Workspace created" });
       } catch (err) {
         showPickerError(err);
       }
     });
     document.getElementById("clone-repo").addEventListener("click", async () => {
       try {
-        pickerErrorEl.textContent = "";
+        pickerErrorEl.replaceChildren();
         const res = await fetch("/api/workspaces/clone", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -621,14 +996,31 @@
         cloneUrlEl.value = "";
         cloneNameEl.value = "";
         closePicker();
+        notify("success", body.current, { title: "Repository cloned" });
       } catch (err) {
         showPickerError(err);
       }
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && pickerEl.classList.contains("open")) {
+      if (event.key !== "Escape") return;
+      if (pickerEl.classList.contains("open")) {
         closePicker();
+        return;
       }
+      if (notifyPanelOpen()) setNotifyPanel(false);
+    });
+    notifyToggleEl.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setNotifyPanel(!notifyPanelOpen());
+    });
+    document.getElementById("notify-clear").addEventListener("click", () => {
+      state.notifications = [];
+      renderNotificationHistory();
+    });
+    document.addEventListener("click", (event) => {
+      if (!notifyPanelOpen()) return;
+      if (notifyDockEl.contains(event.target)) return;
+      setNotifyPanel(false);
     });
 
     function parseTime(value) {
@@ -694,6 +1086,80 @@
         .replaceAll('"', "&quot;");
     }
 
+    function historyItems() {
+      return Array.isArray(state.history) ? state.history : (state.history.items || []);
+    }
+
+    function historyKey(item, index) {
+      return String(item.id || item.created_at || "") + ":" + String(index);
+    }
+
+    function formatElapsedMs(ms) {
+      const value = Number(ms);
+      if (!Number.isFinite(value) || value < 0) return "";
+      if (value < 1000) return `${Math.round(value)}ms`;
+      return `${(value / 1000).toFixed(value < 10000 ? 2 : 1)}s`;
+    }
+
+    function renderDiff(diff) {
+      return String(diff || "").split("\n").map((line) => {
+        const safe = escapeHtml(line);
+        if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) {
+          return `<span class="diff-meta">${safe}</span>`;
+        }
+        if (line.startsWith("+")) return `<span class="diff-add">${safe}</span>`;
+        if (line.startsWith("-")) return `<span class="diff-del">${safe}</span>`;
+        return safe;
+      }).join("\n");
+    }
+
+    function eventTitle(event) {
+      if (event.kind === "file") return `${event.action || "changed"} ${event.path || "file"}`;
+      if (event.kind === "llm") {
+        const wait = formatElapsedMs(event.elapsed_ms);
+        const purpose = event.purpose || "llm";
+        if (event.ok === false) return `LLM ${purpose} failed${wait ? " after " + wait : ""}`;
+        return `LLM ${purpose} response${wait ? " in " + wait : ""}`;
+      }
+      if (event.kind === "step") return event.message || "step";
+      return event.message || event.kind || "event";
+    }
+
+    function renderTimeline(events, { running = false } = {}) {
+      if (!events || !events.length) return "";
+      const lastFile = [...events].reverse().find((event) => event.kind === "file");
+      const items = events.map((event) => {
+        const when = `<span class="timeline-when">${escapeHtml(formatTimestamp(event.at) || event.at || "")}</span>`;
+        const title = `<span class="timeline-title">${escapeHtml(eventTitle(event))}</span>`;
+        if (event.kind === "file" && event.diff) {
+          const key = `${event.kind}:${event.path || ""}:${event.at || ""}`;
+          const open = running && lastFile === event || state.openDiffs.has(key) ? " open" : "";
+          return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${renderDiff(event.diff)}</pre></details></li>`;
+        }
+        return `<li class="timeline-item">${when}${title}</li>`;
+      }).join("");
+      return `<ol class="timeline">${items}</ol>`;
+    }
+
+    function renderProgress(item, { running = false } = {}) {
+      const events = item.events || [];
+      const logs = (item.logs || []).join("\n");
+      const summary = item.summary ? String(item.summary) : "";
+      const extra = item.error ? `error: ${item.error}` : "";
+      if (events.length) {
+        const tail = [summary, extra]
+          .filter(Boolean)
+          .map((text) => `<pre>${escapeHtml(text)}</pre>`)
+          .join("");
+        return renderTimeline(events, { running }) + tail;
+      }
+      const parts = [logs, summary, extra].filter(Boolean);
+      if (!parts.length) {
+        return `<pre id="log">${running ? "(waiting for progress…)" : "(no progress recorded)"}</pre>`;
+      }
+      return `<pre id="log">${escapeHtml(parts.join("\n\n"))}</pre>`;
+    }
+
     function serverOptionLabel(server, url) {
       if (typeof server === "object" && server && server.alias && String(server.alias).trim()) {
         return String(server.alias).trim();
@@ -748,15 +1214,15 @@
         if (!state.history.length) {
           historyEl.innerHTML = `<p class="empty">No past runs yet.</p>`;
         } else {
-          historyEl.innerHTML = state.history.map(entry => `
-            <article class="task">
+          historyEl.innerHTML = state.history.map((entry, index) => `
+            <button type="button" class="task ${historyKey(entry, index) === state.selectedHistoryKey ? "selected" : ""}" data-history-key="${escapeHtml(historyKey(entry, index))}">
               <div class="row">
                 <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
                 <span class="meta" title="${escapeHtml(entry.created_at || entry.id || "")}">${escapeHtml(timestampLabel(entry))}</span>
               </div>
               <p class="goal">${escapeHtml(goalText(entry))}</p>
               <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
-            </article>
+            </button>
           `).join("");
         }
         paginationEl.innerHTML = "";
@@ -767,31 +1233,36 @@
         if (!items.length) {
           historyEl.innerHTML = `<p class="empty">${state.search ? "No matches found." : "No past runs yet."}</p>`;
         } else {
-          historyEl.innerHTML = items.map(entry => `
-            <article class="task">
+          historyEl.innerHTML = items.map((entry, index) => `
+            <button type="button" class="task ${historyKey(entry, index) === state.selectedHistoryKey ? "selected" : ""}" data-history-key="${escapeHtml(historyKey(entry, index))}">
               <div class="row">
                 <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
                 <span class="meta" title="${escapeHtml(entry.created_at || entry.id || "")}">${escapeHtml(timestampLabel(entry))}</span>
               </div>
               <p class="goal">${escapeHtml(goalText(entry))}</p>
               <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
-            </article>
+            </button>
           `).join("");
         }
         renderPagination(page, total_pages);
       }
 
-      const selected = state.tasks.find(t => t.id === state.selected) || state.tasks[0];
+      const selectedHistory = historyItems().find((entry, index) => historyKey(entry, index) === state.selectedHistoryKey);
+      const selected = selectedHistory ? null : (state.tasks.find(t => t.id === state.selected) || (!state.selectedHistoryKey && state.tasks[0]) || null);
       if (selected) {
         state.selected = selected.id;
-        const logs = (selected.logs || []).join("\n") || "(waiting for progress…)";
-        const summary = selected.summary ? `\n\n${selected.summary}` : "";
-        const extra = selected.error ? `\n\nerror: ${selected.error}` : "";
         const duration = taskDurationLabel(selected);
         detailEl.innerHTML = `
           <label>Progress</label>
-          <p class="meta">${escapeHtml(selected.workspace)}${selected.model ? " · " + escapeHtml(selected.model) : ""}${selected.base_url ? " · " + escapeHtml(selected.base_url) : ""}${selected.commit_sha ? " · " + escapeHtml(selected.commit_sha.slice(0, 8)) : ""}${duration ? " · " + escapeHtml(duration) : ""}</p>
-          <pre id="log">${escapeHtml(logs + summary + extra)}</pre>
+          <p class="meta">${escapeHtml(selected.workspace || "")}${selected.model ? " · " + escapeHtml(selected.model) : ""}${selected.base_url ? " · " + escapeHtml(selected.base_url) : ""}${selected.commit_sha ? " · " + escapeHtml(selected.commit_sha.slice(0, 8)) : ""}${duration ? " · " + escapeHtml(duration) : ""}</p>
+          ${renderProgress(selected, { running: selected.status === "running" })}
+        `;
+      } else if (selectedHistory) {
+        const duration = taskDurationLabel(selectedHistory);
+        detailEl.innerHTML = `
+          <label>Progress</label>
+          <p class="meta">${escapeHtml(goalText(selectedHistory))}${duration ? " · " + escapeHtml(duration) : ""} · ${escapeHtml(timestampLabel(selectedHistory))}</p>
+          ${renderProgress(selectedHistory)}
         `;
       } else {
         detailEl.innerHTML = "";
@@ -820,6 +1291,10 @@
         fetch(`/api/history?page=${state.historyPage}&page_size=${state.pageSize}${state.search ? `&search=${encodeURIComponent(state.search)}` : ''}`),
       ]);
       state.tasks = await tasksRes.json();
+      for (const task of state.tasks) {
+        announceTaskStatus(task, state.taskStatus[task.id]);
+        state.taskStatus[task.id] = task.status;
+      }
       const historyData = historyRes.ok ? await historyRes.json() : [];
       if (Array.isArray(historyData)) {
         // Legacy format (unpaginated)
@@ -854,8 +1329,24 @@
       const button = event.target.closest("[data-id]");
       if (!button) return;
       state.selected = button.dataset.id;
+      state.selectedHistoryKey = "";
       render();
     });
+
+    historyEl.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-history-key]");
+      if (!button) return;
+      state.selectedHistoryKey = button.dataset.historyKey;
+      state.selected = null;
+      render();
+    });
+
+    detailEl.addEventListener("toggle", (event) => {
+      const details = event.target;
+      if (!(details instanceof HTMLDetailsElement) || !details.dataset.eventKey) return;
+      if (details.open) state.openDiffs.add(details.dataset.eventKey);
+      else state.openDiffs.delete(details.dataset.eventKey);
+    }, true);
 
     paginationEl.addEventListener("click", (event) => {
       const button = event.target.closest("button");
@@ -910,7 +1401,7 @@
 
     document.getElementById("task-form").addEventListener("submit", async (event) => {
       event.preventDefault();
-      errorEl.textContent = "";
+      clearNotice(errorEl);
       submitEl.disabled = true;
       try {
         const res = await fetch("/api/tasks", {
@@ -928,9 +1419,12 @@
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to queue task");
         state.selected = body.id;
+        state.taskStatus[body.id] = body.status || "queued";
+        notify("queued", goalText(body), { title: "Task queued" });
         await refresh();
       } catch (err) {
-        errorEl.textContent = err.message;
+        showNotice(errorEl, "error", err.message);
+        notify("error", err.message, { title: "Could not queue task" });
       } finally {
         submitEl.disabled = false;
       }
@@ -974,12 +1468,17 @@
           select.append(option);
         }
         if (!models.length && announceEmpty) {
-          errorEl.textContent = "No models returned from that LLM server.";
+          showNotice(errorEl, "warning", "No models returned from that LLM server.");
+          notify("warning", "No models returned from that LLM server.");
         } else if (models.length) {
-          errorEl.textContent = "";
+          clearNotice(errorEl);
+          if (announceEmpty) {
+            notify("success", `Loaded ${models.length} model${models.length === 1 ? "" : "s"}.`);
+          }
         }
       } catch (err) {
-        errorEl.textContent = err.message;
+        showNotice(errorEl, "error", err.message);
+        if (announceEmpty) notify("error", err.message, { title: "Could not load models" });
       } finally {
         loadBtn.disabled = false;
       }
@@ -1019,6 +1518,7 @@
     document.getElementById("base-url").addEventListener("change", () => loadModels(true));
     document.getElementById("model").addEventListener("change", () => loadModels(false));
 
+    renderNotificationHistory();
     refresh();
     loadModels(false);
     setInterval(refresh, 1000);

@@ -17,6 +17,7 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
 )
+from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
 from agent_loco.runtime.review import collect_work_diff, review_goal
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools
@@ -37,6 +38,7 @@ log = logging.getLogger("loco")
 
 
 def log_progress(message: str) -> None:
+    record_event(kind="step", message=message)
     log.info("%s", message)
 
 
@@ -53,6 +55,7 @@ class CycleResult:
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
+    events: list[dict] = field(default_factory=list)
 
 
 def resolve_create_pr(
@@ -69,6 +72,29 @@ def resolve_create_pr(
 
 
 def run_cycle(
+    workspace_path: Path,
+    settings: Settings,
+    llm: LLMClient,
+    goal: str | None = None,
+    *,
+    mark_checkbox: bool = True,
+    cli_create_pr: bool | None = None,
+) -> CycleResult:
+    progress = bind_progress()
+    try:
+        return _run_cycle(
+            workspace_path,
+            settings,
+            llm,
+            goal,
+            mark_checkbox=mark_checkbox,
+            cli_create_pr=cli_create_pr,
+        )
+    finally:
+        reset_progress(progress)
+
+
+def _run_cycle(
     workspace_path: Path,
     settings: Settings,
     llm: LLMClient,
@@ -487,7 +513,13 @@ def _git_env(settings: Settings) -> dict[str, str]:
     return env
 
 
+def _attach_events(result: CycleResult) -> None:
+    if not result.events:
+        result.events = current_events()
+
+
 def _write_run_log(root: Path, result: CycleResult) -> None:
+    _attach_events(result)
     ensure_run_gitignore(root)
     runs = root / ".loco" / "runs"
     runs.mkdir(parents=True, exist_ok=True)
@@ -515,6 +547,7 @@ def _append_to_history(root: Path, result: CycleResult) -> None:
     
     # Add the new result to the beginning of the list 
     # (most recent at the beginning) and keep only the last 100 entries
+    _attach_events(result)
     history.insert(0, asdict(result))
     
     # Limit history size to avoid file becoming too large

@@ -5,13 +5,14 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient, OpenAICompatClient, list_remote_models, normalize_model_base_url
+from agent_loco.logging import UtcFormatter, utcnow_iso
 from agent_loco.runtime.improve import CycleResult, run_cycle
+from agent_loco.progress import bind_progress, reset_progress
 
 log = logging.getLogger("loco")
 
@@ -19,7 +20,7 @@ Runner = Callable[["Task"], CycleResult]
 
 
 def _utcnow() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utcnow_iso()
 
 
 def _default_llm(settings: Settings) -> LLMClient:
@@ -45,6 +46,7 @@ class Task:
     started_at: str | None = None
     finished_at: str | None = None
     logs: list[str] = field(default_factory=list)
+    events: list[dict] = field(default_factory=list)
     summary: str | None = None
     reason: str | None = None
     tests_passed: bool | None = None
@@ -73,6 +75,7 @@ class Task:
             "published": self.published,
             "commit_sha": self.commit_sha,
             "error": self.error,
+            "events": list(self.events),
         }
         if include_logs:
             payload["logs"] = list(self.logs)
@@ -86,7 +89,7 @@ class _TaskLogHandler(logging.Handler):
         super().__init__(level=logging.INFO)
         self._task = task
         self._thread_id = thread_id
-        self.setFormatter(logging.Formatter("%(message)s"))
+        self.setFormatter(UtcFormatter("%(asctime)s %(message)s"))
 
     def emit(self, record: logging.LogRecord) -> None:
         if threading.get_ident() != self._thread_id:
@@ -207,7 +210,9 @@ class TaskManager:
         task.started_at = _utcnow()
         handler = _TaskLogHandler(task, threading.get_ident())
         loco_log = logging.getLogger("loco")
+        loco_log.setLevel(logging.INFO)
         loco_log.addHandler(handler)
+        progress = bind_progress(task.events)
         log.info("task %s model=%s url=%s", task.id, task.model_name, task.model_base_url)
         try:
             result = self._execute(task)
@@ -224,6 +229,7 @@ class TaskManager:
             task.error = str(exc)
             task.reason = f"task crashed: {exc}"
         finally:
+            reset_progress(progress)
             loco_log.removeHandler(handler)
             task.finished_at = _utcnow()
 

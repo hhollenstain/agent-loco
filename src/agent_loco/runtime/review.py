@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 from agent_loco.llm.client import LLMClient
+from agent_loco.progress import timed_complete
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.git import is_runtime_artifact, run_git
 
@@ -121,12 +122,14 @@ def review_goal(
             diff.strip() or "(no diff)",
         ]
     )
-    turn = llm.complete(
+    turn = timed_complete(
+        llm,
         [
             {"role": "system", "content": REVIEW_SYSTEM},
             {"role": "user", "content": user},
         ],
         [],
+        purpose="review",
     )
     return parse_review(turn.text)
 
