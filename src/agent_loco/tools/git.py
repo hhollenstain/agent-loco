@@ -449,7 +449,7 @@ def create_pull_request(
     head = current_branch(workspace)
     if is_protected_branch(head):
         return ToolResult(False, f"refusing to open a PR from {head}")
-    args = ["gh", "pr", "create", "--title", title, "--body", body or title]
+    args = ["gh", "pr", "create", "--title", title, "--body", body or title, "--add-co-author", "agent-loco"]
     if base:
         args.extend(["--base", base])
     result = subprocess.run(
