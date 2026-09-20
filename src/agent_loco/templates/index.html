@@ -493,6 +493,92 @@
       text-align: left;
     }
     .task.selected, .task-card.selected .task { border-color: var(--accent); }
+    .task-progress {
+      margin-top: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .progress-bar {
+      display: flex;
+      gap: 0.25rem;
+      padding: 0.35rem 0.45rem;
+      background: #0c0e0b;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .progress-stage {
+      flex: 1;
+      min-width: 0;
+      padding: 0.35rem 0.4rem;
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.1rem;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      position: relative;
+    }
+    .progress-stage:hover {
+      background: rgba(196, 227, 138, 0.1);
+    }
+    .progress-stage.completed {
+      background: rgba(143, 202, 122, 0.15);
+      border: 1px solid rgba(143, 202, 122, 0.3);
+    }
+    .progress-stage.completed .stage-name {
+      color: var(--ok);
+    }
+    .progress-stage.failed {
+      background: rgba(224, 139, 115, 0.15);
+      border: 1px solid rgba(224, 139, 115, 0.3);
+    }
+    .progress-stage.failed .stage-name,
+    .progress-stage.error .stage-name {
+      color: var(--bad);
+    }
+    .progress-stage.skipped {
+      background: rgba(154, 165, 142, 0.15);
+      border: 1px solid rgba(154, 165, 142, 0.3);
+      opacity: 0.85;
+    }
+    .progress-stage.skipped .stage-name {
+      color: var(--muted);
+    }
+    .progress-stage.queued {
+      background: rgba(142, 180, 212, 0.12);
+      border: 1px solid rgba(142, 180, 212, 0.2);
+    }
+    .progress-stage.running {
+      background: rgba(230, 192, 123, 0.15);
+      border: 1px solid rgba(230, 192, 123, 0.3);
+    }
+    .progress-stage.running .stage-name {
+      color: var(--warn);
+    }
+    .progress-stage .stage-name {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .progress-stage .stage-duration {
+      font-size: 0.65rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .progress-stage .stage-badge {
+      font-size: 0.62rem;
+      padding: 0.08rem 0.3rem;
+      border-radius: 3px;
+      background: rgba(0, 0, 0, 0.3);
+      font-weight: 600;
+    }
     .pr-link {
       display: inline-flex;
       align-items: center;
@@ -1629,6 +1715,140 @@
       return `<ol class="timeline" id="progress-timeline">${items}</ol>`;
     }
 
+    function renderProgressStage(status, name, duration, totalDuration) {
+      const durationText = formatElapsedMs(duration);
+      let statusClass = status;
+      if (status === "success" || status === "passed") statusClass = "completed";
+      else if (status === "failed" || status === "error") statusClass = "failed";
+      else if (status === "skipped") statusClass = "skipped";
+      else if (status === "running") statusClass = "running";
+      else if (status === "queued") statusClass = "queued";
+      
+      const badge = {
+        completed: "✓",
+        failed: "✗",
+        error: "✗",
+        skipped: "⊘",
+        queued: "⊟",
+        running: "⏳",
+      }[statusClass] || "";
+      
+      const progressWidth = totalDuration > 0 ? Math.round((duration / totalDuration) * 100) : 0;
+      
+      return `
+        <div class="progress-stage ${statusClass}" title="${escapeHtml(status)}" style="flex: ${progressWidth}">
+          <span class="stage-name">${escapeHtml(name)}</span>
+          ${durationText ? `<span class="stage-duration">${durationText}</span>` : ""}
+          ${badge ? `<span class="stage-badge">${escapeHtml(badge)}</span>` : ""}
+        </div>
+      `;
+    }
+
+    function renderProgressStageBar(events) {
+      if (!events || !events.length) return "";
+      
+      // Define stage types with their event kinds and labels
+      const stageTypes = [
+        { id: "queued", label: "Queued", kind: "status", status: (e) => e.status === "queued" },
+        { id: "initializing", label: "Initializing", kind: "status", status: (e) => e.status === "running" },
+        { id: "goal_setting", label: "Goal setting", kind: "review" },
+        { id: "goal_reviewed", label: "Goal reviewed", kind: "review", status: (e) => e.parsed !== false },
+        { id: "first_response", label: "First response", kind: "llm", status: (e) => e.purpose === "agent" },
+        { id: "thinking", label: "Thinking", kind: "llm", status: (e) => e.purpose === "agent" && e.elapsed_ms },
+        { id: "before_tests", label: "Before tests", kind: "test", status: (e) => e.phase === "before" },
+        { id: "tests", label: "Tests", kind: "test", status: (e) => e.phase === "tests" },
+        { id: "after_tests", label: "After tests", kind: "test", status: (e) => e.phase === "after" },
+        { id: "pr", label: "Pull request", kind: "pr" },
+        { id: "completed", label: "Completed", kind: "status", status: (e) => e.status === "success" || e.status === "done" },
+        { id: "failed", label: "Failed", kind: "status", status: (e) => e.status === "failed" || e.status === "error" },
+        { id: "skipped", label: "Skipped", kind: "status", status: (e) => e.status === "skipped" },
+      ];
+      
+      // Track active stages and their durations
+      const stageDurations = {};
+      const completedStages = new Set();
+      let currentActiveStage = null;
+      let startTime = null;
+      
+      // Process events chronologically to calculate stage durations
+      for (const event of events) {
+        if (!event || !event.at) continue;
+        const eventTime = new Date(event.at).getTime();
+        
+        if (!startTime && event.kind === "status") {
+          // Found first status event, use it as start time
+          if (startTime === null) startTime = eventTime;
+        }
+        
+        for (const stage of stageTypes) {
+          const matches = stage.status ? stage.status(event) : true;
+          if (!matches) continue;
+          
+          const key = stage.id;
+          
+          // Check if this event should activate this stage
+          const isActive = stage.kind !== "status" || stage.status?.(event);
+          
+          if (isActive && !completedStages.has(key)) {
+            // If this stage is being activated
+            if (currentActiveStage && currentActiveStage !== key) {
+              // Previous stage is now complete
+              const prevEndTime = eventTime;
+              const prevStartTimeVal = stageDurations[currentActiveStage]?.start;
+              if (prevStartTimeVal) {
+                stageDurations[currentActiveStage].duration = prevEndTime - prevStartTimeVal;
+              }
+              completedStages.add(currentActiveStage);
+            }
+            
+            // Start new active stage
+            if (!stageDurations[key]) {
+              stageDurations[key] = { start: eventTime, duration: 0 };
+            }
+            currentActiveStage = key;
+          }
+        }
+      }
+      
+      // Close any remaining active stage with final time
+      if (currentActiveStage && !completedStages.has(currentActiveStage)) {
+        const endTime = events[events.length - 1]?.at 
+          ? new Date(events[events.length - 1].at).getTime() 
+          : (startTime || Date.now());
+        if (stageDurations[currentActiveStage]) {
+          stageDurations[currentActiveStage].duration = endTime - stageDurations[currentActiveStage].start;
+        }
+        completedStages.add(currentActiveStage);
+      }
+      
+      // Calculate total duration from first to last event
+      let totalDuration = 0;
+      if (events.length >= 2 && startTime) {
+        const lastTime = new Date(events[events.length - 1].at).getTime();
+        totalDuration = lastTime - startTime;
+      }
+      
+      // Render progress bar with all stages
+      const allStagesHtml = stageTypes.map(stage => {
+        const duration = stageDurations[stage.id]?.duration || 0;
+        const status = stageDurations[stage.id] 
+          ? (completedStages.has(stage.id) ? "completed" : "running")
+          : (currentActiveStage === stage.id ? "running" : "queued");
+        return renderProgressStage(status, stage.label, duration, totalDuration);
+      }).join("");
+      
+      return `
+        <div class="task-progress">
+          <div class="progress-bar" title="Task progress stages">
+            ${allStagesHtml}
+          </div>
+          <div class="meta" style="margin-top:0.25rem;font-size:0.7rem;color:var(--muted)">
+            Total elapsed: ${formatElapsedMs(totalDuration)}
+          </div>
+        </div>
+      `;
+    }
+
     function renderDiff(diff) {
       return String(diff || "").split("\n").map((line) => {
         const safe = escapeHtml(line);
@@ -1673,18 +1893,19 @@
       const logs = (item.logs || []).join("\n");
       const summary = item.summary ? String(item.summary) : "";
       const extra = item.error ? `error: ${item.error}` : "";
+      const progressHtml = events.length ? renderProgressStageBar(events) : "";
       if (events.length) {
         const tail = [summary, extra]
           .filter(Boolean)
           .map((text) => `<pre>${escapeHtml(text)}</pre>`)
           .join("");
-        return renderTimeline(events, { running }) + tail;
+        return progressHtml + renderTimeline(events, { running }) + tail;
       }
       const parts = [logs, summary, extra].filter(Boolean);
       if (!parts.length) {
-        return `<pre id="log">${running ? "(waiting for progress…)" : "(no progress recorded)"}</pre>`;
+        return progressHtml + `<pre id="log">${running ? "(waiting for progress…)" : "(no progress recorded)"}</pre>`;
       }
-      return `<pre id="log">${escapeHtml(parts.join("\n\n"))}</pre>`;
+      return progressHtml + `<pre id="log">${escapeHtml(parts.join("\n\n"))}</pre>`;
     }
 
     function serverOptionLabel(server, url) {
@@ -1778,8 +1999,10 @@
         listEl.innerHTML = filteredTasks.map(task => {
           const duration = taskDurationLabel(task);
           const selected = task.id === state.selected ? " selected" : "";
+          const taskProgress = task.events ? renderProgressStageBar(task.events) : "";
           return `
           <div class="task-card${selected}">
+            ${taskProgress ? `<div class="task-progress">${taskProgress}</div>` : ""}
             <button type="button" class="task${selected}" data-id="${escapeHtml(task.id)}">
               <div class="row">
                 <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
