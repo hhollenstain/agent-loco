@@ -1,6 +1,6 @@
 # agent-loco
 
-A home-lab coding agent that sits on a project, makes a change, runs that project's tests locally, and only then commits (and optionally publishes) the result.
+A home-lab coding agent that sits on a project, makes a change, runs that project's tests locally, and only then commits (and optionally publishes) the result. Create-PR also requires a separate review that the diff actually fulfills the stated goal — green tests alone are not enough.
 
 The agent process is the same on an Apple Silicon MacBook and on a Linux box with an NVIDIA GPU. Inference is a separate OpenAI-compatible server:
 
@@ -14,7 +14,8 @@ The agent process is the same on an Apple Silicon MacBook and on a Linux box wit
         │
         ├─ read / write files in one workspace
         ├─ run the project's own tests
-        ├─ commit only when tests are green
+        ├─ review the diff against the stated goal
+        ├─ commit only when tests are green and the goal is met
         └─ optional git push / gh pr
               │
               ▼

@@ -196,3 +196,107 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert "## Test plan" in str(captured["body"])
     assert current_branch(workspace).startswith("loco/")
     assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == initial
+    assert "Goal review confirmed the requested outcome" in str(captured["body"])
+
+
+def _write_file_turn(path: str, content: str, call_id: str = "call-1") -> AssistantTurn:
+    return AssistantTurn(
+        text=None,
+        tool_calls=[
+            ToolCall(
+                id=call_id,
+                name="write_file",
+                arguments={"path": path, "content": content},
+            )
+        ],
+    )
+
+
+def _review_turn(met: bool, reason: str) -> AssistantTurn:
+    payload = '{"met": true, "reason": "%s"}' if met else '{"met": false, "reason": "%s"}'
+    return AssistantTurn(text=payload % reason)
+
+
+def test_cycle_skips_pr_when_goal_is_not_met(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _green_project(tmp_path)
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.push_changes",
+        lambda *args, **kwargs: ToolResult(True, "pushed"),
+    )
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.create_pull_request",
+        lambda *args, **kwargs: ToolResult(True, "https://example.test/pull/9"),
+    )
+    llm = ScriptedClient(
+        [
+            _write_file_turn("app.py", "def add(left, right):\n    return left + right\n# todo\n"),
+            AssistantTurn(text="Tweaked the adder."),
+            _review_turn(False, "header is still present and the sidebar toggle is hidden"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="Remove the top header and make the sidebar collapsible",
+        cli_create_pr=True,
+    )
+    assert result.status == "failed"
+    assert result.published is False
+    assert result.committed is False
+    assert "goal not met" in (result.reason or "")
+    assert current_branch(Workspace(tmp_path)) in {"main", "master"}
+
+
+def test_cycle_retries_then_opens_pr_when_goal_is_met(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _green_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "max_repair_attempts: 0\n",
+            "max_repair_attempts: 1\n",
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, str | None] = {}
+
+    def fake_pr(ws, title, body, *, base=None):
+        captured["body"] = body
+        return ToolResult(True, "https://example.test/pull/4")
+
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.push_changes",
+        lambda *args, **kwargs: ToolResult(True, "pushed"),
+    )
+    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    llm = ScriptedClient(
+        [
+            _write_file_turn("ui.html", "<header>loco</header>\n"),
+            AssistantTurn(text="Added a header."),
+            _review_turn(False, "the header is still there"),
+            _write_file_turn(
+                "ui.html",
+                "<aside id='sidebar'><button id='toggle-sidebar'>collapse</button></aside>\n",
+                call_id="call-2",
+            ),
+            AssistantTurn(text="Removed the header and added a collapse control."),
+            _review_turn(True, "header gone and sidebar toggle is present"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="Remove the top header and make the sidebar collapsible",
+        cli_create_pr=True,
+    )
+    assert result.status == "success"
+    assert result.committed is True
+    assert result.published is True
+    assert "Goal review confirmed" in str(captured["body"])
+    assert "<header>" not in (tmp_path / "ui.html").read_text(encoding="utf-8")
+    assert "toggle-sidebar" in (tmp_path / "ui.html").read_text(encoding="utf-8")
