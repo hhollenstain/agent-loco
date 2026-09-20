@@ -1,368 +1,375 @@
-1|<!DOCTYPE html>
-   2|<html lang="en">
-   3|<head>
-   4|  <meta charset="UTF-8">
-   5|  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   6|  <title>loco — task runner</title>
-   7|  <style>
-   8|    :root {
-   9|      --bg: #11140f;
-  10|      --panel: #1a1f18;
-  11|      --panel-2: #23291f;
-  12|      --ink: #e7eedf;
-  13|      --muted: #9aa58e;
-  14|      --line: #31392c;
-  15|      --accent: #c4e38a;
-  16|      --warn: #e6c07b;
-  17|      --bad: #e08b73;
-  18|      --ok: #8fca7a;
-  19|      --queued: #8eb4d4;
-  20|    }
-  21|    * { box-sizing: border-box; }
-  22|    body {
-  23|      margin: 0;
-  24|      background: var(--bg);
-  25|      color: var(--ink);
-  26|      font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif;
-  27|    }
-  28|    header {
-  29|      padding: 1.25rem 1.5rem 0.75rem;
-  30|      border-bottom: 1px solid var(--line);
-  31|    }
-  28|    header h1 {
-  28|      margin: 0;
-  28|      font-size: 1.15rem;
-  28|      font-weight: 650;
-  28|      letter-spacing: 0.02em;
-  39 |    }
-  39 |    header p {
-  34 |      margin: 0.35rem 0 0;
-  34 |      color: var(--muted);
-  34 |      max-width: 52rem;
-  39 |    }
-  39 |    main {
-  44 |      display: grid;
-  44 |      grid-template-columns: minmax(18rem, 22rem) 1fr;
-  44 |      min-height: calc(100vh - 5.5rem);
-  69 |    }
-  69 |    @media (max-width: 840px) {
-  74 |      main { grid-template-columns: 1fr; }
-  79 |    }
-  79 |    form, .tasks {
-  84 |      padding: 1.25rem 1.5rem;
-  23 |    }
-  121 |    form { border-right: 1px solid var(--line); }
-  122 |    label {
-  131 |      display: block;
-  131 |      margin: 0.85rem 0 0.3rem;
-  131 |      color: var(--muted);
-  131 |      font-size: 0.78rem;
-  131 |      text-transform: uppercase;
-  231 |      letter-spacing: 0.06em;
-  232 |    }
-  265 |    input[type="text"], textarea, select {
-  274 |      width: 100%;
-  274 |      background: var(--panel);
-  274 |      color: var(--ink);
-  274 |      border: 1px solid var(--line);
-  274 |      border-radius: 6px;
-  274 |      padding: 0.55rem 0.65rem;
-  274 |      font: inherit;
-  274 |    }
-  285 |    textarea { min-height: 7.5rem; resize: vertical; }
-  293 |    .checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
-  305 |    button {
-  231 |      background: var(--accent);
-  287 |      color: #16200c;
-  287 |      border: 0;
-  287 |      border-radius: 6px;
-  287 |      padding: 0.6rem 0.9rem;
-  287 |      font: 650 0.95rem/1 inherit;
-  287 |      cursor: pointer;
-  287 |    }
-  294 |    button:disabled { opacity: 0.5; cursor: wait; }
-  306 |    .note {
-  313 |      margin-top: 1rem;
-  313 |      padding: 0.7rem 0.8rem;
-  313 |      background: var(--panel-2);
-  314 |      border-left: 3px solid var(--warn);
-  305 |      color: var(--warn);
-  305 |      font-size: 0.86rem;
-  306 |    }
-  307 |    .error { color: var(--bad); font-size: 0.9rem; min-height: 1.2rem; }
-  308 |    .task-list { display: flex; flex-direction: column; gap: 0.65rem; }
-  309 |    .task {
-  314 |      background: var(--panel);
-  314 |      border: 1px solid var(--line);
-  314 |      border-radius: 8px;
-  314 |      padding: 0.75rem 0.85rem;
-  330 |      cursor: pointer;
-  331 |      text-align: left;
-  332 |    }
-  333 |    .task.selected { border-color: var(--accent); }
-  334 |    .row { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
-  335 |    .status { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  336 |    .status.queued { color: var(--queued); }
-  337 |    .status.running { color: var(--warn); }
-  338 |    .status.success { color: var(--ok); }
-  339 |    .status.failed, .status.error { color: var(--bad); }
-  340 |    .status.skipped { color: var(--muted); }
-  367 |    .goal {
-  372 |      margin: 0.35rem 0 0;
-  372 |      white-space: nowrap;
-  372 |      overflow: hidden;
-  372 |      text-overflow: ellipsis;
-  372 |      color: var(--ink);
-  391 |    }
-  392 |    .empty { color: var(--muted); }
-  402 |    pre {
-  409 |      margin: 0.85rem 0 0;
-  409 |      background: #0c0e0b;
-  409 |      border: 1px solid var(--line);
-  409 |      border-radius: 8px;
-  409 |      padding: 0.85rem;
-  409 |      overflow: auto;
-  409 |      max-height: 22rem;
-  409 |      font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
-  409 |      white-space: pre-wrap;
-  438 |    }
-  439 |    .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
-  461 |  </style>
-  47 |</head>
-  52|<body>
-  193|  <header>
-  217|      <h1>loco task runner</h1>
-  228|    <p>
-  233|      Queue coding-agent cycles against a local workspace. By default only
-  46 |      <strong id="max-label">{{ max_concurrent }}</strong> run at a time;
-  47 |      extra tasks wait. Parallel runs on this machine will fight over CPU, RAM,
-  48 |      and the model server.
-  54 |    </p>
-  56 |  </header>
-  62 |  <main>
-  177|    <form id="task-form">
-  180|      <label for="workspace">Workspace</label>
-  182 |      <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
-  193 |
-  194 |      <label for="goal">Goal</label>
-  197 |      <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
-  203 |
-  204 |      <label for="model">Model</label>
-  206 |      <select id="model" name="model">
-  210 |        <option value="{{ default_model }}" selected>{{ default_model }}</option>
-  285 |      </select>
-  213 |
-  270 |      <div class="checks">
-  293 |        <label style="text-transform:none;letter-spacing:0;margin:0">
-  294 |          <input id="auto-commit" type="checkbox" {% if default_auto_commit %}checked{% endif %}> commit if tests pass
-  271 |        </label>
-  295 |        <label style="text-transform:none;letter-spacing:0;margin:0">
-  301 |          <input id="publish" type="checkbox" {% if default_publish %}checked{% endif %}> publish
-  273 |        </label>
-  297 |      </div>
-  308 |      <button type="submit" id="submit">Queue task</button>
-  314 |      <p class="error" id="form-error"></p>
-  322 |      <p class="note">
-  325 |        A running cycle calls the model, edits files, and runs the project's
-  326 |        tests. Start another only if you accept the slowdown.
-  410 |      </p>
-  410 |    </form>
-  413 |    <section class="tasks">
-  428 |      <div class="row">
-  429 |        <label style="margin:0">Tasks</label>
-  429 |        <span class="meta" id="counts"></span>
-  166 |      </div>
-  175 |      <div id="task-list" class="task-list"></div>
-  432 |      <div id="detail"></div>
-  410 +    <section class="history">
-  435 |      <div class="row">
-  436 |        <label style="margin:0">History</label>
-  437 |        <span class="meta" id="history-counts"></span>
-  410 +      </div>
-  410 +      <div id="timeline" class="timeline"></div>
-  428 |    </section>
-  183 |  </main>
-  451 |  <script>
-  452|    const state = { tasks: [], selected: null };
-  470 |    const listEl = document.getElementById("task-list");
-  471 |    const detailEl = document.getElementById("detail");
-  481 |    const countsEl = document.getElementById("counts");
-  492 |    const errorEl = document.getElementById("form-error");
-  502 |    const submitEl = document.getElementById("submit");
-  678 +    const historyEl = document.getElementById("timeline");
-  712 +    const historyCountsEl = document.getElementById("history-counts");
-  649 |    function goalText(task) {
-  650 |      if (!task.goal) return "(from project goals / failing tests)";
-  653 |      return task.goal.split("\n")[0];
-  652 |    }
-  718 +    function statusClass(status) {
-  719 +      switch (status) {
-  720 +        case "success": return "ok";
-  722 +        case "running": return "running";
-  723 +        case "failed": case "error": return "bad";
-  724 +        case "skipped": return "muted";
-  725 +        default: return "";
-  726 |      }
-  654 |    }
-  735 +    function timestamp(ts) {
-  655 |      if (!ts) return ts;
-  656 |      const d = new Date(ts);
-  738 +      return d.toLocaleString();
-  657 |    }
-  504 |    function render() {
-  591 |      const running = state.tasks.filter(t => t.status === "running").length;
-  592 |      const queued = state.tasks.filter(t => t.status === "queued").length;
-  593 |      countsEl.textContent = `${running} running · ${queued} queued`;
-  510 |      if (!state.tasks.length) {
-  514 |        listEl.innerHTML = `<p class="empty">No tasks yet.</p>`;
-  678 +    }
-  511 |      else {
-  562 |        listEl.innerHTML = state.tasks.map(task => `
-  693 +      renderHistory();
-  512 |          <button type="button" class="task ${task.id === state.selected ? "selected" : ""}" data-id="${task.id}">
-  708 +    async function renderHistory() {
-  664 |            <div class="row">
-  711 |              const history = await fetch("/api/history").then(r => r.json());
-  729 |                <span class="status ${statusClass(task.status)}">${task.status}</span>
-  713 +              renderHistory();
-  736 +      if (!history.length) {
-  740 +        historyEl.innerHTML = `<p class="empty">No history yet.</p>`;
-  739 |              <span class="meta">${task.started_at || task.created_at}</span>
-  518 |            </div>
-  665 |          </button>
-  721 +      } else {
-  741 +        historyEl.innerHTML = history.map(entry => `
-  659 |        `).join("");
-  563 |      });
-  707 +        <article class="timeline-item" data-id="${entry.id}" style="--status: ${entry.status};">
-  688 |    const selected = state.tasks.find(t => t.id === state.selected) || state.tasks[0];
-  510 +          <div class="row timeline-header">
-  747 +            <span class="header-status status ${statusClass(entry.status)}">${entry.status}</span>
-  581 |      const logs = (selected.logs || []).join("\n") || "(waiting for progress…)";
-  592 |        const summary = selected.summary ? `\n\n${selected.summary}` : "";
-  602 |        const extra = selected.error ? `\n\nerror: ${selected.error}` : "";
-  517 +          <div class="timeline-meta">
-  748 +              <span>${timestamp(entry.created_at)} · ${entry.goal || "(from goals)"}</span>
-  630 |        detailEl.innerHTML = `
-  632 |          <label>Progress</label>
-  619 +          </div>
-  752 +              <pre id="log-content">${logs}${summary}${extra}</pre>
-  620 |          <p class="meta">${selected.workspace}${selected.model ? " · " + selected.model : ""}${selected.commit_sha ? " · " + selected.commit_sha.slice(0, 8) : ""}</p>
-  587 |          <pre id="log">${logs}${summary}${extra}</pre>
-  631 |        `;
-  514 |      } else {
-  624 |        detailEl.innerHTML = "";
-  509 |    }
-  638 +    document.querySelectorAll(".timeline-item").forEach(el => {
-  639 +      el.addEventListener("click", async () => {
-  640 +        selectedEl?.remove();
-  728 +      });
-  641 |    });
-  642 |
-  653 |    document.getElementById("task-form").addEventListener("submit", async (event) => {
-  654 |      event.preventDefault();
-  655 |      errorEl.textContent = "";
-  656 |      submitEl.disabled = true;
-  657 |      try:
-  680 +        selectedEl?.remove();
-  669 +      });
-  662 |        const res = await fetch("/api/tasks", {
-  684 +        const logs = (entry.logs || []).join("\n") || "";
-  659 +      renderHistory();
-  670 |          method: "POST",
-  661 |          headers: { "Content-Type": "application/json" },
-  594 |            body: JSON.stringify({
-  595 |              workspace: document.getElementById("workspace").value,
-  753 |        }));
-  741 +    async function refresh() {
-  645 |      });
-  646 |
-  682 |      try:
-  709 +      const running = state.tasks.filter(t => t.status === "running");
-  743 +      historyCountsEl.textContent = `${history.length} completed`;
-  711 |        const res = await fetch("/api/tasks").then(r => r.json());
-  566 |        const body = await res.json();
-  568 |        if (!res.ok) throw new Error(body.error || "failed to queue task");
-  597 |        state.selected = body.id;
-  598 |        await refresh();
-  599 |      } catch (err) {
-  600 |        errorEl.textContent = err.message;
-  601 |      } finally {
-  736 +    async function refresh() {
-  662 |      } finally {
-  618 |        submitEl.disabled = false;
-  619 |      }
-  620 |    });
-  621 |
-  647 |    async function loadModels() {
-  666 |    if (!state.tasks.length || !history.length) return "";
-  658 +        const history = await fetch("/api/history").then(r => r.json());
-  703 |      } catch (err) {
-  617 +        return;
-  749 |      historyCountsEl.textContent = `${history.length} completed`;
-  624 |        const select = document.getElementById("model");
-  625 |        try:
-  650 |          const res = await fetch("/api/models");
-  618 +        return state.tasks.length || history.length;
-  639 |          const body = await res.json();
-  640 |          const models = body.models || [];
-  641 |          const selected = body.default || select.value;
-  642 |          select.replaceChildren();
-  755 +        return `${running.length} · ${history.length}`;
-  636 |          for (const name of models) {
-  668 +      if (!state.tasks.length && !history.length) return "";
-  649 |            const option = document.createElement("option");
-  665 +        historyEl.innerHTML = `<p class="empty">No tasks yet.</p>`;
-  702 +    } else {
-  728 |          option.value = name;
-  713 |          option.textContent = name;
-  645 |          if (name === selected) option.selected = true;
-  646 |          select.append(option);
-  650 |        }
-  683 +      state.tasks.forEach(task => {
-  682 +      const logs = (task.logs || []).join("\n") || "waiting...";
-  679 |        if (!select.options.length && selected) {
-  651 |          const option = document.createElement("option");
-  652 |          option.value = selected;
-  653 |          option.textContent = selected;
-  654 |          select.append(option);
-  655 |        }
-  718 +      };
-  690 |      } catch (err) {
-  623 |        errorEl.textContent = err.message;
-  624 |      }
-  736 +    })
-  759 +    await fetch("/api/history").then(r => r.json()).then(history => {
-  650 +      refresh();
-  651 |    });
-  669 |      const res = await fetch("/api/models");
-  662 |        let body;
-  744 |    try {
-  709 +const selectedEl = document.querySelector(".timeline-item.selected");
-  722 |        await res.json();
-  512 |          id="task-list".innerHTML = state.tasks.map(task => `
-  543 +      const body = await res.json();
-  585 +      selectedEl?.remove();
-  659 |            ${task.status} · ${task.started_at || task.created_at}`)
-  662 |          .join("");`);
-  701 |      } catch (err) {
-  643 |        body = await res.json();
-  587 |        if (!res.ok) throw new Error(body.error || "failed to queue task");
-  702 +      state.tasks.forEach(task => {
-  644 |          let logs;
-  710 +        if (selectedEl) {
-  650 |        const goal = body.goal ? body.goal.split("\n")[0] : "from goals";
-  593 |        state.selected = body.id;
-  605 |        state.tasks[0].id === body.id
-  721 +          selectedEl.classList.remove("selected");
-  584 |      } catch (err) {
-  615 |        errorEl.textContent = err.message;
-  616 |      } finally {
-  617 |        submitEl.disabled = false;
-  740 +          selectedEl.classList.add("selected");
-  689 |      };`);
-  604 |    });
-  523 |  <script>
-  862 |  </script>
-  614 |});
-  665 +});`;</html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>loco — task runner</title>
+  <style>
+    :root {
+      --bg: #11140f;
+      --panel: #1a1f18;
+      --panel-2: #23291f;
+      --ink: #e7eedf;
+      --muted: #9aa58e;
+      --line: #31392c;
+      --accent: #c4e38a;
+      --warn: #e6c07b;
+      --bad: #e08b73;
+      --ok: #8fca7a;
+      --queued: #8eb4d4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif;
+    }
+    header {
+      padding: 1.25rem 1.5rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+    }
+    header p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+      max-width: 52rem;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(18rem, 22rem) 1fr;
+      min-height: calc(100vh - 5.5rem);
+    }
+    @media (max-width: 840px) {
+      main { grid-template-columns: 1fr; }
+    }
+    form, .tasks {
+      padding: 1.25rem 1.5rem;
+    }
+    form { border-right: 1px solid var(--line); }
+    label {
+      display: block;
+      margin: 0.85rem 0 0.3rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    input[type="text"], textarea, select {
+      width: 100%;
+      background: var(--panel);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.55rem 0.65rem;
+      font: inherit;
+    }
+    textarea { min-height: 7.5rem; resize: vertical; }
+    .host-row { display: flex; gap: 0.45rem; align-items: stretch; }
+    .host-row input { flex: 1; min-width: 0; }
+    .hint { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.8rem; }
+    .checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
+    button {
+      background: var(--accent);
+      color: #16200c;
+      border: 0;
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+      font: 650 0.95rem/1 inherit;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: var(--panel-2);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    .note {
+      margin-top: 1rem;
+      padding: 0.7rem 0.8rem;
+      background: var(--panel-2);
+      border-left: 3px solid var(--warn);
+      color: var(--warn);
+      font-size: 0.86rem;
+    }
+    .error { color: var(--bad); font-size: 0.9rem; min-height: 1.2rem; }
+    .task-list { display: flex; flex-direction: column; gap: 0.65rem; }
+    .task {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.75rem 0.85rem;
+      cursor: pointer;
+      text-align: left;
+    }
+    .task.selected { border-color: var(--accent); }
+    .row { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+    .status { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .status.queued { color: var(--queued); }
+    .status.running { color: var(--warn); }
+    .status.success { color: var(--ok); }
+    .status.failed, .status.error { color: var(--bad); }
+    .status.skipped { color: var(--muted); }
+    .goal {
+      margin: 0.35rem 0 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--ink);
+    }
+    .empty { color: var(--muted); }
+    pre {
+      margin: 0.85rem 0 0;
+      background: #0c0e0b;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.85rem;
+      overflow: auto;
+      max-height: 22rem;
+      font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+      white-space: pre-wrap;
+    }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
+    .history { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>loco task runner</h1>
+    <p>
+      Queue coding-agent cycles against a local workspace. By default only
+      <strong id="max-label">{{ max_concurrent }}</strong> run at a time;
+      extra tasks wait. Parallel runs on this machine will fight over CPU, RAM,
+      and the model server.
+    </p>
+  </header>
+  <main>
+    <form id="task-form">
+      <label for="workspace">Workspace</label>
+      <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
+
+      <label for="goal">Goal</label>
+      <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
+
+      <label for="base-url">LLM server</label>
+      <div class="host-row">
+        <input id="base-url" name="base_url" type="text" spellcheck="false" required value="{{ default_base_url }}" placeholder="http://127.0.0.1:11434/v1">
+        <button type="button" class="secondary" id="load-models">Load models</button>
+      </div>
+      <p class="hint">Host:port or an OpenAI-compatible /v1 URL. Models are listed from this endpoint.</p>
+
+      <label for="model">Model</label>
+      <select id="model" name="model">
+        <option value="{{ default_model }}" selected>{{ default_model }}</option>
+      </select>
+
+      <div class="checks">
+        <label style="text-transform:none;letter-spacing:0;margin:0">
+          <input id="auto-commit" type="checkbox" {% if default_auto_commit %}checked{% endif %}> commit if tests pass
+        </label>
+        <label style="text-transform:none;letter-spacing:0;margin:0">
+          <input id="publish" type="checkbox" {% if default_publish %}checked{% endif %}> publish
+        </label>
+      </div>
+      <button type="submit" id="submit">Queue task</button>
+      <p class="error" id="form-error"></p>
+      <p class="note">
+        A running cycle calls the model, edits files, and runs the project’s
+        tests. Start another only if you accept the slowdown.
+      </p>
+    </form>
+    <section class="tasks">
+      <div class="row">
+        <label style="margin:0">Tasks</label>
+        <span class="meta" id="counts"></span>
+      </div>
+      <div id="task-list" class="task-list"></div>
+      <div id="detail"></div>
+      <div class="history">
+        <div class="row">
+          <label style="margin:0">Past runs</label>
+          <span class="meta" id="history-counts"></span>
+        </div>
+        <div id="history-list" class="task-list"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const state = { tasks: [], history: [], selected: null };
+    const listEl = document.getElementById("task-list");
+    const detailEl = document.getElementById("detail");
+    const countsEl = document.getElementById("counts");
+    const historyEl = document.getElementById("history-list");
+    const historyCountsEl = document.getElementById("history-counts");
+    const errorEl = document.getElementById("form-error");
+    const submitEl = document.getElementById("submit");
+
+    function goalText(item) {
+      if (!item.goal) return "(from project goals / failing tests)";
+      return item.goal.split("\n")[0];
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function render() {
+      const running = state.tasks.filter(t => t.status === "running").length;
+      const queued = state.tasks.filter(t => t.status === "queued").length;
+      countsEl.textContent = `${running} running · ${queued} queued`;
+      if (!state.tasks.length) {
+        listEl.innerHTML = `<p class="empty">No tasks yet.</p>`;
+      } else {
+        listEl.innerHTML = state.tasks.map(task => `
+          <button type="button" class="task ${task.id === state.selected ? "selected" : ""}" data-id="${escapeHtml(task.id)}">
+            <div class="row">
+              <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
+              <span class="meta">${escapeHtml(task.started_at || task.created_at)}</span>
+            </div>
+            <p class="goal">${escapeHtml(goalText(task))}</p>
+            <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}</p>
+          </button>
+        `).join("");
+      }
+
+      historyCountsEl.textContent = `${state.history.length} logged`;
+      if (!state.history.length) {
+        historyEl.innerHTML = `<p class="empty">No past runs yet.</p>`;
+      } else {
+        historyEl.innerHTML = state.history.map(entry => `
+          <article class="task">
+            <div class="row">
+              <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
+              <span class="meta">${escapeHtml(entry.id || "")}</span>
+            </div>
+            <p class="goal">${escapeHtml(goalText(entry))}</p>
+            <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
+          </article>
+        `).join("");
+      }
+
+      const selected = state.tasks.find(t => t.id === state.selected) || state.tasks[0];
+      if (selected) {
+        state.selected = selected.id;
+        const logs = (selected.logs || []).join("\n") || "(waiting for progress…)";
+        const summary = selected.summary ? `\n\n${selected.summary}` : "";
+        const extra = selected.error ? `\n\nerror: ${selected.error}` : "";
+        detailEl.innerHTML = `
+          <label>Progress</label>
+          <p class="meta">${escapeHtml(selected.workspace)}${selected.model ? " · " + escapeHtml(selected.model) : ""}${selected.base_url ? " · " + escapeHtml(selected.base_url) : ""}${selected.commit_sha ? " · " + escapeHtml(selected.commit_sha.slice(0, 8)) : ""}</p>
+          <pre id="log">${escapeHtml(logs + summary + extra)}</pre>
+        `;
+      } else {
+        detailEl.innerHTML = "";
+      }
+    }
+
+    async function refresh() {
+      const [tasksRes, historyRes] = await Promise.all([
+        fetch("/api/tasks"),
+        fetch("/api/history"),
+      ]);
+      state.tasks = await tasksRes.json();
+      state.history = historyRes.ok ? await historyRes.json() : [];
+      render();
+    }
+
+    listEl.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-id]");
+      if (!button) return;
+      state.selected = button.dataset.id;
+      render();
+    });
+
+    document.getElementById("task-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorEl.textContent = "";
+      submitEl.disabled = true;
+      try {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspace: document.getElementById("workspace").value,
+            goal: document.getElementById("goal").value,
+            model: document.getElementById("model").value,
+            base_url: document.getElementById("base-url").value,
+            auto_commit: document.getElementById("auto-commit").checked,
+            publish: document.getElementById("publish").checked,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to queue task");
+        state.selected = body.id;
+        await refresh();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        submitEl.disabled = false;
+      }
+    });
+
+    async function loadModels(announceEmpty = true) {
+      const select = document.getElementById("model");
+      const baseUrlEl = document.getElementById("base-url");
+      const loadBtn = document.getElementById("load-models");
+      const previous = select.value;
+      const params = new URLSearchParams();
+      const baseUrl = baseUrlEl.value.trim();
+      if (baseUrl) params.set("base_url", baseUrl);
+      try {
+        loadBtn.disabled = true;
+        const res = await fetch("/api/models?" + params.toString());
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to list models");
+        if (body.base_url) baseUrlEl.value = body.base_url;
+        const models = body.models || [];
+        const selected = previous || body.default || "";
+        select.replaceChildren();
+        for (const name of models) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          if (name === selected) option.selected = true;
+          select.append(option);
+        }
+        if (!select.options.length && selected) {
+          const option = document.createElement("option");
+          option.value = selected;
+          option.textContent = selected;
+          option.selected = true;
+          select.append(option);
+        } else if (select.options.length && select.selectedIndex < 0) {
+          select.options[0].selected = true;
+        }
+        if (!models.length && announceEmpty) {
+          errorEl.textContent = "No models returned from that LLM server.";
+        } else if (models.length) {
+          errorEl.textContent = "";
+        }
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        loadBtn.disabled = false;
+      }
+    }
+
+    document.getElementById("load-models").addEventListener("click", () => loadModels(true));
+    document.getElementById("base-url").addEventListener("change", () => loadModels(true));
+
+    refresh();
+    loadModels(false);
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

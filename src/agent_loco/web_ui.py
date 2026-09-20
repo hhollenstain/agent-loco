@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-import json
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -11,8 +11,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from agent_loco.config import Settings
+from agent_loco.llm.client import normalize_model_base_url
 from agent_loco.runtime.tasks import TaskManager
-from agent_loco.runtime.improve import CycleResult
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
@@ -22,6 +22,8 @@ class TaskCreate(BaseModel):
     workspace: str | None = None
     goal: str | None = None
     model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
     auto_commit: bool | None = None
     publish: bool | None = None
 
@@ -50,6 +52,7 @@ class UiState:
             "default_auto_commit": self.default_auto_commit,
             "default_publish": self.default_publish,
             "default_model": self.manager.settings.model_name,
+            "default_base_url": self.manager.settings.model_base_url,
             "max_concurrent": self.manager.max_concurrent,
         }
 
@@ -60,28 +63,26 @@ class UiState:
             "default_auto_commit": self.default_auto_commit,
             "default_publish": self.default_publish,
             "default_model": self.manager.settings.model_name,
+            "default_base_url": self.manager.settings.model_base_url,
             "max_concurrent": self.manager.max_concurrent,
             **self.manager.counts(),
         }
 
     def load_history(self, workspace_root: Path) -> list[dict[str, Any]]:
-        """Load history runs from .loco/runs/ directory."""
+        """Load cycle logs from `.loco/runs/` newest first."""
         runs_dir = Path(workspace_root) / ".loco" / "runs"
         if not runs_dir.exists():
             return []
-        files = sorted(runs_dir.glob("*.json"))
-        results = []
-        for f in files:
+        results: list[dict[str, Any]] = []
+        for path in sorted(runs_dir.glob("*.json"), reverse=True):
             try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-                results.append(data)
-            except json.JSONDecodeError:
-                pass
-        # Sort by timestamp (completed_at field in CycleResult)
-        results.sort(
-            key=lambda r: r.get("finished_at", ""),
-            reverse=True,
-        )
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            data.setdefault("id", path.stem)
+            results.append(data)
         return results
 
 
@@ -110,12 +111,24 @@ def create_app(
         ui: UiState = request.app.state.ui
         return ui.meta()
 
-    @app.get("/api/models")
-    def models(request: Request) -> dict[str, Any]:
+    @app.get("/api/models", response_model=None)
+    def models(
+        request: Request,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ) -> Any:
         ui: UiState = request.app.state.ui
+        try:
+            resolved = normalize_model_base_url(
+                base_url or ui.manager.settings.model_base_url
+            )
+            names = ui.manager.list_models(base_url=resolved, api_key=api_key)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc), "models": []}, status_code=400)
         return {
             "default": ui.manager.settings.model_name,
-            "models": ui.manager.list_models(),
+            "base_url": resolved,
+            "models": names,
         }
 
     @app.get("/api/tasks")
@@ -146,16 +159,17 @@ def create_app(
                 auto_commit=body.auto_commit,
                 publish=body.publish,
                 model_name=body.model,
+                model_base_url=body.base_url,
+                model_api_key=body.api_key,
             )
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(task.to_dict(), status_code=201)
 
     @app.get("/api/history")
-    def get_request_id(request: Request) -> list[dict[str, Any]]:
+    def get_history(request: Request) -> list[dict[str, Any]]:
         ui: UiState = request.app.state.ui
-        workspace_root = Path(ui.default_workspace)
-        return ui.load_history(workspace_root)
+        return ui.load_history(Path(ui.default_workspace))
 
     return app
 

@@ -69,6 +69,8 @@ uv run loco watch --workspace /path/to/your/project
 
 Attach any local git checkout. The agent will not read or write outside that workspace.
 
+The web UI (`loco ui`) lets you queue cycles, pick an LLM server, and choose a model from that host. The default is local Ollama at `http://127.0.0.1:11434/v1`. Change the LLM server field (host:port or a full `/v1` URL) and load models to point at another OpenAI-compatible endpoint. `--base-url` on `run`, `watch`, and `ui` does the same from the CLI.
+
 ## Onboard a project
 
 ```bash
@@ -140,8 +142,8 @@ This is still a coding agent with a shell inside a trusted workspace. Do not poi
 | --- | --- |
 | `loco doctor` | Hardware, git/docker, model health |
 | `loco init [path]` | Write `.loco/` scaffolding |
-| `loco run -w PATH -g "..." -m MODEL` | One improve → test → commit cycle |
-| `loco ui -w PATH` | Local web UI to queue and run tasks (`--web-ui` on `run` also works) |
+| `loco run -w PATH -g "..." -m MODEL --base-url URL` | One improve → test → commit cycle |
+| `loco ui -w PATH --base-url URL` | Local web UI to queue and run tasks (`--web-ui` on `run` also works) |
 | `loco watch -w PATH` | Repeat cycles on an interval |
 
 Environment variables are listed in `.env.example`.

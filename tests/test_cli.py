@@ -27,6 +27,7 @@ def test_ui_help() -> None:
     assert "--port" in result.stdout
     assert "--model" in result.stdout
     assert "-m" in result.stdout
+    assert "--base-url" in result.stdout
 
 
 def test_run_help_includes_model_flag() -> None:
@@ -34,3 +35,4 @@ def test_run_help_includes_model_flag() -> None:
     assert result.exit_code == 0
     assert "--model" in result.stdout
     assert "-m" in result.stdout
+    assert "--base-url" in result.stdout

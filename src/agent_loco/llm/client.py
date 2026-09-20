@@ -35,7 +35,7 @@ class OpenAICompatClient:
 
     def __init__(self, *, model: str, base_url: str, api_key: str) -> None:
         self.model = model
-        self.base_url = base_url.rstrip("/")
+        self.base_url = normalize_model_base_url(base_url)
         self.client = OpenAI(base_url=self.base_url, api_key=api_key)
 
     def complete(
@@ -81,7 +81,10 @@ class ScriptedClient:
 
 
 def check_model_endpoint(base_url: str, api_key: str, timeout: float = 3.0) -> tuple[bool, str]:
-    url = base_url.rstrip("/") + "/models"
+    try:
+        url = normalize_model_base_url(base_url).rstrip("/") + "/models"
+    except ValueError as exc:
+        return False, str(exc)
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
         response = httpx.get(url, headers=headers, timeout=timeout)
@@ -103,7 +106,7 @@ def check_model_endpoint(base_url: str, api_key: str, timeout: float = 3.0) -> t
 
 def list_remote_models(base_url: str, api_key: str, timeout: float = 3.0) -> list[str]:
     """Return model ids from an OpenAI-compatible `/models` endpoint."""
-    url = base_url.rstrip("/") + "/models"
+    url = normalize_model_base_url(base_url).rstrip("/") + "/models"
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
         response = httpx.get(url, headers=headers, timeout=timeout)
@@ -116,6 +119,19 @@ def list_remote_models(base_url: str, api_key: str, timeout: float = 3.0) -> lis
     except ValueError:
         return []
     return model_ids_from_payload(payload)
+
+
+def normalize_model_base_url(url: str) -> str:
+    """Accept host:port or a full OpenAI-compatible `/v1` URL."""
+    text = url.strip()
+    if not text:
+        raise ValueError("LLM server URL is required")
+    if "://" not in text:
+        text = "http://" + text
+    parsed = text.rstrip("/")
+    if parsed.endswith("/v1"):
+        return parsed
+    return parsed + "/v1"
 
 
 def model_ids_from_payload(payload: object) -> list[str]:

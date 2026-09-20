@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent_loco.config import Settings
-from agent_loco.llm.client import LLMClient, OpenAICompatClient, list_remote_models
+from agent_loco.llm.client import LLMClient, OpenAICompatClient, list_remote_models, normalize_model_base_url
 from agent_loco.runtime.improve import CycleResult, run_cycle
 
 log = logging.getLogger("loco")
@@ -38,6 +38,8 @@ class Task:
     auto_commit: bool
     publish: bool | None
     model_name: str
+    model_base_url: str
+    model_api_key: str
     status: str = "queued"
     created_at: str = field(default_factory=_utcnow)
     started_at: str | None = None
@@ -57,6 +59,7 @@ class Task:
             "workspace": self.workspace,
             "goal": self.goal,
             "model": self.model_name,
+            "base_url": self.model_base_url,
             "auto_commit": self.auto_commit,
             "publish": self.publish,
             "status": self.status,
@@ -104,7 +107,7 @@ class TaskManager:
         max_concurrent: int = 1,
         runner: Runner | None = None,
         llm_factory: Callable[[Settings], LLMClient] | None = None,
-        models_fn: Callable[[], list[str]] | None = None,
+        models_fn: Callable[..., list[str]] | None = None,
     ) -> None:
         if max_concurrent < 1:
             raise ValueError("max_concurrent must be >= 1")
@@ -128,11 +131,19 @@ class TaskManager:
         auto_commit: bool | None = None,
         publish: bool | None = None,
         model_name: str | None = None,
+        model_base_url: str | None = None,
+        model_api_key: str | None = None,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
             raise ValueError(f"workspace is not a directory: {workspace}")
         selected_model = (model_name or "").strip() or self.settings.model_name
+        selected_url = normalize_model_base_url(
+            (model_base_url or "").strip() or self.settings.model_base_url
+        )
+        selected_key = (
+            model_api_key if model_api_key is not None else self.settings.model_api_key
+        )
         task = Task(
             id=uuid4().hex,
             workspace=str(workspace),
@@ -140,6 +151,8 @@ class TaskManager:
             auto_commit=self.settings.auto_commit if auto_commit is None else auto_commit,
             publish=publish,
             model_name=selected_model,
+            model_base_url=selected_url,
+            model_api_key=selected_key,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -165,16 +178,24 @@ class TaskManager:
             "total": len(statuses),
         }
 
-    def list_models(self) -> list[str]:
+    def list_models(
+        self,
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ) -> list[str]:
+        url = normalize_model_base_url(base_url or self.settings.model_base_url)
+        key = self.settings.model_api_key if not api_key else api_key
         if self._models_fn is not None:
-            names = list(self._models_fn())
+            try:
+                names = list(self._models_fn(url, key))
+            except TypeError:
+                names = list(self._models_fn())
         else:
-            names = list_remote_models(
-                self.settings.model_base_url,
-                self.settings.model_api_key,
-            )
+            names = list_remote_models(url, key)
+        default_url = normalize_model_base_url(self.settings.model_base_url)
         default = self.settings.model_name
-        if default and default not in names:
+        if url == default_url and default and default not in names:
             names.insert(0, default)
         return names
 
@@ -187,7 +208,7 @@ class TaskManager:
         handler = _TaskLogHandler(task, threading.get_ident())
         loco_log = logging.getLogger("loco")
         loco_log.addHandler(handler)
-        log.info("task %s model=%s", task.id, task.model_name)
+        log.info("task %s model=%s url=%s", task.id, task.model_name, task.model_base_url)
         try:
             result = self._execute(task)
             task.status = result.status
@@ -213,6 +234,8 @@ class TaskManager:
             update={
                 "auto_commit": task.auto_commit,
                 "model_name": task.model_name,
+                "model_base_url": task.model_base_url,
+                "model_api_key": task.model_api_key,
             }
         )
         llm = self._llm_factory(settings)

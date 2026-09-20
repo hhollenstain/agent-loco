@@ -10,7 +10,11 @@ from rich.table import Table
 from agent_loco import __version__
 from agent_loco.config import Settings
 from agent_loco.hardware import command_available, detect_hardware
-from agent_loco.llm.client import OpenAICompatClient, check_model_endpoint
+from agent_loco.llm.client import (
+    OpenAICompatClient,
+    check_model_endpoint,
+    normalize_model_base_url,
+)
 from agent_loco.logging import setup_logging
 from agent_loco.runtime.improve import run_cycle
 from agent_loco.runtime.project import write_default_project_files
@@ -29,6 +33,7 @@ def _settings(**overrides: object) -> Settings:
     for key, value in overrides.items():
         if value is not None:
             setattr(settings, key, value)
+    settings.model_base_url = normalize_model_base_url(settings.model_base_url)
     setup_logging(settings.log_level)
     return settings
 
@@ -147,6 +152,13 @@ def run(
         str | None,
         typer.Option("--model", "-m", help="Model on the connected LLM server."),
     ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--base-url",
+            help="OpenAI-compatible LLM server (host:port or /v1 URL).",
+        ),
+    ] = None,
     publish: Annotated[bool | None, typer.Option("--publish/--no-publish")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
     web_ui: Annotated[
@@ -157,6 +169,7 @@ def run(
     """Run one improve → test → commit cycle against a project."""
     settings = _settings(
         model_name=model_name,
+        model_base_url=base_url,
         publish=publish,
         auto_commit=auto_commit,
     )
@@ -207,9 +220,20 @@ def watch_command(
         str | None,
         typer.Option("--model", "-m", help="Model on the connected LLM server."),
     ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--base-url",
+            help="OpenAI-compatible LLM server (host:port or /v1 URL).",
+        ),
+    ] = None,
 ) -> None:
     """Keep improving a project on an interval."""
-    settings = _settings(model_name=model_name, watch_interval_seconds=interval)
+    settings = _settings(
+        model_name=model_name,
+        model_base_url=base_url,
+        watch_interval_seconds=interval,
+    )
     try:
         watch_loop(workspace, settings, _llm(settings), goal)
     except KeyboardInterrupt:
@@ -227,6 +251,13 @@ def ui_command(
         str | None,
         typer.Option("--model", "-m", help="Model on the connected LLM server."),
     ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--base-url",
+            help="OpenAI-compatible LLM server (host:port or /v1 URL).",
+        ),
+    ] = None,
     host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port")] = 8080,
     max_concurrent: Annotated[
@@ -243,6 +274,7 @@ def ui_command(
     """Start a local web UI to queue and run tasks."""
     settings = _settings(
         model_name=model_name,
+        model_base_url=base_url,
         publish=publish,
         auto_commit=auto_commit,
     )
