@@ -165,6 +165,36 @@ def test_cycle_does_not_commit_run_logs_or_plans(tmp_path: Path, settings: Setti
     assert (tmp_path / ".loco" / "runs" / "old.json").exists()
 
 
+def test_cycle_retries_when_agent_inspects_but_goal_is_unmet(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "max_repair_attempts: 0\n",
+            "max_repair_attempts: 1\n",
+        ),
+        encoding="utf-8",
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="I will inspect the UI first."),
+            AssistantTurn(text="The templates exist; I will add a progress bar next."),
+            AssistantTurn(text="Here is the write_file JSON I would send."),
+            AssistantTurn(text="Done looking at the current UI."),
+            _review_turn(False, "no progress bar was added"),
+            _write_file_turn("ui.html", "<div class='task-stages'>progress</div>\n"),
+            AssistantTurn(text="Added a task stage progress bar."),
+            _review_turn(True, "progress bar with stages is present"),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, goal="Add a task progress bar")
+    assert result.status == "success"
+    assert "task-stages" in (tmp_path / "ui.html").read_text(encoding="utf-8")
+    assert result.committed is True
+
+
 def test_cycle_create_pr_uses_feature_branch_not_main(
     tmp_path: Path, settings: Settings, monkeypatch
 ) -> None:

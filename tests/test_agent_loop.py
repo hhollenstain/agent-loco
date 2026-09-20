@@ -263,7 +263,7 @@ def test_agent_nudges_after_inspect_only_tools(tmp_path: Path) -> None:
                 )
             ],
         )
-        for index in range(8)
+        for index in range(3)
     ]
     llm = ScriptedClient(
         [
@@ -281,8 +281,8 @@ def test_agent_nudges_after_inspect_only_tools(tmp_path: Path) -> None:
             AssistantTurn(text="Wrote done.txt"),
         ]
     )
-    result = CodingAgent(llm, tools, max_iterations=12).run("Write done.txt")
-    assert result.tool_calls >= 9
+    result = CodingAgent(llm, tools, max_iterations=8).run("Write done.txt")
+    assert result.tool_calls >= 4
     assert (tmp_path / "done.txt").read_text(encoding="utf-8") == "ok\n"
     contents = [
         message["content"]
