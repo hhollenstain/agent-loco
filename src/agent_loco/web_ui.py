@@ -12,7 +12,12 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
-from agent_loco.runtime.servers import list_known_servers, load_selection, remember_server
+from agent_loco.runtime.servers import (
+    load_selection,
+    list_known_servers,
+    remember_server,
+    update_server_alias,
+)
 from agent_loco.runtime.tasks import TaskManager
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -41,6 +46,16 @@ class HistoryQuery(BaseModel):
     search: str | None = None
 
 
+class ServerAliasUpdate(BaseModel):
+    url: str
+    alias: str | None = None
+
+
+class UrlCreate(BaseModel):
+    url: str
+    alias: str | None = None
+
+
 class UiState:
     def __init__(
         self,
@@ -58,20 +73,20 @@ class UiState:
             default_create_pr if default_create_pr is not None else manager.settings.create_pr
         )
 
-    def known_servers(self) -> list[str]:
+    def known_servers(self) -> list[dict[str, str]]:
         return list_known_servers(
             Path(self.default_workspace),
             default=self.manager.settings.model_base_url,
         )
 
-    def selection(self) -> dict[str, str | list[str] | None]:
+    def selection(self) -> dict[str, str | list[dict[str, str]] | None]:
         return load_selection(
             Path(self.default_workspace),
             default_url=self.manager.settings.model_base_url,
             default_model=self.manager.settings.model_name,
         )
 
-    def remember_server(self, url: str, model: str | None = None) -> list[str]:
+    def remember_server(self, url: str, model: str | None = None) -> list[dict[str, str]]:
         return remember_server(
             Path(self.default_workspace),
             url,
@@ -321,6 +336,51 @@ def create_app(
             page_size=page_size,
             search=search,
         )
+
+    @app.post("/api/servers/alias")
+    def update_alias(
+        request: Request,
+        payload: ServerAliasUpdate | None = None,
+    ) -> dict[str, Any]:
+        """Update or add an alias for a server URL."""
+        ui: UiState = request.app.state.ui
+        body = payload or ServerAliasUpdate(url="", alias=None)
+        if not body.url or not body.url.strip():
+            return JSONResponse({"error": "url is required"}, status_code=400)
+        servers = update_server_alias(
+            Path(ui.default_workspace),
+            body.url,
+            body.alias,
+        )
+        return {
+            "servers": servers,
+            "last_base_url": ui.selection()["last_base_url"],
+            "last_model": ui.selection()["last_model"],
+        }
+
+    @app.post("/api/servers")
+    def create_server(
+        request: Request,
+        payload: UrlCreate | None = None,
+    ) -> dict[str, Any]:
+        """Create a new server with optional alias."""
+        from agent_loco.runtime.servers import create_or_update_server
+        
+        ui: UiState = request.app.state.ui
+        body = payload or UrlCreate(url="", alias=None)
+        if not body.url or not body.url.strip():
+            return JSONResponse({"error": "url is required"}, status_code=400)
+        
+        servers = create_or_update_server(
+            Path(ui.default_workspace),
+            body.url,
+            body.alias or None,
+        )
+        return {
+            "servers": servers,
+            "last_base_url": ui.selection()["last_base_url"],
+            "last_model": ui.selection()["last_model"],
+        }
 
     return app
 

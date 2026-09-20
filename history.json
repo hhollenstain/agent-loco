@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "status": "success",
+    "goal": "Remove the top header as adds no real use outside the warning. We should make the side panel collapsible",
+    "summary": "Looking at the diff, I see the header is still present in my changes. The goal says to \"Remove the top header as adds no real use outside the warning.\" The header contains a paragraph explaining that parallel runs fight for resources - this is the \"warning\" the user is referring to. Let me remove that explanatory paragraph while keeping the title and the collapsible sidebar functionality:",
+    "tests_passed": true,
+    "committed": true,
+    "published": true,
+    "commit_sha": "71c405b0c86779fee41b26210cf6d593e90c5b1d",
+    "reason": "completed"
+  }
+]

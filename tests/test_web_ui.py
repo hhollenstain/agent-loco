@@ -219,16 +219,16 @@ def test_web_ui_lists_models_from_requested_host(
         assert posted.status_code == 200
         assert posted.json()["models"] == ["remote-coder"]
         assert posted.json()["base_url"] == "http://10.0.0.8:8000/v1"
-        assert posted.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert posted.json()["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert posted.json()["last_model"] == "remote-coder"
 
         listed = client.get("/api/servers")
         assert listed.status_code == 200
-        assert listed.json()["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert listed.json()["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert listed.json()["last_base_url"] == "http://10.0.0.8:8000/v1"
         assert listed.json()["last_model"] == "remote-coder"
         saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))
-        assert saved["servers"][0] == "http://10.0.0.8:8000/v1"
+        assert saved["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert saved["last_model"] == "remote-coder"
 
         home = client.get("/")
@@ -298,13 +298,14 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
 
 def test_remember_server_dedupes_and_keeps_newest_first(tmp_path: Path) -> None:
     first = remember_server(tmp_path, "10.0.0.8:8000", default="http://127.0.0.1:11434/v1")
-    assert first[0] == "http://10.0.0.8:8000/v1"
-    assert "http://127.0.0.1:11434/v1" in first
+    assert first[0]["url"] == "http://10.0.0.8:8000/v1"
+    assert "http://127.0.0.1:11434/v1" in [s["url"] for s in first]
     again = remember_server(tmp_path, "http://10.0.0.8:8000/v1")
-    assert again[0] == "http://10.0.0.8:8000/v1"
-    assert again.count("http://10.0.0.8:8000/v1") == 1
+    assert again[0]["url"] == "http://10.0.0.8:8000/v1"
+    assert again.count({"url": "http://10.0.0.8:8000/v1", "alias": None}) == 1
     newer = remember_server(tmp_path, "http://10.0.0.9:11434/v1")
-    assert newer[:2] == ["http://10.0.0.9:11434/v1", "http://10.0.0.8:8000/v1"]
+    assert newer[0]["url"] == "http://10.0.0.9:11434/v1"
+    assert newer[1]["url"] == "http://10.0.0.8:8000/v1"
     gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
     assert "servers.json" in gitignore
     remember_server(tmp_path, "http://10.0.0.8:8000/v1", model="remote-coder")
