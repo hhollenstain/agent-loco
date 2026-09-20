@@ -64,6 +64,13 @@ class CycleResult:
     events: list[dict] = field(default_factory=list)
 
 
+@dataclass
+class _EmptyDiffOutcome:
+    result: CycleResult | None
+    summary: str
+    tests_passed: bool | None
+
+
 def resolve_create_pr(
     settings: Settings,
     project: ProjectConfig,
@@ -194,16 +201,25 @@ def _run_cycle(
     sha = current_sha(workspace)
     has_work = has_changes(workspace) or bool(sha_before and sha and sha != sha_before)
     if not has_work:
-        return _finish_without_changes(
+        empty = _handle_empty_diff(
             workspace,
             project,
+            settings,
             llm,
+            agent,
             selected_goal,
             agent_result.summary,
             tests_passed,
             sha,
+            sha_before=sha_before,
             mark_checkbox=mark_checkbox,
+            allow_create_pr=allow_create_pr,
         )
+        if empty.result is not None:
+            return empty.result
+        agent_result.summary = empty.summary
+        tests_passed = empty.tests_passed
+        sha = current_sha(workspace)
 
     review = _ensure_goal_met(
         workspace,
@@ -387,17 +403,21 @@ def _run_cycle(
     return result
 
 
-def _finish_without_changes(
+def _handle_empty_diff(
     workspace: Workspace,
     project: ProjectConfig,
+    settings: Settings,
     llm: LLMClient,
+    agent: CodingAgent,
     goal: str,
     summary: str,
     tests_passed: bool | None,
     sha: str | None,
     *,
+    sha_before: str | None,
     mark_checkbox: bool,
-) -> CycleResult:
+    allow_create_pr: bool,
+) -> _EmptyDiffOutcome:
     log_progress("No project files changed; checking whether the goal is already met...")
     upstream = upstream_state(workspace, project.publish_remote)
     log_progress(f"Upstream: {upstream.detail}")
@@ -412,7 +432,6 @@ def _finish_without_changes(
         upstream=upstream.detail,
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
-    combined = _no_work_summary(summary, verdict, upstream.detail)
     if verdict.met:
         log_progress(f"No work needed: {verdict.reason}")
         if mark_checkbox:
@@ -421,31 +440,74 @@ def _finish_without_changes(
         result = CycleResult(
             status="success",
             goal=goal,
-            summary=combined,
+            summary=_no_work_summary(summary, verdict, upstream.detail),
             tests_passed=tests_passed,
             committed=False,
             published=False,
             commit_sha=sha,
             reason=f"no changes needed: {verdict.reason} {upstream.detail}",
         )
-    else:
-        log_progress("Goal is not already met; no files were changed.")
-        result = CycleResult(
-            status="skipped",
-            goal=goal,
-            summary=combined,
-            tests_passed=tests_passed,
-            committed=False,
-            published=False,
-            commit_sha=sha,
-            reason=(
-                "no files changed and the goal is not already met: "
-                f"{review_reason(verdict)} {upstream.detail}"
-            ),
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return _EmptyDiffOutcome(result=result, summary=summary, tests_passed=tests_passed)
+
+    context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    for attempt in range(project.max_repair_attempts):
+        log_progress(
+            "Agent finished without edits; sending it back to implement "
+            f"({attempt + 1}/{project.max_repair_attempts})"
         )
+        follow = agent.run(_empty_diff_retry_prompt(goal, review_reason(verdict)), context)
+        if follow.summary:
+            summary = follow.summary
+        tests_after = _maybe_test(workspace, project, settings, phase="retry")
+        tests_passed = None if tests_after is None else tests_after.ok
+        if settings.require_tests and tests_after is not None and not tests_after.ok:
+            result = CycleResult(
+                status="failed",
+                goal=goal,
+                summary=summary,
+                tests_passed=False,
+                committed=False,
+                published=False,
+                commit_sha=current_sha(workspace),
+                reason="tests failed after empty-diff retry; commit skipped",
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return _EmptyDiffOutcome(result=result, summary=summary, tests_passed=False)
+        sha_now = current_sha(workspace)
+        if has_changes(workspace) or bool(sha_before and sha_now and sha_now != sha_before):
+            log_progress("Agent produced file changes on retry.")
+            return _EmptyDiffOutcome(result=None, summary=summary, tests_passed=tests_passed)
+
+    log_progress("Goal is not already met; no files were changed.")
+    result = CycleResult(
+        status="skipped",
+        goal=goal,
+        summary=_no_work_summary(summary, verdict, upstream.detail),
+        tests_passed=tests_passed,
+        committed=False,
+        published=False,
+        commit_sha=sha,
+        reason=(
+            "no files changed and the goal is not already met: "
+            f"{review_reason(verdict)} {upstream.detail}"
+        ),
+    )
     _write_run_log(workspace.root, result)
     _append_to_history(workspace.root, result)
-    return result
+    return _EmptyDiffOutcome(result=result, summary=summary, tests_passed=tests_passed)
+
+
+def _empty_diff_retry_prompt(goal: str, reason: str) -> str:
+    return (
+        "You inspected the repo but did not change any files. "
+        "The goal is not already done. Do not summarize. Do not only read more files "
+        "or run tests. Call write_file now and implement the goal.\n\n"
+        f"Goal:\n{goal.strip()}\n\n"
+        f"Why it is not done:\n{reason.strip()}"
+    )
 
 
 def _no_work_summary(agent_summary: str, verdict: GoalReview, upstream_detail: str) -> str:

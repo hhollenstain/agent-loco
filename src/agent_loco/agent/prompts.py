@@ -31,6 +31,8 @@ Rules:
 - Do not stop at a plan. Call a tool on the first turn.
 - Call write_file to apply edits. Pasting a planned write_file JSON in a summary
   does not change the workspace.
+- Do not stop after only reading files or running tests. If the goal is not
+  already done in the tree, write the implementation. Inspection is not a finish.
 - Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """

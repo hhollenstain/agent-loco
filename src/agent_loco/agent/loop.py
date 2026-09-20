@@ -16,11 +16,11 @@ log = logging.getLogger("loco")
 MUTATING_TOOLS = {"write_file"}
 MAX_PLAN_NUDGES = 3
 MAX_UNFINISHED_NUDGES = 4
-MAX_INSPECT_ROUNDS = 8
+MAX_INSPECT_ROUNDS = 3
 CONTINUE_NUDGE = (
-    "You have not changed any files yet. That reply was a plan, not a finish. "
-    "Call write_file now and implement the goal. Do not summarize, and do not "
-    "commit `.loco/runs/` logs."
+    "You have not changed any files yet. Inspection is over. "
+    "Call write_file now and implement the goal in the workspace. "
+    "Do not summarize, do not only run tests, and do not stop until a file is written."
 )
 UNFINISHED_NUDGE = (
     "That reply is not a finish. You still have work left. "
@@ -28,7 +28,7 @@ UNFINISHED_NUDGE = (
 )
 INSPECT_NUDGE = (
     "You have been inspecting the repo without changing files. "
-    "Call write_file now and implement the goal. Do not only read and summarize."
+    "Stop reading. Call write_file now and implement the goal."
 )
 _UNFINISHED_RE = re.compile(
     r"(?is)("
