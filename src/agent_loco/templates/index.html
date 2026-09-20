@@ -45,13 +45,19 @@
       grid-template-columns: minmax(18rem, 22rem) 1fr;
       min-height: calc(100vh - 5.5rem);
     }
+    main.collapsed {
+      grid-template-columns: 0 1fr;
+    }
+    main.collapsed form {
+      overflow: hidden;
+    }
     @media (max-width: 840px) {
       main { grid-template-columns: 1fr; }
     }
     form, .tasks {
       padding: 1.25rem 1.5rem;
     }
-    form { border-right: 1px solid var(--line); }
+    form { border-right: 1px solid var(--line); transition: width 0.3s ease, overflow 0.3s ease; }
     label {
       display: block;
       margin: 0.85rem 0 0.3rem;
@@ -90,6 +96,20 @@
       white-space: nowrap;
     }
     button:disabled { opacity: 0.5; cursor: wait; }
+    button.collapsible {
+      display: none;
+    }
+    .task-container {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+    .task-header {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
     .note {
       margin-top: 1rem;
       padding: 0.7rem 0.8rem;
@@ -137,13 +157,13 @@
     }
     .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
     .history { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
-    .search-row {
+    .history .search-row {
       display: flex;
       gap: 0.6rem;
       margin: 0.65rem 0 0.5rem;
       align-items: center;
     }
-    .search-row input[type="text"] {
+    .history .search-row input[type="text"] {
       flex: 1;
       max-width: 30rem;
     }
@@ -180,7 +200,7 @@
       and the model server.
     </p>
   </header>
-  <main>
+  <main id="main">
     <form id="task-form">
       <label for="workspace">Workspace</label>
       <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
@@ -221,29 +241,32 @@
       </p>
     </form>
     <section class="tasks">
-      <div class="row">
-        <label style="margin:0">Tasks</label>
-        <span class="meta" id="counts"></span>
-      </div>
-      <div id="task-list" class="task-list"></div>
-      <div id="detail"></div>
-      <div class="history">
-        <div class="row">
-          <label style="margin:0">Past runs</label>
-          <span class="meta" id="history-counts"></span>
+      <div class="task-container">
+        <div class="task-header">
+          <button type="button" class="button collapsible secondary" id="toggle-sidebar">▸</button>
+          <p style="margin:0">Tasks</p>
+          <span class="meta" id="counts"></span>
         </div>
-        <div class="search-row">
-          <label for="history-search" style="margin:0">Search:</label>
-          <input id="history-search" type="text" placeholder="filter by goal, status, summary, id">
-          <button type="button" class="secondary" id="clear-search">Clear</button>
+        <div id="task-list" class="task-list"></div>
+        <div id="detail"></div>
+        <div class="history">
+          <div class="row">
+            <label style="margin:0">Past runs</label>
+            <span class="meta" id="history-counts"></span>
+          </div>
+          <div class="search-row">
+            <label for="history-search" style="margin:0">Search:</label>
+            <input id="history-search" type="text" placeholder="filter by goal, status, summary, id">
+            <button type="button" class="secondary" id="clear-search">Clear</button>
+          </div>
+          <div id="history-list" class="task-list"></div>
+          <div id="pagination" class="pagination"></div>
         </div>
-        <div id="history-list" class="task-list"></div>
-        <div id="pagination" class="pagination"></div>
       </div>
     </section>
   </main>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "" };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "", sidebarCollapsed: false };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -253,6 +276,8 @@
     const submitEl = document.getElementById("submit");
     const searchInput = document.getElementById("history-search");
     const paginationEl = document.getElementById("pagination");
+    const mainEl = document.getElementById("main");
+    const toggleBtn = document.getElementById("toggle-sidebar");
 
     function goalText(item) {
       if (!item.goal) return "(from project goals / failing tests)";
@@ -405,6 +430,17 @@
       state.historyPage = 1;
       searchInput.value = "";
       refresh();
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      if (state.sidebarCollapsed) {
+        mainEl.classList.add("collapsed");
+        toggleBtn.textContent = "▾";
+      } else {
+        mainEl.classList.remove("collapsed");
+        toggleBtn.textContent = "▸";
+      }
     });
 
     document.getElementById("task-form").addEventListener("submit", async (event) => {
