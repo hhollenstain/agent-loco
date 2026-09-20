@@ -4,14 +4,16 @@ import json
 from pathlib import Path
 
 import pytest
-
 from tests.support import init_git_repo
 
 from agent_loco.runtime.workspaces import (
+    archive_workspace,
     browse_directory,
     clone_workspace,
     create_workspace,
+    forget_workspace,
     last_workspace,
+    load_archived_workspaces,
     load_workspaces,
     remember_workspace,
     repo_name_from_url,
@@ -70,6 +72,50 @@ def test_remember_and_restore_workspaces(tmp_path: Path) -> None:
     assert last_workspace(tmp_path, default=first) == str(first.resolve())
     loaded = load_workspaces(tmp_path, default=first)
     assert [item["path"] for item in loaded] == [str(first.resolve())]
+
+
+def test_archive_and_forget_workspaces(tmp_path: Path) -> None:
+    first = tmp_path / "one"
+    second = tmp_path / "two"
+    third = tmp_path / "three"
+    first.mkdir()
+    second.mkdir()
+    third.mkdir()
+    remember_workspace(tmp_path, first)
+    remember_workspace(tmp_path, second)
+    remember_workspace(tmp_path, third)
+    saved = archive_workspace(tmp_path, second)
+    assert [item["path"] for item in saved] == [
+        str(first.resolve()),
+        str(third.resolve()),
+    ]
+    archived = load_archived_workspaces(tmp_path)
+    assert [item["path"] for item in archived] == [str(second.resolve())]
+    payload = json.loads((tmp_path / ".loco" / "workspaces.json").read_text(encoding="utf-8"))
+    assert payload["last"] == str(third.resolve())
+    restored = remember_workspace(tmp_path, second)
+    assert [item["path"] for item in restored] == [
+        str(first.resolve()),
+        str(third.resolve()),
+        str(second.resolve()),
+    ]
+    assert load_archived_workspaces(tmp_path) == []
+    archive_workspace(tmp_path, first)
+    forgotten = forget_workspace(tmp_path, first)
+    assert [item["path"] for item in forgotten] == [
+        str(third.resolve()),
+        str(second.resolve()),
+    ]
+    assert load_archived_workspaces(tmp_path) == []
+    assert first.exists()
+    archive_workspace(tmp_path, second)
+    assert [item["path"] for item in load_workspaces(tmp_path)] == [str(third.resolve())]
+    with pytest.raises(ValueError, match="keep at least one"):
+        archive_workspace(tmp_path, third)
+    with pytest.raises(ValueError, match="keep at least one"):
+        forget_workspace(tmp_path, third)
+    assert third.exists()
+    assert last_workspace(tmp_path) == str(third.resolve())
 
 
 def test_create_workspace_inits_loco_and_git(tmp_path: Path) -> None:

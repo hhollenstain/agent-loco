@@ -5,6 +5,7 @@ from pathlib import Path
 from tests.support import init_git_repo
 
 from agent_loco.runtime.workdiff import (
+    collect_current_evidence,
     collect_work_diff,
     extract_version_changes,
     format_work_diff,
@@ -159,3 +160,16 @@ def _pipfile_lock(discord_version: str, *, hashes: int) -> str:
         "    }\n"
         "}\n"
     )
+
+
+def test_collect_current_evidence_includes_goal_package_version(tmp_path: Path) -> None:
+    (tmp_path / "setup.py").write_text("INSTALL = ['discord.py==2.7.1']\n", encoding="utf-8")
+    (tmp_path / "Pipfile.lock").write_text(_pipfile_lock("2.7.1", hashes=4), encoding="utf-8")
+    init_git_repo(tmp_path)
+    text = collect_current_evidence(
+        Workspace(tmp_path),
+        "update the outdated discord.py library",
+    )
+    assert "setup.py" in text
+    assert "discord.py: 2.7.1" in text
+    assert "Current HEAD:" in text

@@ -148,24 +148,55 @@
       padding-bottom: 0;
     }
     .workspace-tab {
+      display: flex;
+      align-items: stretch;
       flex: 0 0 auto;
-      max-width: 14rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      max-width: 16rem;
       background: transparent;
       color: var(--muted);
       border: 1px solid transparent;
       border-bottom: 0;
       border-radius: 7px 7px 0 0;
-      padding: 0.5rem 0.8rem;
-      font: 600 0.82rem/1.2 inherit;
+      padding: 0;
     }
     .workspace-tab.active {
       background: var(--panel);
       color: var(--ink);
       border-color: var(--line);
     }
+    .workspace-tab-select {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      background: transparent;
+      color: inherit;
+      border: 0;
+      border-radius: 7px 0 0 0;
+      padding: 0.5rem 0.45rem 0.5rem 0.8rem;
+      font: 600 0.82rem/1.2 inherit;
+      text-align: left;
+    }
+    .workspace-tab-archive {
+      flex: 0 0 auto;
+      width: 1.55rem;
+      min-width: 1.55rem;
+      margin: 0.15rem 0.2rem 0.2rem 0;
+      padding: 0;
+      background: transparent;
+      color: var(--muted);
+      border: 0;
+      border-radius: 5px;
+      font-size: 1.05rem;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .workspace-tab-archive:hover, .workspace-tab-archive:focus {
+      color: var(--ink);
+      background: var(--panel-2);
+    }
+    .workspace-tab.only-tab .workspace-tab-archive { display: none; }
     .workspace-tab-add {
       flex: 0 0 auto;
       width: 2.15rem;
@@ -181,7 +212,8 @@
       font-weight: 500;
       line-height: 1;
     }
-    .workspace-tab-add:hover, .workspace-tab:hover, .workspace-tab:focus {
+    .workspace-tab-add:hover, .workspace-tab-add:focus,
+    .workspace-tab:hover, .workspace-tab:focus-within {
       border-color: var(--accent);
       color: var(--ink);
     }
@@ -248,6 +280,17 @@
       border-color: var(--accent);
     }
     .folder-item .name, .recent-item .name { font-weight: 600; }
+    .archived-row {
+      display: flex;
+      align-items: stretch;
+      gap: 0.35rem;
+    }
+    .archived-row .recent-item { flex: 1; min-width: 0; }
+    .archived-row .forget {
+      flex: 0 0 auto;
+      padding: 0.45rem 0.6rem;
+      font-size: 0.78rem;
+    }
     .badge {
       color: var(--muted);
       font-size: 0.72rem;
@@ -574,7 +617,10 @@
   <nav class="workspace-tabs" id="workspace-tabs" aria-label="Workspaces">
     <div class="workspace-tab-list" id="workspace-tab-list" role="tablist">
       {% for ws in known_workspaces %}
-      <button type="button" class="workspace-tab{% if ws.path == default_workspace %} active{% endif %}" role="tab" data-path="{{ ws.path }}" aria-selected="{{ 'true' if ws.path == default_workspace else 'false' }}" title="{{ ws.path }}">{{ ws.name }}</button>
+      <div class="workspace-tab{% if ws.path == default_workspace %} active{% endif %}{% if known_workspaces|length < 2 %} only-tab{% endif %}">
+        <button type="button" class="workspace-tab-select" role="tab" data-path="{{ ws.path }}" aria-selected="{{ 'true' if ws.path == default_workspace else 'false' }}" title="{{ ws.path }}">{{ ws.name }}</button>
+        <button type="button" class="workspace-tab-archive" data-path="{{ ws.path }}" aria-label="Archive {{ ws.name }}" title="Archive workspace">×</button>
+      </div>
       {% endfor %}
     </div>
     <button type="button" class="workspace-tab-add" id="add-workspace-tab" aria-label="Add workspace" title="Add workspace">+</button>
@@ -687,6 +733,11 @@
         <div class="folder-list" id="recent-workspaces"></div>
       </div>
       <div class="modal-section">
+        <label>Archived</label>
+        <p class="hint">Hidden from the tab bar. Restore to use again, or remove from loco's list. Folders on disk are not deleted.</p>
+        <div class="folder-list" id="archived-workspaces"></div>
+      </div>
+      <div class="modal-section">
         <label>Browse folders</label>
         <p class="browse-path" id="browse-path"></p>
         <div class="folder-list" id="browse-list"></div>
@@ -753,6 +804,7 @@
     const serverFilterEl = document.getElementById("server-filter");
     const pickerEl = document.getElementById("workspace-picker");
     const recentEl = document.getElementById("recent-workspaces");
+    const archivedEl = document.getElementById("archived-workspaces");
     const browseListEl = document.getElementById("browse-list");
     const browsePathEl = document.getElementById("browse-path");
     const pickerErrorEl = document.getElementById("workspace-picker-error");
@@ -925,7 +977,9 @@
       }
       if (task.status === "queued" || task.status === "running") return;
       const titles = {
-        success: "Task finished",
+        success: task.reason && String(task.reason).startsWith("no changes needed")
+          ? "Already done"
+          : "Task finished",
         failed: "Task failed",
         skipped: "Task skipped",
         error: "Task error",
@@ -975,6 +1029,7 @@
       if (!res.ok) throw new Error(body.error || "failed to list workspaces");
       applyWorkspacePayload(body);
       renderFolderButtons(recentEl, body.workspaces || [], "No recent workspaces yet.", (item) => selectWorkspace(item.path, { seed: true }));
+      renderArchivedWorkspaces(body.archived || []);
       return body;
     }
 
@@ -985,26 +1040,103 @@
         cloneParentEl.value = `${body.home.replace(/\/$/, "")}/projects`;
       }
       renderWorkspaceTabs(body.workspaces || [], body.current);
+      if (archivedEl && !pickerEl.hidden) {
+        renderArchivedWorkspaces(body.archived || []);
+        renderFolderButtons(recentEl, body.workspaces || [], "No recent workspaces yet.", (item) => selectWorkspace(item.path, { seed: true }));
+      }
       setGuidelinesEditor(body.guidelines, body.custom_guidelines);
     }
 
     function renderWorkspaceTabs(workspaces, current) {
       workspaceTabListEl.replaceChildren();
+      const onlyTab = workspaces.length < 2;
       for (const item of workspaces) {
+        const tab = document.createElement("div");
+        tab.className = "workspace-tab" + (item.path === current ? " active" : "") + (onlyTab ? " only-tab" : "");
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "workspace-tab" + (item.path === current ? " active" : "");
+        button.className = "workspace-tab-select";
         button.setAttribute("role", "tab");
         button.dataset.path = item.path;
         button.title = item.path;
         button.setAttribute("aria-selected", item.path === current ? "true" : "false");
         button.textContent = item.name || item.path;
-        button.addEventListener("click", () => {
-          if (item.path === workspaceEl.value) return;
-          selectWorkspace(item.path, { close: false }).catch((err) => notify("error", err.message, { title: "Could not switch workspace" }));
-        });
-        workspaceTabListEl.append(button);
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "workspace-tab-archive";
+        close.dataset.path = item.path;
+        close.title = "Archive workspace";
+        close.setAttribute("aria-label", `Archive ${item.name || item.path}`);
+        close.textContent = "×";
+        tab.append(button, close);
+        workspaceTabListEl.append(tab);
       }
+    }
+
+    function renderArchivedWorkspaces(items) {
+      if (!archivedEl) return;
+      if (!items.length) {
+        archivedEl.innerHTML = `<p class="empty">No archived workspaces.</p>`;
+        return;
+      }
+      archivedEl.replaceChildren();
+      for (const item of items) {
+        const row = document.createElement("div");
+        row.className = "archived-row";
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "recent-item";
+        restore.title = item.path;
+        restore.innerHTML = `<span class="name">${escapeHtml(item.name)}</span><span class="path-hint">${escapeHtml(item.path)}</span>`;
+        restore.addEventListener("click", () => {
+          restoreWorkspace(item.path).catch((err) => notify("error", err.message, { title: "Could not restore workspace" }));
+        });
+        const forget = document.createElement("button");
+        forget.type = "button";
+        forget.className = "secondary forget";
+        forget.textContent = "Remove";
+        forget.title = "Remove from loco's list. The folder on disk is not deleted.";
+        forget.addEventListener("click", () => {
+          forgetWorkspace(item.path).catch((err) => notify("error", err.message, { title: "Could not remove workspace" }));
+        });
+        row.append(restore, forget);
+        archivedEl.append(row);
+      }
+    }
+
+    async function postWorkspaceAction(action, path) {
+      const res = await fetch(`/api/workspaces/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `failed to ${action} workspace`);
+      applyWorkspacePayload(body);
+      state.historyPage = 1;
+      await refresh();
+      return body;
+    }
+
+    async function archiveWorkspace(path) {
+      const body = await postWorkspaceAction("archive", path);
+      notify("info", body.current, { title: "Workspace archived" });
+      return body;
+    }
+
+    async function restoreWorkspace(path) {
+      const body = await postWorkspaceAction("restore", path);
+      closePicker();
+      notify("success", body.current, { title: "Workspace restored" });
+      return body;
+    }
+
+    async function forgetWorkspace(path) {
+      const ok = window.confirm("Remove this workspace from loco's list? The folder on disk will not be deleted.");
+      if (!ok) return null;
+      const body = await postWorkspaceAction("forget", path);
+      notify("info", path, { title: "Workspace removed from list" });
+      return body;
     }
 
     function setGuidelinesEditor(text, custom) {
@@ -1077,6 +1209,17 @@
     });
     document.getElementById("add-workspace-tab").addEventListener("click", () => {
       openPicker().catch(showPickerError);
+    });
+    workspaceTabListEl.addEventListener("click", (event) => {
+      const archive = event.target.closest(".workspace-tab-archive");
+      if (archive) {
+        event.preventDefault();
+        archiveWorkspace(archive.dataset.path).catch((err) => notify("error", err.message, { title: "Could not archive workspace" }));
+        return;
+      }
+      const select = event.target.closest(".workspace-tab-select");
+      if (!select || select.dataset.path === workspaceEl.value) return;
+      selectWorkspace(select.dataset.path, { close: false }).catch((err) => notify("error", err.message, { title: "Could not switch workspace" }));
     });
     document.getElementById("close-workspace-picker").addEventListener("click", closePicker);
     pickerEl.addEventListener("click", (event) => {
@@ -1325,7 +1468,7 @@
         }
         return `<li class="timeline-item">${when}${title}</li>`;
       }).join("");
-      return `<ol class="timeline">${items}</ol>`;
+      return `<ol class="timeline" id="progress-timeline">${items}</ol>`;
     }
 
     function renderProgress(item, { running = false } = {}) {
@@ -1368,7 +1511,61 @@
       return String(server);
     }
 
+    const FOLLOW_PX = 80;
+    let renderedProgressKey = { selected: null, historyKey: "" };
+    let lastProgressHtml = "";
+
+    function progressScroller() {
+      return document.getElementById("progress-timeline") || detailEl.querySelector("#log");
+    }
+
+    function captureProgressScroll() {
+      const el = progressScroller();
+      if (!el) {
+        return {
+          selected: renderedProgressKey.selected,
+          historyKey: renderedProgressKey.historyKey,
+          top: 0,
+          follow: true,
+          hadScroller: false,
+        };
+      }
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      return {
+        selected: renderedProgressKey.selected,
+        historyKey: renderedProgressKey.historyKey,
+        top: el.scrollTop,
+        follow: maxScroll <= 0 || maxScroll - el.scrollTop <= FOLLOW_PX,
+        hadScroller: true,
+      };
+    }
+
+    function restoreProgressScroll(snap, { running = false } = {}) {
+      const el = progressScroller();
+      renderedProgressKey = { selected: state.selected, historyKey: state.selectedHistoryKey };
+      if (!el) return;
+      const sameItem = snap
+        && snap.selected === state.selected
+        && snap.historyKey === state.selectedHistoryKey;
+      if (!sameItem) {
+        if (running) el.scrollTop = el.scrollHeight;
+        return;
+      }
+      if (!snap.hadScroller || snap.follow) {
+        if (running || snap.follow) el.scrollTop = el.scrollHeight;
+        return;
+      }
+      el.scrollTop = snap.top;
+    }
+
+    function restoreScroll(snap, page, { running = false } = {}) {
+      restoreProgressScroll(snap, { running });
+      if (page) window.scrollTo(page.x, page.y);
+    }
+
     function render() {
+      const scroll = captureProgressScroll();
+      const page = { x: window.scrollX, y: window.scrollY };
       const running = state.tasks.filter(t => t.status === "running").length;
       const queued = state.tasks.filter(t => t.status === "queued").length;
       countsEl.textContent = `${running} running · ${queued} queued`;
@@ -1436,24 +1633,52 @@
 
       const selectedHistory = historyItems().find((entry, index) => historyKey(entry, index) === state.selectedHistoryKey);
       const selected = selectedHistory ? null : (state.tasks.find(t => t.id === state.selected) || (!state.selectedHistoryKey && state.tasks[0]) || null);
-      if (selected) {
-        state.selected = selected.id;
-        const duration = taskDurationLabel(selected);
-        detailEl.innerHTML = `
-          <label>Progress</label>
-          <p class="meta">${escapeHtml(selected.workspace || "")}${selected.model ? " · " + escapeHtml(selected.model) : ""}${selected.base_url ? " · " + escapeHtml(selected.base_url) : ""}${selected.commit_sha ? " · " + escapeHtml(selected.commit_sha.slice(0, 8)) : ""}${duration ? " · " + escapeHtml(duration) : ""}</p>
-          ${renderProgress(selected, { running: selected.status === "running" })}
-        `;
-      } else if (selectedHistory) {
-        const duration = taskDurationLabel(selectedHistory);
-        detailEl.innerHTML = `
-          <label>Progress</label>
-          <p class="meta">${escapeHtml(goalText(selectedHistory))}${duration ? " · " + escapeHtml(duration) : ""} · ${escapeHtml(timestampLabel(selectedHistory))}</p>
-          ${renderProgress(selectedHistory)}
-        `;
-      } else {
+      const live = Boolean(selected && selected.status === "running");
+      if (selected) state.selected = selected.id;
+      const itemKey = selected
+        ? `task:${selected.id}`
+        : selectedHistory
+          ? `history:${state.selectedHistoryKey}`
+          : "";
+      const progressHtml = selected
+        ? renderProgress(selected, { running: live })
+        : selectedHistory
+          ? renderProgress(selectedHistory)
+          : "";
+      const metaText = selected
+        ? [
+            selected.workspace || "",
+            selected.model || "",
+            selected.base_url || "",
+            selected.commit_sha ? selected.commit_sha.slice(0, 8) : "",
+            taskDurationLabel(selected),
+          ].filter(Boolean).join(" · ")
+        : selectedHistory
+          ? [goalText(selectedHistory), taskDurationLabel(selectedHistory), timestampLabel(selectedHistory)].filter(Boolean).join(" · ")
+          : "";
+      const root = detailEl.querySelector("[data-progress-root]");
+      const sameItem = Boolean(root && itemKey && root.dataset.itemKey === itemKey);
+      if (!itemKey) {
         detailEl.innerHTML = "";
+      } else if (sameItem) {
+        const metaEl = root.querySelector("[data-progress-meta]");
+        if (metaEl) metaEl.textContent = metaText;
+        const body = root.querySelector("[data-progress-body]");
+        if (body && lastProgressHtml !== progressHtml) {
+          body.innerHTML = progressHtml;
+        }
+      } else {
+        detailEl.innerHTML = `
+          <div data-progress-root data-item-key="${escapeHtml(itemKey)}">
+            <label>Progress</label>
+            <p class="meta" data-progress-meta>${escapeHtml(metaText)}</p>
+            <div data-progress-body>${progressHtml}</div>
+          </div>
+        `;
       }
+      lastProgressHtml = progressHtml;
+      restoreScroll(scroll, page, { running: live });
+      requestAnimationFrame(() => restoreScroll(scroll, page, { running: live }));
     }
 
     function renderPagination(page, totalPages) {

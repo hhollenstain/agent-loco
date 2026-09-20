@@ -201,6 +201,8 @@ def run(
         console.print(result.summary)
     if result.reason and result.status != "success":
         console.print(f"[yellow]{result.reason}[/yellow]")
+    elif result.reason and result.reason.startswith("no changes needed"):
+        console.print(f"[green]{result.reason}[/green]")
     if result.status in {"failed", "error"}:
         raise typer.Exit(code=2)
 

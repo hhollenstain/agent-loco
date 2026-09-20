@@ -4,11 +4,28 @@ import re
 from pathlib import Path
 
 from agent_loco.sandbox import Workspace
+from agent_loco.tools.files import SKIP_DIR_NAMES
 from agent_loco.tools.git import is_runtime_artifact, run_git
 
 DIFF_LIMIT = 16_000
 MAX_LOCKFILE_ROWS = 80
 UNTRACKED_FILE_LIMIT = 4_000
+
+MANIFEST_BASENAMES = frozenset(
+    {
+        "setup.py",
+        "setup.cfg",
+        "pyproject.toml",
+        "pipfile",
+        "package.json",
+        "cargo.toml",
+        "go.mod",
+        "requirements.txt",
+        "requirements.in",
+        "gemfile",
+        "composer.json",
+    }
+)
 
 LOCKFILE_BASENAMES = frozenset(
     {
@@ -129,6 +146,41 @@ def collect_work_diff(
         lock_summaries=lock_summaries,
         goal=goal,
     )
+
+
+def collect_current_evidence(
+    workspace: Workspace,
+    goal: str,
+    *,
+    limit: int = DIFF_LIMIT,
+) -> str:
+    """Snapshot of the current tree so a reviewer can see if a goal is already met."""
+    parts: list[str] = []
+    head = run_git(workspace, ["log", "-1", "--oneline"])
+    if head.stdout.strip():
+        parts.append("Current HEAD:\n" + head.stdout.strip())
+    status = run_git(workspace, ["status", "--short", "--branch"])
+    if status.stdout.strip():
+        parts.append(status.stdout.strip())
+    for lock_path in _workspace_lockfiles(workspace.root):
+        try:
+            body = lock_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = lock_path.relative_to(workspace.root).as_posix()
+        rows = _current_version_rows(extract_versions_from_lock_text(body), goal)
+        if rows:
+            parts.append(f"{rel} current versions:\n" + "\n".join(rows))
+    for manifest in _workspace_manifests(workspace.root):
+        try:
+            body = manifest.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = manifest.relative_to(workspace.root).as_posix()
+        if len(body) > UNTRACKED_FILE_LIMIT:
+            body = body[:UNTRACKED_FILE_LIMIT] + "\n... truncated"
+        parts.append(f"{rel}:\n{body.strip()}")
+    return _join_budget(parts, limit) or "(empty workspace)"
 
 
 def format_work_diff(
@@ -395,6 +447,61 @@ def _goal_tokens(goal: str | None) -> set[str]:
 def _matches_goal(name: str, tokens: set[str]) -> bool:
     lowered = name.lower()
     return any(token in lowered or lowered in token for token in tokens)
+
+
+def _current_version_rows(versions: dict[str, str], goal: str) -> list[str]:
+    tokens = _goal_tokens(goal)
+    items = list(versions.items())
+    if tokens:
+        matched = [(name, version) for name, version in items if _matches_goal(name, tokens)]
+        if matched:
+            items = matched
+    items.sort(key=lambda item: item[0].lower())
+    return [f"- {name}: {version}" for name, version in items[:MAX_LOCKFILE_ROWS]]
+
+
+def _workspace_lockfiles(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for directory in _scan_dirs(root):
+        try:
+            children = list(directory.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.is_file() and is_lockfile(child.name):
+                found.append(child)
+                if len(found) >= 8:
+                    return found
+    return found
+
+
+def _workspace_manifests(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for directory in _scan_dirs(root):
+        try:
+            children = list(directory.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.is_file() and child.name.lower() in MANIFEST_BASENAMES:
+                found.append(child)
+                if len(found) >= 8:
+                    return found
+    return found
+
+
+def _scan_dirs(root: Path) -> list[Path]:
+    dirs = [root]
+    try:
+        children = sorted(root.iterdir(), key=lambda path: path.name.lower())
+    except OSError:
+        return dirs
+    for child in children:
+        if child.is_dir() and child.name not in SKIP_DIR_NAMES:
+            dirs.append(child)
+        if len(dirs) >= 12:
+            break
+    return dirs
 
 
 def _join_budget(parts: list[str], limit: int) -> str:

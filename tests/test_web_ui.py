@@ -399,6 +399,8 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert b'id="workspace-picker"' in home.content
         assert b'id="workspace-tabs"' in home.content
         assert b'id="add-workspace-tab"' in home.content
+        assert b'id="archived-workspaces"' in home.content
+        assert b"workspace-tab-archive" in home.content
         assert b'id="guidelines"' in home.content
         assert b"Clone a repository" in home.content
 
@@ -528,6 +530,43 @@ def test_web_ui_restores_last_workspace(settings: Settings, tmp_path: Path) -> N
         manager.shutdown(wait=False)
 
 
+def test_web_ui_archives_and_forgets_workspaces(
+    settings: Settings, tmp_path: Path
+) -> None:
+    extra = tmp_path / "extra-app"
+    extra.mkdir()
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert home.status_code == 200
+        selected = client.post("/api/workspaces/select", json={"path": str(extra)})
+        assert selected.status_code == 200
+        archived = client.post("/api/workspaces/archive", json={"path": str(extra)})
+        assert archived.status_code == 200
+        body = archived.json()
+        assert body["current"] == str(tmp_path.resolve())
+        assert [item["path"] for item in body["workspaces"]] == [str(tmp_path.resolve())]
+        assert [item["path"] for item in body["archived"]] == [str(extra.resolve())]
+        refused = client.post("/api/workspaces/archive", json={"path": str(tmp_path)})
+        assert refused.status_code == 400
+        restored = client.post("/api/workspaces/restore", json={"path": str(extra)})
+        assert restored.status_code == 200
+        assert restored.json()["current"] == str(extra.resolve())
+        assert restored.json()["archived"] == []
+        client.post("/api/workspaces/archive", json={"path": str(extra)})
+        forgotten = client.post("/api/workspaces/forget", json={"path": str(extra)})
+        assert forgotten.status_code == 200
+        assert forgotten.json()["archived"] == []
+        assert extra.exists()
+        assert [item["path"] for item in forgotten.json()["workspaces"]] == [
+            str(tmp_path.resolve())
+        ]
+    finally:
+        manager.shutdown(wait=False)
+
+
 def test_web_ui_clones_repository_into_local_workspace(
     settings: Settings, tmp_path: Path
 ) -> None:
@@ -585,6 +624,9 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
         home = client.get("/")
         assert home.status_code == 200
         assert b".timeline" in home.content
+        assert b'id="progress-timeline"' in home.content
+        assert b"captureProgressScroll" in home.content
+        assert b"restoreProgressScroll" in home.content
         assert b"data-history-key" in home.content
         created = client.post(
             "/api/tasks",
