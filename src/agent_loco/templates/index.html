@@ -137,6 +137,37 @@
     }
     .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
     .history { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+    .search-row {
+      display: flex;
+      gap: 0.6rem;
+      margin: 0.65rem 0 0.5rem;
+      align-items: center;
+    }
+    .search-row input[type="text"] {
+      flex: 1;
+      max-width: 30rem;
+    }
+    .pagination {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .pagination button {
+      padding: 0.4rem 0.6rem;
+      font-size: 0.85rem;
+      min-width: 2.5rem;
+    }
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .pagination .current {
+      background: var(--panel-2);
+      color: var(--ink);
+      border: 1px solid var(--accent);
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -185,7 +216,7 @@
       <button type="submit" id="submit">Queue task</button>
       <p class="error" id="form-error"></p>
       <p class="note">
-        A running cycle calls the model, edits files, and runs the project’s
+        A running cycle calls the model, edits files, and runs the project's
         tests. Start another only if you accept the slowdown.
       </p>
     </form>
@@ -201,12 +232,18 @@
           <label style="margin:0">Past runs</label>
           <span class="meta" id="history-counts"></span>
         </div>
+        <div class="search-row">
+          <label for="history-search" style="margin:0">Search:</label>
+          <input id="history-search" type="text" placeholder="filter by goal, status, summary, id">
+          <button type="button" class="secondary" id="clear-search">Clear</button>
+        </div>
         <div id="history-list" class="task-list"></div>
+        <div id="pagination" class="pagination"></div>
       </div>
     </section>
   </main>
   <script>
-    const state = { tasks: [], history: [], selected: null };
+    const state = { tasks: [], historyPage: 1, history: [], selected: null, pageSize: 10, search: "" };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -214,6 +251,8 @@
     const historyCountsEl = document.getElementById("history-counts");
     const errorEl = document.getElementById("form-error");
     const submitEl = document.getElementById("submit");
+    const searchInput = document.getElementById("history-search");
+    const paginationEl = document.getElementById("pagination");
 
     function goalText(item) {
       if (!item.goal) return "(from project goals / failing tests)";
@@ -247,20 +286,43 @@
         `).join("");
       }
 
-      historyCountsEl.textContent = `${state.history.length} logged`;
-      if (!state.history.length) {
-        historyEl.innerHTML = `<p class="empty">No past runs yet.</p>`;
+      if (state.history.total === undefined) {
+        // Legacy format (unpaginated)
+        historyCountsEl.textContent = `${state.history.length} logged`;
+        if (!state.history.length) {
+          historyEl.innerHTML = `<p class="empty">No past runs yet.</p>`;
+        } else {
+          historyEl.innerHTML = state.history.map(entry => `
+            <article class="task">
+              <div class="row">
+                <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
+                <span class="meta">${escapeHtml(entry.id || "")}</span>
+              </div>
+              <p class="goal">${escapeHtml(goalText(entry))}</p>
+              <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
+            </article>
+          `).join("");
+        }
+        paginationEl.innerHTML = "";
       } else {
-        historyEl.innerHTML = state.history.map(entry => `
-          <article class="task">
-            <div class="row">
-              <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
-              <span class="meta">${escapeHtml(entry.id || "")}</span>
-            </div>
-            <p class="goal">${escapeHtml(goalText(entry))}</p>
-            <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
-          </article>
-        `).join("");
+        // Paginated format
+        const { page, total, total_pages, page_size, items } = state.history;
+        historyCountsEl.textContent = `Page ${page} of ${total_pages} (${total} total)`;
+        if (!items.length) {
+          historyEl.innerHTML = `<p class="empty">${state.search ? "No matches found." : "No past runs yet."}</p>`;
+        } else {
+          historyEl.innerHTML = items.map(entry => `
+            <article class="task">
+              <div class="row">
+                <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
+                <span class="meta">${escapeHtml(entry.id || "")}</span>
+              </div>
+              <p class="goal">${escapeHtml(goalText(entry))}</p>
+              <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
+            </article>
+          `).join("");
+        }
+        renderPagination(page, total_pages);
       }
 
       const selected = state.tasks.find(t => t.id === state.selected) || state.tasks[0];
@@ -279,13 +341,36 @@
       }
     }
 
+    function renderPagination(page, totalPages) {
+      if (totalPages <= 1) {
+        paginationEl.innerHTML = "";
+        return;
+      }
+      const prevDisabled = page <= 1;
+      const nextDisabled = page >= totalPages;
+      
+      let html = '';
+      html += `<button type="button" class="secondary" ${prevDisabled ? 'disabled' : ''} data-page="${Math.max(1, page - 1)}">←</button>`;
+      html += `<button type="button" class="current">${page}</button>`;
+      html += `<button type="button" class="secondary" ${nextDisabled ? 'disabled' : ''} data-page="${Math.min(totalPages, page + 1)}">→</button>`;
+      
+      paginationEl.innerHTML = html;
+    }
+
     async function refresh() {
       const [tasksRes, historyRes] = await Promise.all([
         fetch("/api/tasks"),
-        fetch("/api/history"),
+        fetch(`/api/history?page=${state.historyPage}&page_size=${state.pageSize}${state.search ? `&search=${encodeURIComponent(state.search)}` : ''}`),
       ]);
       state.tasks = await tasksRes.json();
-      state.history = historyRes.ok ? await historyRes.json() : [];
+      const historyData = historyRes.ok ? await historyRes.json() : [];
+      if (Array.isArray(historyData)) {
+        // Legacy format (unpaginated)
+        state.history = historyData;
+      } else {
+        // Paginated format
+        state.history = historyData;
+      }
       render();
     }
 
@@ -294,6 +379,32 @@
       if (!button) return;
       state.selected = button.dataset.id;
       render();
+    });
+
+    paginationEl.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const page = parseInt(button.dataset.page, 10);
+      if (page && !isNaN(page) && page !== state.historyPage) {
+        state.historyPage = page;
+        // Clear search when changing pages to reset filter
+        state.search = "";
+        searchInput.value = "";
+        refresh();
+      }
+    });
+
+    searchInput.addEventListener("input", (event) => {
+      state.search = event.target.value;
+      state.historyPage = 1;
+      refresh();
+    });
+
+    document.getElementById("clear-search").addEventListener("click", () => {
+      state.search = "";
+      state.historyPage = 1;
+      searchInput.value = "";
+      refresh();
     });
 
     document.getElementById("task-form").addEventListener("submit", async (event) => {

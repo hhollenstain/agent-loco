@@ -4,6 +4,7 @@ import json
 import threading
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent_loco.config import Settings
@@ -268,9 +269,14 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
         history = client.get("/api/history")
         assert history.status_code == 200
         body = history.json()
-        assert len(body) == 1
-        assert body[0]["id"] == "20260919T180000Z"
-        assert body[0]["goal"] == "Past goal"
+        # Paginated response format
+        assert len(body["items"]) == 1
+        assert body["items"][0]["id"] == "20260919T180000Z"
+        assert body["items"][0]["goal"] == "Past goal"
+        assert body["page"] == 1
+        assert body["page_size"] == 10
+        assert body["total"] == 1
+        assert body["total_pages"] == 1
     finally:
         manager.shutdown(wait=False)
 

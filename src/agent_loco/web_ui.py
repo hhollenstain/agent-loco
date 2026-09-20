@@ -34,6 +34,12 @@ class ModelsQuery(BaseModel):
     api_key: str | None = None
 
 
+class HistoryQuery(BaseModel):
+    page: int = 1
+    page_size: int = 10
+    search: str | None = None
+
+
 class UiState:
     def __init__(
         self,
@@ -120,6 +126,50 @@ class UiState:
             pass
 
         return results
+
+    def paginate_history(
+        self,
+        workspace_root: Path,
+        *,
+        page: int = 1,
+        page_size: int = 10,
+        search: str | None = None,
+    ) -> dict[str, Any]:
+        """Load and paginate history with optional search filter."""
+        all_items = self.load_history(workspace_root)
+        
+        # Apply search filter if provided
+        if search:
+            search_lower = search.lower()
+            all_items = [
+                item for item in all_items
+                if any(
+                    str(value).lower().find(search_lower) >= 0
+                    for value in [
+                        item.get("goal", ""),
+                        item.get("summary", ""),
+                        item.get("reason", ""),
+                        item.get("status", ""),
+                        item.get("id", ""),
+                    ]
+                )
+            ]
+        
+        total = len(all_items)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = max(1, min(page, total_pages))
+        
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        items = all_items[start_idx:end_idx]
+        
+        return {
+            "items": items,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+        }
 
 
 def create_app(
@@ -235,9 +285,19 @@ def create_app(
         return JSONResponse(task.to_dict(), status_code=201)
 
     @app.get("/api/history")
-    def get_history(request: Request) -> list[dict[str, Any]]:
+    def get_history(
+        request: Request,
+        page: int = 1,
+        page_size: int = 10,
+        search: str | None = None,
+    ) -> dict[str, Any]:
         ui: UiState = request.app.state.ui
-        return ui.load_history(Path(ui.default_workspace))
+        return ui.paginate_history(
+            Path(ui.default_workspace),
+            page=page,
+            page_size=page_size,
+            search=search,
+        )
 
     return app
 
