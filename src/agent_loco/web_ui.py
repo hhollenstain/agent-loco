@@ -454,6 +454,18 @@ def create_app(
             return JSONResponse({"error": "task not found"}, status_code=404)
         return task.to_dict()
 
+    @app.post("/api/tasks/{task_id}/rerun")
+    def rerun_task(task_id: str, request: Request, payload: RerunPayload | None = None) -> Any:
+        ui: UiState = request.app.state.ui
+        run_from_sha = payload.sha if payload else None
+        new_task = ui.manager.rerun(task_id, run_from_sha)
+        if new_task is None:
+            return JSONResponse({"error": "task not found or not rerunnable"}, status_code=404)
+        return JSONResponse(new_task.to_dict(), status_code=201)
+
+    class RerunPayload(BaseModel):
+        sha: str | None = None
+
     @app.post("/api/tasks")
     def create_task(
         request: Request,

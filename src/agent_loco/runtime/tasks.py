@@ -55,6 +55,7 @@ class Task:
     commit_sha: str | None = None
     pr_url: str | None = None
     error: str | None = None
+    sha_before: str | None = None
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -182,6 +183,30 @@ class TaskManager:
             "running": statuses.count("running"),
             "total": len(statuses),
         }
+
+    def rerun(self, task_id: str, from_sha: str | None = None) -> Task | None:
+        """Create a new task to rerun a failed or error task from a specific SHA."""
+        with self._lock:
+            old_task = self._tasks.get(task_id)
+        if not old_task:
+            return None
+        if old_task.status not in ("failed", "error"):
+            return None
+        task = Task(
+            id=uuid4().hex,
+            workspace=old_task.workspace,
+            goal=old_task.goal,
+            auto_commit=old_task.auto_commit,
+            create_pr=old_task.create_pr,
+            model_name=old_task.model_name,
+            model_base_url=old_task.model_base_url,
+            model_api_key=old_task.model_api_key,
+            sha_before=from_sha or old_task.sha_before,
+        )
+        with self._lock:
+            self._tasks[task.id] = task
+        self._executor.submit(self._run, task)
+        return task
 
     def list_models(
         self,
