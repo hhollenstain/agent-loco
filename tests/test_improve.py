@@ -370,7 +370,8 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert captured["push_current"] == captured["push_branch"]
     assert captured["pr_branch"] == captured["push_branch"]
     assert captured["base"] == protected
-    assert "## Summary" in str(captured["body"])
+    assert "## What Changed" in str(captured["body"])
+    assert "## Why This Update" in str(captured["body"])
     assert "## Test plan" in str(captured["body"])
     assert CO_AUTHORED_BY in str(captured["body"])
     log = run_git(workspace, ["log", "-1", "--format=%B"]).stdout
