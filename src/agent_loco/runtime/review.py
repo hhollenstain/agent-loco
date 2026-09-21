@@ -29,6 +29,8 @@ Rules:
 - If capture could not click (static dump-dom) and the goal adds tabs, screenshots,
   or other interactive controls, the goal is unmet.
 - A summary that claims the work is done does not count unless the diff shows it.
+- If the goal is a GitHub issue, the body and comments are the spec. Matching
+  only the title is unmet. The requested behavior must be in the diff.
 - Mocks, stubs, NotImplementedError, generated sample data, or comments like
   "in a real implementation" mean unmet unless the goal is explicitly to add a stub.
 - A UI that asks the user to re-type owner/repo (or similar) when the workspace

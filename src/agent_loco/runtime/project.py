@@ -91,16 +91,40 @@ def load_goals(root: Path, goals_file: str) -> list[str]:
         return []
 
     goals: list[str] = []
+    current: list[str] | None = None
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            text = "\n".join(current).strip()
+            if text:
+                goals.append(text)
+        current = None
+
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
+        if stripped.startswith("- [x]"):
+            flush()
+            continue
         if stripped.startswith("- [ ]"):
+            flush()
             goal = stripped[5:].strip()
-            if goal:
-                goals.append(goal)
+            current = [goal] if goal else []
+            continue
+        if current is None:
+            continue
+        if line.startswith(" ") or line.startswith("\t"):
+            current.append(line.strip())
+        elif not stripped:
+            current.append("")
+        else:
+            flush()
+    flush()
     return goals
 
 
 def mark_goal_done(root: Path, goals_file: str, goal: str) -> bool:
+    first = goal.strip().splitlines()[0].strip() if goal.strip() else ""
     for candidate in (root / ".loco" / goals_file, root / goals_file):
         if not candidate.exists():
             continue
@@ -108,7 +132,8 @@ def mark_goal_done(root: Path, goals_file: str, goal: str) -> bool:
         changed = False
         updated: list[str] = []
         for line in lines:
-            if line.strip() == f"- [ ] {goal}":
+            stripped = line.strip()
+            if stripped == f"- [ ] {goal}" or (first and stripped == f"- [ ] {first}"):
                 updated.append(line.replace("- [ ]", "- [x]", 1))
                 changed = True
             else:

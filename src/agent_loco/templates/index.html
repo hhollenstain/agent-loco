@@ -104,6 +104,8 @@
       font: inherit;
     }
     textarea { min-height: 4.75rem; resize: vertical; }
+    #goal { min-height: 6.5rem; }
+    #goal.has-issue { min-height: 12rem; }
     .llm-block {
       margin: 1.05rem 0 0.2rem;
       padding: 0.95rem 1rem 1.1rem;
@@ -3419,7 +3421,7 @@
       for (const issue of issues) {
         const option = document.createElement("option");
         option.value = String(issue.number);
-        option.textContent = issue.goal || `#${issue.number} ${issue.title}`;
+        option.textContent = issue.label || `#${issue.number} ${issue.title}`;
         githubIssuesEl.append(option);
       }
       githubIssuesEl.disabled = !issues.length;
@@ -3475,11 +3477,20 @@
       loadGitHubIssues(workspacePath);
     }
 
+    function fillGoalFromIssue(issue) {
+      const goalEl = document.getElementById("goal");
+      const text = (issue.goal || `#${issue.number} ${issue.title}`).replace(/\s+$/, "");
+      goalEl.value = text;
+      const lines = text.split("\n").length;
+      goalEl.rows = Math.max(8, Math.min(24, lines + 1));
+      goalEl.classList.add("has-issue");
+    }
+
     githubIssuesEl.addEventListener("change", () => {
       const number = githubIssuesEl.value;
       const issue = githubGoals.find((item) => String(item.number) === number);
       if (!issue) return;
-      document.getElementById("goal").value = issue.goal || `#${issue.number} ${issue.title}`;
+      fillGoalFromIssue(issue);
     });
     githubStateEl.addEventListener("change", () => {
       if (githubGoalsSection.hidden) return;

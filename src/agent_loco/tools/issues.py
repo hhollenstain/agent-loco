@@ -84,12 +84,12 @@ def issues_tools(workspace: Workspace) -> list[ToolSpec]:
                     },
                     "include_comments": {
                         "type": "boolean",
-                        "description": "Whether to include comments (default: false).",
+                        "description": "Whether to include comments (default: true).",
                     },
                 },
                 ["issue_ref"],
             ),
-            handler=lambda issue_ref, include_comments=False: _get_issue(
+            handler=lambda issue_ref, include_comments=True: _get_issue(
                 workspace, issue_ref, include_comments
             ),
         ),
@@ -249,25 +249,23 @@ def _get_issue(
     include_comments: bool,
 ) -> ToolResult:
     """Get details for a specific issue including body and comments."""
-    
+    from agent_loco.runtime.importer import format_issue_goal, parse_issue_ref
     from agent_loco.tools.git import github_owner_repo
-    from agent_loco.runtime.importer import github_repo_for_workspace
     import httpx
     import os
-    
-    # Determine repo and issue number from the reference
-    parsed = _parse_issue_url(workspace, issue_ref)
-    if not parsed.ok:
+
+    parsed = parse_issue_ref(issue_ref)
+    if parsed is None:
         return ToolResult(False, f"Could not parse issue reference: {issue_ref}")
-    
-    owner = parsed.owner or github_owner_repo(workspace)[0] if github_owner_repo(workspace) else None
-    repo = parsed.repo or github_owner_repo(workspace)[1] if github_owner_repo(workspace) else None
-    issue_number = parsed.issue_number
-    
-    if not owner or not repo or not issue_number:
-        return ToolResult(False, "Could not determine repository or issue number")
-    
-    # Fetch issue details from GitHub API
+
+    owner, repo = parsed.owner, parsed.repo
+    if not owner or not repo:
+        remote = github_owner_repo(workspace)
+        if not remote:
+            return ToolResult(False, "Could not determine repository or issue number")
+        owner, repo = remote
+    issue_number = parsed.number
+
     api_key = os.environ.get("GITHUB_TOKEN")
     headers = {
         "Accept": "application/vnd.github+json",
@@ -275,54 +273,38 @@ def _get_issue(
     }
     if api_key:
         headers["Authorization"] = f"token {api_key}"
-    
+
     try:
         url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
         response = httpx.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         issue_data = response.json()
-        
-        if not issue_data or "error" in issue_data:
+
+        if not isinstance(issue_data, dict) or issue_data.get("message"):
             return ToolResult(False, f"Could not fetch issue #{issue_number}")
-        
-        # Get comments if requested
-        comments = []
-        if include_comments:
-            comments_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments"
+
+        comments: list[dict] = []
+        comment_count = int(issue_data.get("comments") or 0)
+        if include_comments and comment_count > 0:
+            comments_url = (
+                f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments"
+            )
             comments_response = httpx.get(comments_url, headers=headers, timeout=30)
             comments_response.raise_for_status()
-            comments = comments_response.json()
-        
-        # Build full context response
-        lines = [f"Issue #{issue_number}: {issue_data.get('title', 'No title')}"]
-        lines.append(f"URL: {issue_data.get('html_url', 'Unknown URL')}")
-        lines.append(f"Status: {issue_data.get('state', 'unknown')}")
-        
-        # Include body/description for full context
-        body = issue_data.get('body')
-        if body:
-            lines.append("")
-            lines.append("Description:")
-            for line in body.split('\n'):
-                stripped = line.strip()
-                if stripped and not stripped.startswith('#'):
-                    lines.append(f"  {stripped}")
-        
-        # Include comments when requested and available
-        if include_comments and comments:
-            lines.append("")
-            lines.append(f"Comments ({len(comments)}):")
-            for comment in comments[:20]:  # Limit to first 20 comments
-                lines.append(f"  @{comment.get('user', {}).get('login', 'Unknown')}:")
-                comment_body = comment.get('body', '')
-                if comment_body:
-                    for line in comment_body.split('\n'):
-                        stripped = line.strip()
-                        if stripped and not stripped.startswith('#'):
-                            lines.append(f"    {stripped}")
-        
-        return ToolResult(True, "\n".join(lines))
-    
+            raw_comments = comments_response.json()
+            if isinstance(raw_comments, list):
+                comments = [item for item in raw_comments if isinstance(item, dict)]
+
+        goal = format_issue_goal(
+            number=int(issue_data.get("number") or issue_number),
+            title=issue_data.get("title") or "No title",
+            url=issue_data.get("html_url") or "",
+            body=issue_data.get("body") or "",
+            comments=comments,
+        )
+        status = issue_data.get("state") or "unknown"
+        return ToolResult(True, f"Status: {status}\n\n{goal}".strip())
+
     except httpx.HTTPError as e:
         return ToolResult(False, f"Failed to fetch issue #{issue_number}: {e}")
     except Exception as e:
@@ -384,41 +366,26 @@ def _pull_goals_from_issues(
     issues = result["issues"]
     if not issues:
         return ToolResult(False, f"No issues found for filter: status={status}")
-    
+
     # Format as goals with full context including descriptions and comments
     lines = [f"Goals from {repo} ({status_filter.title()}):"]
     lines.append("")
-    lines.append("```")
-    lines.append(".loco/goals.md")
-    lines.append("")
-    
+
     for i, issue in enumerate(issues, start=1):
-        # Only include if prefix matches (if prefix specified)
-        if prefix and prefix.lower() not in " ".join(issue.get('labels', [])).lower():
+        if prefix and prefix.lower() not in " ".join(
+            str(label) for label in issue.get("labels") or []
+        ).lower():
             continue
-            
-        lines.append(f"- [ ] #{issue['number']}: {issue['title']}")
-        lines.append(f"  - Ref: {issue['url']}")
-        
-        # Include body/description for full context
-        if issue.get('body'):
-            body = issue['body']
-            # Clean up formatting - remove markdown headers and extra whitespace
-            lines.append("  - Description:")
-            for line in body.split('\n'):
-                stripped = line.strip()
-                if stripped and not stripped.startswith('#'):
-                    lines.append(f"    {stripped}")
-        
-        # Include comments when available
-        if issue.get('comments'):
-            comment_count = issue.get('comments', 0)
-            lines.append(f"  - Comments available: {comment_count}")
-        
+
+        goal_text = (issue.get("goal") or "").strip()
+        if not goal_text:
+            goal_text = f"#{issue['number']} {issue['title']}"
+        parts = goal_text.splitlines()
+        lines.append(f"- [ ] {parts[0]}")
+        for extra in parts[1:]:
+            lines.append(f"  {extra}" if extra.strip() else "")
         if i < len(issues):
             lines.append("")
-    
-    lines.append("```")
     
     # Auto-populate goals.md with the pulled issues
     goals_file = workspace.root / ".loco" / "goals.md"

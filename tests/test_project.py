@@ -42,6 +42,30 @@ def test_load_and_complete_checkbox_goal(tmp_path: Path) -> None:
     assert load_goals(tmp_path, "goals.md") == ["Later"]
 
 
+def test_load_goals_keeps_indented_issue_context(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "goals.md").write_text(
+        "- [ ] #9 Ship it\n"
+        "  https://github.com/acme/demo/issues/9\n"
+        "\n"
+        "  Implement this GitHub issue. Do the work it describes; do not only summarize it.\n"
+        "\n"
+        "  ## Why\n"
+        "  Do the thing\n"
+        "- [ ] Later\n",
+        encoding="utf-8",
+    )
+    goals = load_goals(tmp_path, "goals.md")
+    assert len(goals) == 2
+    assert goals[0].startswith("#9 Ship it")
+    assert "## Why" in goals[0]
+    assert "Do the thing" in goals[0]
+    assert goals[1] == "Later"
+    assert mark_goal_done(tmp_path, "goals.md", goals[0])
+    assert load_goals(tmp_path, "goals.md") == ["Later"]
+
+
 def test_render_tree_includes_nested_source(tmp_path: Path) -> None:
     nested = tmp_path / "src" / "demo_app"
     nested.mkdir(parents=True)

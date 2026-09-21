@@ -326,7 +326,9 @@ def default_base_branch(workspace: Workspace, configured: str | None = None) -> 
 
 
 def _branch_slug(goal: str) -> str:
-    first = goal.strip().splitlines()[0] if goal.strip() else "change"
+    from agent_loco.runtime.importer import goal_headline
+
+    first = goal_headline(goal)
     slug = re.sub(r"[^a-z0-9]+", "-", first.lower()).strip("-")
     return (slug[:40].strip("-") or "change")
 

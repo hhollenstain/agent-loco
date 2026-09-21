@@ -12,6 +12,8 @@ Rules:
 - Stay inside the workspace. Never read or write files outside it.
 - Finish the stated goal in this run. A later cycle is not a substitute for
   missing behavior, wiring, or data the workspace already has.
+- If the goal is a GitHub issue, the title, body, and comments are the spec.
+  Implement that work in this run. Do not stop after restating the title.
 - Prefer small diffs, but only if they fully satisfy this goal. Do not ship
   scaffolding, mocks, TODOs, unused form fields, or "this enables X later".
 - If the workspace already has the needed inputs (git remote, config, tests),
