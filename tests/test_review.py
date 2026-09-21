@@ -3,11 +3,44 @@ from __future__ import annotations
 from agent_loco.llm.client import AssistantTurn, ScriptedClient
 from agent_loco.progress import bind_progress, current_events, reset_progress
 from agent_loco.runtime.review import (
+    half_baked_diff_markers,
     is_open_pr_goal,
     parse_review,
     review_goal,
     review_reason,
 )
+
+
+def test_half_baked_diff_markers_catch_stubs_and_mocks() -> None:
+    diff = (
+        "diff --git a/src/issues.py b/src/issues.py\n"
+        "--- a/src/issues.py\n"
+        "+++ b/src/issues.py\n"
+        "+def generate_mock_issues(repo):\n"
+        "+    # In a real implementation this would call GitHub\n"
+        "+    raise NotImplementedError\n"
+        " def list_issues():\n"
+        "     return []\n"
+    )
+    markers = half_baked_diff_markers(diff)
+    assert any("generate_mock_issues" in item for item in markers)
+    assert any("real implementation" in item for item in markers)
+    assert any("NotImplementedError" in item for item in markers)
+    untracked = (
+        "--- /dev/null\n"
+        "+++ b/issues.py\n"
+        "def generate_mock_issues():\n"
+        "    return []\n"
+    )
+    assert any("generate_mock_issues" in item for item in half_baked_diff_markers(untracked))
+    removed = (
+        "diff --git a/app.py b/app.py\n"
+        "--- a/app.py\n"
+        "+++ b/app.py\n"
+        "-    raise NotImplementedError\n"
+        "+    return left + right\n"
+    )
+    assert half_baked_diff_markers(removed) == []
 
 
 def test_is_open_pr_goal_matches_create_pr_wording() -> None:

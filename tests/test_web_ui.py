@@ -563,6 +563,11 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert b'id="workspace-summary"' in home.content
         assert b'class="icon-github"' in home.content
         assert b'class="icon-folder"' in home.content
+        assert b'id="github-issues"' in home.content
+        assert b'id="github-goals-section"' in home.content
+        assert b'id="github-owner"' not in home.content
+        assert b'id="github-repo"' not in home.content
+        assert b'id="load-goals"' not in home.content
         assert b'id="settings-kind-label"' in home.content
         assert b'id="save-guidelines"' in home.content
         assert b'id="workspace" name="workspace" type="hidden"' in home.content
@@ -865,6 +870,89 @@ def test_ui_screenshot_api_serves_pngs(settings: Settings, tmp_path: Path) -> No
         assert missing.status_code == 404
         traversal = client.get("/api/ui-screenshot", params={"name": "../config.yaml"})
         assert traversal.status_code == 404
+    finally:
+        manager.shutdown(wait=False)
+
+
+def _github_workspace(root: Path) -> None:
+    from tests.support import init_git_repo
+
+    from agent_loco.sandbox import Workspace
+    from agent_loco.tools.git import run_git
+
+    (root / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(root)
+    run_git(Workspace(root), ["remote", "add", "origin", "git@github.com:acme/demo.git"])
+
+
+def test_web_ui_hides_github_issues_for_local_folders(
+    settings: Settings, tmp_path: Path
+) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok_result())
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert b'id="github-goals-section" hidden' in home.content
+        missing = client.get("/api/goals")
+        assert missing.status_code == 400
+        assert missing.json()["error"] == "workspace is not a GitHub repository"
+        assert missing.json()["issues"] == []
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_loads_github_issues_from_workspace_remote(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _github_workspace(tmp_path)
+
+    def fake_load(owner: str, repo: str, state: str = "open", per_page: int = 100) -> dict:
+        assert owner == "acme"
+        assert repo == "demo"
+        assert state == "open"
+        return {
+            "issues": [
+                {
+                    "id": 1,
+                    "number": 12,
+                    "title": "Add a favicon",
+                    "body": "",
+                    "url": "https://github.com/acme/demo/issues/12",
+                    "state": "open",
+                    "goal": "#12 Add a favicon",
+                }
+            ],
+            "owner": owner,
+            "repo": repo,
+            "state": state,
+        }
+
+    monkeypatch.setattr(
+        "agent_loco.runtime.importer.load_goals_from_issues", fake_load
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result())
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert b'id="github-goals-section"' in home.content
+        assert b'id="github-goals-section" hidden' not in home.content
+        assert b'id="github-owner"' not in home.content
+        loaded = client.get("/api/goals")
+        assert loaded.status_code == 200
+        body = loaded.json()
+        assert body["owner"] == "acme"
+        assert body["repo"] == "demo"
+        assert body["issues"][0]["goal"] == "#12 Add a favicon"
+        filtered = client.get(
+            "/api/goals",
+            params={"workspace": str(tmp_path), "state": "open"},
+        )
+        assert filtered.status_code == 200
+        assert filtered.json()["issues"][0]["number"] == 12
     finally:
         manager.shutdown(wait=False)
 

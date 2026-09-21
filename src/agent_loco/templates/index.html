@@ -230,6 +230,18 @@
       padding: 0.4rem 0.7rem;
       font-size: 0.82rem;
     }
+    .github-goals-section {
+      margin-top: 0.85rem;
+    }
+    .github-goals-section[hidden] { display: none; }
+    .github-issues-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 6.6rem;
+      gap: 0.45rem;
+      align-items: stretch;
+    }
+    .github-issues-row select { font-size: 0.82rem; }
+    #github-state { width: 100%; }
     .workspace-summary {
       flex: 1;
       min-width: 0;
@@ -1340,22 +1352,19 @@
       </div>
       <p class="hint" id="workspace-info">Switch with Browse or the tab bar. Full location and rules are in settings.</p>
 
-      <div class="github-goals-section">
-        <label for="github-issues">Import goals from GitHub issues</label>
+      <div class="github-goals-section" id="github-goals-section"{% if ws_kind != 'github' %} hidden{% endif %}>
+        <label for="github-issues">GitHub issues</label>
         <div class="github-issues-row">
-          <input id="github-owner" type="text" placeholder="owner (e.g., agnt-loco)" spellcheck="false">
-          <input id="github-repo" type="text" placeholder="repo (e.g., agent-loco)" spellcheck="false">
-          <select id="github-state">
+          <select id="github-issues" aria-label="Issues from this repository">
+            <option value="">Select an issue…</option>
+          </select>
+          <select id="github-state" aria-label="Issue state">
             <option value="open" selected>open</option>
             <option value="closed">closed</option>
             <option value="all">all</option>
           </select>
-          <button type="button" class="secondary" id="load-goals">Load</button>
         </div>
-        <div id="goals-picker" class="goals-picker" hidden>
-          <div class="goals-list" id="goals-list"></div>
-          <button type="button" class="secondary" id="close-goals-picker">Close</button>
-        </div>
+        <p class="hint" id="github-issues-status"></p>
       </div>
 
       <label for="goal">Goal</label>
@@ -1860,6 +1869,7 @@
         settingsRemoteEl.hidden = !item.git_remote;
       }
       if (settingsPathEl) settingsPathEl.textContent = path;
+      syncGitHubIssues(item, path);
     }
 
     function applyWorkspacePayload(body) {
@@ -3383,120 +3393,99 @@
     document.getElementById("base-url").addEventListener("change", () => loadModels(true));
     document.getElementById("model").addEventListener("change", () => loadModels(false));
 
-    // GitHub goals picker
-    const githubOwnerEl = document.getElementById("github-owner");
-    const githubRepoEl = document.getElementById("github-repo");
+    // GitHub issues for the current workspace remote
+    const githubGoalsSection = document.getElementById("github-goals-section");
+    const githubIssuesEl = document.getElementById("github-issues");
     const githubStateEl = document.getElementById("github-state");
-    const loadGoalsBtn = document.getElementById("load-goals");
-    const goalsPickerEl = document.getElementById("goals-picker");
-    const goalsListEl = document.getElementById("goals-list");
-    const closeGoalsBtn = document.getElementById("close-goals-picker");
+    const githubIssuesStatusEl = document.getElementById("github-issues-status");
+    let githubIssuesKey = "";
     let githubGoals = [];
 
-    function githubOptionLabel(issue) {
-      return `#${issue.number} — ${escapeHtml(issue.title)}`;
+    function setGitHubIssuesPlaceholder(text) {
+      githubIssuesEl.replaceChildren();
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = text;
+      githubIssuesEl.append(option);
+      githubIssuesEl.disabled = true;
     }
 
-    function renderGoalsList(issues) {
-      goalsListEl.replaceChildren();
-      if (!issues || !issues.length) {
-        const empty = document.createElement("p");
-        empty.className = "empty";
-        empty.textContent = "No issues found.";
-        goalsListEl.appendChild(empty);
-        return;
-      }
+    function renderGitHubIssues(issues, repoLabel) {
+      githubIssuesEl.replaceChildren();
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = issues.length ? "Select an issue…" : "No issues found";
+      githubIssuesEl.append(blank);
       for (const issue of issues) {
-        const div = document.createElement("div");
-        div.className = "goal-option";
-        const title = document.createElement("div");
-        title.className = "goal-title";
-        title.textContent = `${issue.title}`;
-        title.dataset.issueId = String(issue.id);
-        title.dataset.issueNumber = String(issue.number);
-        const meta = document.createElement("div");
-        meta.className = "goal-meta";
-        const id = document.createElement("span");
-        id.className = "goal-id";
-        id.textContent = `#${issue.number}`;
-        id.title = `GitHub #${issue.number}`;
-        id.dataset.issueNumber = String(issue.number);
-        id.dataset.issueId = String(issue.id);
-        const label = document.createElement("span");
-        label.className = "goal-state";
-        label.textContent = issue.state;
-        label.dataset.issueId = String(issue.id);
-        label.dataset.issueNumber = String(issue.number);
-        meta.appendChild(id);
-        meta.appendChild(label);
-        div.appendChild(title);
-        div.appendChild(meta);
-        div.addEventListener("click", () => {
-          document.querySelectorAll(".goal-option").forEach(opt => opt.classList.remove("selected"));
-          div.classList.add("selected");
-          document.getElementById("goal").value = issue.title;
-          closeGoalsPicker();
-        });
-        goalsListEl.appendChild(div);
+        const option = document.createElement("option");
+        option.value = String(issue.number);
+        option.textContent = issue.goal || `#${issue.number} ${issue.title}`;
+        githubIssuesEl.append(option);
       }
-      // Add click handlers for inner elements
-      goalsListEl.addEventListener("click", (e) => {
-        const title = e.target.closest(".goal-title");
-        const id = e.target.closest(".goal-id");
-        const label = e.target.closest(".goal-state");
-        const opt = (title || id || label) ? e.target.closest(".goal-option") : null;
-        document.querySelectorAll(".goal-option").forEach(o => o.classList.remove("selected"));
-        if (opt) {
-          opt.classList.add("selected");
-          document.getElementById("goal").value = title?.dataset.title || id?.dataset.title || label?.dataset.title || "";
-          closeGoalsPicker();
-        }
-      });
+      githubIssuesEl.disabled = !issues.length;
+      githubIssuesStatusEl.textContent = repoLabel
+        ? (issues.length ? `${issues.length} from ${repoLabel}` : `No issues in ${repoLabel}`)
+        : "";
     }
 
-    function openGoalsPicker() {
-      goalsPickerEl.hidden = false;
-      githubGoals = [];
-      goalsListEl.innerHTML = '<div class="loading">Loading...</div>';
-    }
-
-    function closeGoalsPicker() {
-      goalsPickerEl.hidden = true;
-      document.querySelectorAll(".goal-option").forEach(opt => opt.classList.remove("selected"));
-    }
-
-    async function loadGitHubGoals() {
-      const owner = githubOwnerEl.value.trim();
-      const repo = githubRepoEl.value.trim();
-      const state = githubStateEl.value;
-      if (!owner || !repo) {
-        notify("warning", "Please enter both owner and repo.");
-        return;
-      }
-      openGoalsPicker();
-      showNotice(errorEl, "info", `Loading issues from ${owner}/${repo} (${state})...`);
+    async function loadGitHubIssues(workspacePath) {
+      const stateFilter = githubStateEl.value || "open";
+      const key = `${workspacePath}|${stateFilter}`;
+      githubIssuesKey = key;
+      setGitHubIssuesPlaceholder("Loading issues…");
+      githubIssuesStatusEl.textContent = "Loading issues from this repository…";
       try {
-        const res = await fetch(`/api/goals?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&state=${state}`);
+        const params = new URLSearchParams({
+          workspace: workspacePath,
+          state: stateFilter,
+        });
+        const res = await fetch(`/api/goals?${params}`);
         const data = await res.json();
+        if (key !== githubIssuesKey) return;
         if (!res.ok || data.error) {
           const err = data.error || "Failed to load issues";
-          notify("error", err, { title: "Could not load issues" });
-          goalsListEl.innerHTML = `<p class="error">Error: ${escapeHtml(err)}</p>`;
+          setGitHubIssuesPlaceholder("Could not load issues");
+          githubIssuesStatusEl.textContent = err;
           return;
         }
         githubGoals = data.issues || [];
-        renderGoalsList(githubGoals);
+        const repoLabel = data.owner && data.repo ? `${data.owner}/${data.repo}` : "";
+        renderGitHubIssues(githubGoals, repoLabel);
       } catch (err) {
-        notify("error", err.message, { title: "Failed to load issues" });
-        goalsListEl.innerHTML = `<p class="error">Network error: ${escapeHtml(err.message)}</p>`;
+        if (key !== githubIssuesKey) return;
+        setGitHubIssuesPlaceholder("Could not load issues");
+        githubIssuesStatusEl.textContent = err.message || "Failed to load issues";
       }
     }
 
-    loadGoalsBtn.addEventListener("click", loadGitHubGoals);
-    closeGoalsBtn.addEventListener("click", closeGoalsPicker);
+    function syncGitHubIssues(item, path) {
+      const kind = workspaceType(item);
+      const isGithub = kind === "github";
+      githubGoalsSection.hidden = !isGithub;
+      if (!isGithub) {
+        githubIssuesKey = "";
+        githubGoals = [];
+        setGitHubIssuesPlaceholder("Select an issue…");
+        githubIssuesStatusEl.textContent = "";
+        return;
+      }
+      const workspacePath = path || item.path || workspaceEl.value;
+      const key = `${workspacePath}|${githubStateEl.value || "open"}`;
+      if (key === githubIssuesKey) return;
+      loadGitHubIssues(workspacePath);
+    }
 
-    // Toggle goals picker visibility on label click
-    document.querySelector(".github-goals-section label")?.addEventListener("click", openGoalsPicker);
+    githubIssuesEl.addEventListener("change", () => {
+      const number = githubIssuesEl.value;
+      const issue = githubGoals.find((item) => String(item.number) === number);
+      if (!issue) return;
+      document.getElementById("goal").value = issue.goal || `#${issue.number} ${issue.title}`;
+    });
+    githubStateEl.addEventListener("change", () => {
+      if (githubGoalsSection.hidden) return;
+      githubIssuesKey = "";
+      loadGitHubIssues(workspaceEl.value);
+    });
 
     renderNotificationHistory();
     refresh();

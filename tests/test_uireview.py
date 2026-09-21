@@ -395,8 +395,12 @@ def test_agent_prompt_requires_review_ui_after_ui_edits() -> None:
     assert "zero-size" in SYSTEM_PROMPT
     assert "Click new tabs" in SYSTEM_PROMPT
     assert "404" in SYSTEM_PROMPT
+    assert "Finish the stated goal" in SYSTEM_PROMPT
+    assert "later run can build on" not in SYSTEM_PROMPT
     assert "Markup for a Screenshots tab is not enough" in REVIEW_SYSTEM
     assert "0x0 or display:none" in REVIEW_SYSTEM
+    assert "in a real implementation" in REVIEW_SYSTEM
+    assert "owner/repo" in REVIEW_SYSTEM
 
 
 def test_resolve_ui_screenshot_serves_unique_and_legacy_pngs(tmp_path: Path) -> None:

@@ -15,12 +15,12 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
+from agent_loco.runtime.importer import load_goals_from_workspace
 from agent_loco.runtime.project import (
     default_guidelines,
     guidelines_are_custom,
     save_guidelines,
 )
-from agent_loco.runtime.importer import load_goals_from_issues
 from agent_loco.runtime.servers import (
     list_known_servers,
     load_selection,
@@ -246,9 +246,14 @@ class UiState:
 
         return results
 
-    def load_goals_from_github(self, owner: str, repo: str) -> dict[str, Any]:
-        """Load issues as selectable goals from a GitHub repository."""
-        return load_goals_from_issues(owner, repo)
+    def load_goals_from_github(
+        self,
+        workspace: str | Path | None = None,
+        state: str = "open",
+    ) -> dict[str, Any]:
+        """Load issues as selectable goals from the workspace's GitHub remote."""
+        root = Path(workspace or self.default_workspace)
+        return load_goals_from_workspace(root, state=state)
 
     def paginate_history(
         self,
@@ -400,10 +405,22 @@ def create_app(
         }
 
     @app.get("/api/goals", response_model=None)
-    def goals_from_issues(request: Request, owner: str, repo: str) -> dict[str, Any]:
-        """Get goals populated from GitHub issues."""
+    def goals_from_issues(
+        request: Request,
+        workspace: str | None = None,
+        state: str = "open",
+    ) -> Any:
+        """Get selectable goals from the current workspace's GitHub issues."""
         ui: UiState = request.app.state.ui
-        return ui.load_goals_from_github(owner, repo)
+        result = ui.load_goals_from_github(workspace, state=state)
+        if result.get("error"):
+            status = (
+                400
+                if result["error"] == "workspace is not a GitHub repository"
+                else 502
+            )
+            return JSONResponse(result, status_code=status)
+        return result
 
 
     @app.get("/api/tasks", response_model=None)

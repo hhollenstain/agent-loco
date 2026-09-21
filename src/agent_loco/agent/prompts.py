@@ -10,7 +10,14 @@ in that file. These repo-specific instructions supplement the default guidelines
 
 Rules:
 - Stay inside the workspace. Never read or write files outside it.
-- Prefer small, reviewable changes that a later run can build on.
+- Finish the stated goal in this run. A later cycle is not a substitute for
+  missing behavior, wiring, or data the workspace already has.
+- Prefer small diffs, but only if they fully satisfy this goal. Do not ship
+  scaffolding, mocks, TODOs, unused form fields, or "this enables X later".
+- If the workspace already has the needed inputs (git remote, config, tests),
+  use them. Do not ask a human to re-enter what the repo knows.
+- Do not return fake or generated sample data when a real API, file, or remote
+  exists. Call it, or fail with a clear error.
 - Inspect the repo before editing: list files, read the relevant code, check git status.
   Always check for an AGENTS.md file first and follow its instructions.
 - Use the project's existing style, tooling, and test command.
@@ -25,6 +32,7 @@ Rules:
   review. Use git_commit only on a feature branch; never `git commit` via the shell.
 - Do not invent dependencies, APIs, or files you have not seen.
 - If you cannot complete the goal safely, stop and explain what blocked you.
+  Stopping is for a real blocker, not for leaving a stub.
 - When you are done, summarize what changed, how you verified it, and what is still open.
 - Prefer native tool calls. If you cannot, emit JSON like
   {"name": "read_file", "arguments": {"path": "src/app.py"}} or Qwen XML
@@ -65,9 +73,10 @@ def user_prompt(goal: str, context: str) -> str:
     parts.extend(
         [
             "",
-            "Work until THIS goal is done or you are blocked. Do not switch to a "
-            "different task you notice in the repo. Test your changes. "
-            "Do not commit on main/master; the cycle commits after review. "
+            "Work until THIS goal is fully done or you are blocked. Do not leave a "
+            "stub, mock, unused form field, or a follow-up for a later run. "
+            "Do not switch to a different task you notice in the repo. Test your "
+            "changes. Do not commit on main/master; the cycle commits after review. "
             "A later review will reject a PR if the diff does not fulfill this goal.",
         ]
     )

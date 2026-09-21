@@ -271,6 +271,7 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     )
     assert "Add a task progress bar" in empty
     assert "placeholder" in empty.lower()
+    assert "stub" in empty.lower()
     assert "str_replace" in empty
     assert "update those tests" in empty
     retry = _goal_retry_prompt(
@@ -281,6 +282,7 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     assert "Add a task progress bar" in retry
     assert "verification" in retry.lower()
     assert "unrelated" in retry.lower()
+    assert "stub" in retry.lower()
     assert "update those tests" in retry
     broken = _goal_retry_prompt(
         "Extract CSS into files",
@@ -449,6 +451,34 @@ def _write_file_turn(path: str, content: str, call_id: str = "call-1") -> Assist
 def _review_turn(met: bool, reason: str) -> AssistantTurn:
     payload = '{"met": true, "reason": "%s"}' if met else '{"met": false, "reason": "%s"}'
     return AssistantTurn(text=payload % reason)
+
+
+def test_cycle_rejects_mock_implementation_even_if_reviewer_says_met(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "issues.py",
+                "def generate_mock_issues():\n"
+                "    # In a real implementation this would call GitHub\n"
+                "    return [{'title': 'Feature or fix'}]\n",
+            ),
+            AssistantTurn(text="Added issue listing from the repo."),
+            _review_turn(True, "issues can now be listed from the repository"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="Load GitHub issues from the current repository",
+    )
+    assert result.status == "failed"
+    assert result.committed is False
+    assert "unfinished work" in (result.reason or "")
+    assert "generate_mock_issues" in (result.reason or "")
 
 
 def _inspect_only_turns() -> list[AssistantTurn]:
