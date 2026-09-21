@@ -1015,6 +1015,27 @@
     .task-toolbar {
       padding: 0 0 0.5rem;
     }
+    .task-tabs {
+      display: flex;
+      gap: 0;
+      margin: 0 0 0.75rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .task-tab {
+      background: transparent;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--muted);
+      padding: 0.65rem 1rem 0.6rem;
+      min-width: 0;
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .task-tab:hover, .task-tab:focus { color: var(--ink); }
+    .task-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
     .tasks-toolbar {
       display: flex;
       flex-direction: column;
@@ -1035,6 +1056,15 @@
     .server-filter select {
       flex: 1;
       min-width: 0;
+    }
+    .task-tabs-panels {
+      position: relative;
+    }
+    .task-pane {
+      display: none;
+    }
+    .task-pane[aria-selected="true"] {
+      display: block;
     }
   </style>
 </head>
@@ -1110,35 +1140,45 @@
     </form>
     </aside>
     <section class="tasks">
-      <div class="tasks-toolbar">
-        <div class="row">
-          <label style="margin:0">Tasks</label>
-          <span class="meta" id="counts"></span>
+      <ul class="task-tabs" role="tablist">
+        <li><button type="button" class="task-tab" role="tab" data-pane="current-run" aria-selected="true" aria-controls="current-run">current run</button></li>
+        <li><button type="button" class="task-tab" role="tab" data-pane="past-runs" aria-selected="false" aria-controls="past-runs-pane">past runs</button></li>
+      </ul>
+      <div class="task-tabs-panels">
+        <div class="task-pane" role="tabpanel" id="current-run" aria-selected="true">
+          <div class="tasks-toolbar">
+            <div class="row">
+              <label style="margin:0">Tasks</label>
+              <span class="meta" id="counts"></span>
+            </div>
+            <div class="server-filter">
+              <label for="server-filter">Server</label>
+              <select id="server-filter" aria-label="Filter tasks by server">
+                <option value="">All servers</option>
+              </select>
+            </div>
+          </div>
+          <div class="task-toolbar">
+            <div id="task-pagination" class="pagination" aria-label="Task pagination"></div>
+          </div>
+          <div id="task-list" class="task-list"></div>
+          <div id="detail"></div>
         </div>
-        <div class="server-filter">
-          <label for="server-filter">Server</label>
-          <select id="server-filter" aria-label="Filter tasks by server">
-            <option value="">All servers</option>
-          </select>
+        <div class="task-pane" role="tabpanel" id="past-runs" aria-selected="false" hidden="">
+          <div class="history">
+            <div class="row">
+              <label style="margin:0">Past runs</label>
+              <span class="meta" id="history-counts"></span>
+            </div>
+            <div class="search-row">
+              <label for="history-search" style="margin:0">Search:</label>
+              <input id="history-search" type="text" placeholder="filter by goal, status, summary, id">
+              <button type="button" class="secondary" id="clear-search">Clear</button>
+            </div>
+            <div id="history-list" class="task-list"></div>
+            <div id="pagination" class="pagination"></div>
+          </div>
         </div>
-      </div>
-      <div class="task-toolbar">
-        <div id="task-pagination" class="pagination" aria-label="Task pagination"></div>
-      </div>
-      <div id="task-list" class="task-list"></div>
-      <div id="detail"></div>
-      <div class="history">
-        <div class="row">
-          <label style="margin:0">Past runs</label>
-          <span class="meta" id="history-counts"></span>
-        </div>
-        <div class="search-row">
-          <label for="history-search" style="margin:0">Search:</label>
-          <input id="history-search" type="text" placeholder="filter by goal, status, summary, id">
-          <button type="button" class="secondary" id="clear-search">Clear</button>
-        </div>
-        <div id="history-list" class="task-list"></div>
-        <div id="pagination" class="pagination"></div>
       </div>
     </section>
   </main>
@@ -2879,6 +2919,27 @@
       state.historyPage = 1;
       searchInput.value = "";
       refresh();
+    });
+
+    const taskTabs = Array.from(document.querySelectorAll(".task-tab"));
+    const taskPanels = Array.from(document.querySelectorAll(".task-pane"));
+    taskTabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        const paneId = tab.dataset.pane;
+        taskTabs.forEach(t => {
+          t.setAttribute("aria-selected", "false");
+        });
+        taskPanels.forEach(p => {
+          p.setAttribute("aria-selected", "false");
+          p.hidden = true;
+        });
+        tab.setAttribute("aria-selected", "true");
+        const targetPane = document.getElementById(paneId) || taskPanels.find(p => p.id === paneId);
+        if (targetPane) {
+          targetPane.setAttribute("aria-selected", "true");
+          targetPane.hidden = false;
+        }
+      });
     });
 
     serverFilterEl.addEventListener("change", (event) => {
