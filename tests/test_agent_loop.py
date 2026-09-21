@@ -589,3 +589,48 @@ def test_agent_requires_run_tests_when_asked(tmp_path: Path) -> None:
         if message.get("role") == "user" and isinstance(message.get("content"), str)
     ]
     assert any("run_tests" in content for content in contents)
+
+
+def test_agent_requires_run_tests_after_readme_edit(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "README.md").write_text("hello\n", encoding="utf-8")
+    tools = build_tools(
+        workspace,
+        test_command="python3 -c 'print(0)'",
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="edit-1",
+                        name="write_file",
+                        arguments={
+                            "path": "README.md",
+                            "content": "docker compose run --rm agent clone n.git\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Updated the README."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(id="test-1", name="run_tests", arguments={}),
+                ],
+            ),
+            AssistantTurn(text="Tests passed."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run("Document docker clone")
+    assert result.summary == "Tests passed."
+    contents = [
+        message["content"]
+        for message in llm.calls[2]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("run_tests" in content for content in contents)

@@ -41,6 +41,12 @@ Rules:
 - Changing flags, guards, or docs so a later step *could* do the goal is unmet.
   The requested behavior must actually happen (create the PR, load the issues,
   serve the CSS).
+- Documented commands must exist. `docker clone` is unmet. A `loco` subcommand
+  that is not in the CLI is unmet. Docs that init a path before it exists, then
+  clone into it, are unmet.
+- Bind-mounting the agent app's `.loco` over `/workspaces/.loco` is unmet. The
+  mounted project volume must keep its own `.loco` (config and run history).
+- An agent that stopped at the iteration limit has not finished. met=false.
 - Opening a PR is done by the cycle after review, not by editing publish guards
   or shell tools. If the goal is to open a PR from the current branch and that
   branch already contains the work, set met=true.
@@ -230,6 +236,173 @@ def unwired_ui_markers(diff: str | None) -> list[str]:
             continue
         hits.append(f"route {path} is not called from the UI")
     return hits
+
+
+_DOCKER_SUBCOMMANDS = frozenset(
+    {
+        "attach",
+        "build",
+        "builder",
+        "buildx",
+        "commit",
+        "compose",
+        "config",
+        "container",
+        "context",
+        "cp",
+        "create",
+        "desktop",
+        "diff",
+        "events",
+        "exec",
+        "export",
+        "extension",
+        "history",
+        "image",
+        "images",
+        "import",
+        "info",
+        "inspect",
+        "kill",
+        "load",
+        "login",
+        "logout",
+        "logs",
+        "manifest",
+        "network",
+        "node",
+        "pause",
+        "plugin",
+        "port",
+        "ps",
+        "pull",
+        "push",
+        "rename",
+        "restart",
+        "rm",
+        "rmi",
+        "run",
+        "save",
+        "scan",
+        "scout",
+        "search",
+        "secret",
+        "service",
+        "stack",
+        "start",
+        "stats",
+        "stop",
+        "swarm",
+        "system",
+        "tag",
+        "top",
+        "trust",
+        "unpause",
+        "update",
+        "version",
+        "volume",
+        "wait",
+    }
+)
+_LOCO_SUBCOMMANDS = frozenset(
+    {"clone", "doctor", "init", "run", "ui", "watch"}
+)
+_DOC_SUFFIXES = (".md", ".rst", ".adoc", ".txt")
+_OPS_NAMES = (
+    "dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+)
+_LINE_DOCKER_RE = re.compile(
+    r"^\s*(?:\$\s*)?docker(?:-compose)?\s+([a-z][\w-]*)",
+    re.IGNORECASE,
+)
+_LINE_LOCO_RE = re.compile(
+    r"^\s*(?:\$\s*)?(?:uv\s+run\s+)?loco\s+([a-z][\w-]*)",
+    re.IGNORECASE,
+)
+_DOCKER_CLONE_RE = re.compile(r"\bdocker(?:-compose)?\s+clone\b", re.IGNORECASE)
+_LOCO_OVERLAY_RE = re.compile(
+    r"(?:\./)?\.loco\s*:\s*/workspaces/\.loco"
+)
+
+
+def _added_diff_lines(diff: str | None) -> list[tuple[str, str]]:
+    """Return (path, added_line) pairs from a unified diff."""
+    current = ""
+    untracked_body = False
+    rows: list[tuple[str, str]] = []
+    for line in (diff or "").splitlines():
+        if line.startswith("+++ "):
+            current = line[4:].strip()
+            if current.startswith("b/"):
+                current = current[2:]
+            untracked_body = True
+            continue
+        if (
+            line.startswith("diff --git ")
+            or line.startswith("@@")
+            or line.startswith("--- ")
+        ):
+            untracked_body = False
+            continue
+        added = False
+        text = line
+        if line.startswith("+") and not line.startswith("+++"):
+            added = True
+            text = line[1:]
+        elif untracked_body and not line.startswith("-"):
+            added = True
+        if added:
+            rows.append((current, text))
+    return rows
+
+
+def _is_doc_path(path: str) -> bool:
+    lowered = (path or "").replace("\\", "/").lower()
+    name = lowered.rsplit("/", 1)[-1]
+    return lowered.endswith(_DOC_SUFFIXES) or name.startswith("readme")
+
+
+def _is_compose_path(path: str) -> bool:
+    lowered = (path or "").replace("\\", "/").lower()
+    name = lowered.rsplit("/", 1)[-1]
+    return name in _OPS_NAMES or "docker-compose" in name
+
+
+def invalid_doc_commands(diff: str | None) -> list[str]:
+    """Documented CLI that is not a real docker/loco command, or a .loco overlay mount."""
+    hits: list[str] = []
+    for path, text in _added_diff_lines(diff):
+        if _is_compose_path(path) and _LOCO_OVERLAY_RE.search(text):
+            hits.append("compose bind-mounts host .loco over /workspaces/.loco")
+        if not _is_doc_path(path) and not _is_compose_path(path):
+            continue
+        if _DOCKER_CLONE_RE.search(text):
+            hits.append("docs invent `docker clone`")
+        match = _LINE_DOCKER_RE.match(text)
+        if match:
+            command = match.group(1).lower()
+            if command not in _DOCKER_SUBCOMMANDS:
+                hits.append(f"docs invent `docker {command}`")
+        match = _LINE_LOCO_RE.match(text)
+        if match:
+            command = match.group(1).lower()
+            if command not in _LOCO_SUBCOMMANDS:
+                hits.append(f"docs invent `loco {command}`")
+    return list(dict.fromkeys(hits))
+
+
+def incomplete_agent_run(summary: str | None, stopped_reason: str | None = None) -> str | None:
+    """True when the coding agent ran out of turns instead of finishing."""
+    if (stopped_reason or "").strip() == "max_iterations":
+        return "agent stopped after reaching the iteration limit"
+    text = (summary or "").strip().lower()
+    if "stopped after reaching the iteration limit" in text:
+        return "agent stopped after reaching the iteration limit"
+    return None
 
 
 @dataclass(frozen=True)

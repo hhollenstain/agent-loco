@@ -17,6 +17,14 @@ log = logging.getLogger("loco")
 MUTATING_TOOLS = {"write_file", "str_replace"}
 VERIFY_TOOLS = {"review_ui", "run_tests"}
 UI_SUFFIXES = {".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"}
+OPS_NAMES = {
+    "dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+}
+OPS_SUFFIXES = {".md", ".rst", ".adoc"}
 MAX_PLAN_NUDGES = 3
 MAX_REQUIRE_CHANGE_NUDGES = 8
 MAX_UNFINISHED_NUDGES = 4
@@ -56,6 +64,12 @@ VALIDATE_TESTS_NUDGE = (
     "You changed code but have not called run_tests since the last edit. "
     "Run the project tests and fix failures before summarizing."
 )
+VALIDATE_OPS_NUDGE = (
+    "You changed Docker, compose, or docs but have not called run_tests since "
+    "the last edit. Run tests. Commands in README must exist: use loco clone or "
+    "git clone, never docker clone. Do not bind-mount this app's .loco over "
+    "/workspaces/.loco. init requires a directory that already exists."
+)
 _UNFINISHED_RE = re.compile(
     r"(?is)("
     r"\blet me\b|"
@@ -70,7 +84,8 @@ _UNFINISHED_RE = re.compile(
     r"\bmock(?:ed)? data\b|"
     r"\bnot fully wired\b|"
     r"\bstarting point\b|"
-    r"\bhandler will\b"
+    r"\bhandler will\b|"
+    r"\biteration limit\b"
     r")"
 )
 
@@ -88,6 +103,19 @@ def _is_ui_path(path: str) -> bool:
     raw = (path or "").replace("\\", "/").lower()
     suffix = Path(raw).suffix
     return suffix in UI_SUFFIXES or "/templates/" in raw or raw.endswith(".html")
+
+
+def _is_ops_path(path: str) -> bool:
+    raw = (path or "").replace("\\", "/").lower()
+    name = Path(raw).name
+    suffix = Path(raw).suffix
+    return (
+        name in OPS_NAMES
+        or name.startswith("dockerfile")
+        or "docker-compose" in name
+        or suffix in OPS_SUFFIXES
+        or name.startswith("readme")
+    )
 
 
 def _tool_path(arguments: dict) -> str:
@@ -135,6 +163,7 @@ class CodingAgent:
         tool_calls = 0
         mutated = False
         mutated_ui = False
+        mutated_ops = False
         verified_ui = False
         verified_tests = False
         plan_nudges = 0
@@ -162,9 +191,12 @@ class CodingAgent:
                         mutated = True
                         wrote = True
                         verified_tests = False
-                        if _is_ui_path(_tool_path(call.arguments)):
+                        tool_path = _tool_path(call.arguments)
+                        if _is_ui_path(tool_path):
                             mutated_ui = True
                             verified_ui = False
+                        if _is_ops_path(tool_path):
+                            mutated_ops = True
                     elif call.name == "review_ui":
                         verified_ui = bool(result.ok)
                     elif call.name == "run_tests":
@@ -210,17 +242,20 @@ class CodingAgent:
                 messages.append({"role": "user", "content": _nudge(VALIDATE_UI_NUDGE, goal)})
                 continue
 
+            needs_tests = require_tests or mutated_ops
             if (
-                require_tests
+                needs_tests
                 and mutated
                 and not verified_tests
+                and "run_tests" in known_names
                 and validate_nudges < MAX_VALIDATE_NUDGES
             ):
                 validate_nudges += 1
                 log.info("nudging agent to run tests after edits")
                 record_event(kind="step", message="Agent skipped tests; continuing.")
                 messages.append({"role": "assistant", "content": turn.text or ""})
-                messages.append({"role": "user", "content": _nudge(VALIDATE_TESTS_NUDGE, goal)})
+                nudge = VALIDATE_OPS_NUDGE if mutated_ops else VALIDATE_TESTS_NUDGE
+                messages.append({"role": "user", "content": _nudge(nudge, goal)})
                 continue
 
             summary = (turn.text or "").strip() or "Agent finished without a summary."
