@@ -46,7 +46,10 @@ Rules:
   clone into it, are unmet.
 - Bind-mounting the agent app's `.loco` over `/workspaces/.loco` is unmet. The
   mounted project volume must keep its own `.loco` (config and run history).
-- An agent that stopped at the iteration limit has not finished. met=false.
+- An agent that stopped at the iteration limit has not finished, unless a
+  Rendered UI section is present and the requested controls are visible
+  without JS errors, missing CSS/JS, dead buttons, or overlapping controls.
+  In that case judge the rendered page, not the stop reason.
 - Opening a PR is done by the cycle after review, not by editing publish guards
   or shell tools. If the goal is to open a PR from the current branch and that
   branch already contains the work, set met=true.

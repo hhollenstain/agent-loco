@@ -556,6 +556,52 @@ def test_cycle_rejects_iteration_limit_even_if_reviewer_says_met(
     assert "iteration limit" in (result.reason or "")
 
 
+def test_cycle_accepts_iteration_limit_when_rendered_ui_is_verified(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    html = (
+        "<button class='rerun-btn'>Rerun</button>\n"
+        "<script>document.querySelector('.rerun-btn')"
+        ".addEventListener('click', () => fetch('/api/tasks/1/rerun'));</script>\n"
+    )
+    _green_project(tmp_path)
+    (tmp_path / "src" / "agent_loco" / "templates").mkdir(parents=True)
+    (tmp_path / "src" / "agent_loco" / "templates" / "index.html").write_text(
+        html,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(
+            ok=True,
+            snapshot=(
+                "button.rerun-btn: ↻ Rerun (72x24 @ 900,400)\n"
+                "span: +12 −3 (48x16 @ 16,400)"
+            ),
+            screenshot="ok.png",
+            clicked=['[data-main-pane="history"]'],
+        ),
+    )
+    tight = settings.model_copy(update={"max_iterations": 1})
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "src/agent_loco/templates/index.html",
+                html,
+            ),
+            _review_turn(True, "rerun button no longer overlaps the line stats"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        tight,
+        llm,
+        goal="Fix the overlapping of the past runs rerun button",
+    )
+    assert result.status == "success"
+    assert result.committed is True
+
+
 def _inspect_only_turns() -> list[AssistantTurn]:
     return [
         AssistantTurn(text="Looked at the current branch."),

@@ -128,6 +128,76 @@ def test_from_eval_marks_js_errors_and_zero_size_controls() -> None:
     assert "Past runs" in crushed_tab.dead_controls[0]
 
 
+def test_from_eval_marks_overlapping_rerun_and_line_stats() -> None:
+    overlap = _from_eval(
+        "http://127.0.0.1:9/",
+        {
+            "title": "loco",
+            "text": "Past runs",
+            "errors": [],
+            "elements": [
+                {
+                    "tag": "button",
+                    "name": "↻ Rerun",
+                    "cls": "rerun-btn",
+                    "w": 72,
+                    "h": 24,
+                    "x": 16,
+                    "y": 400,
+                },
+                {
+                    "tag": "span",
+                    "name": "+12 −3",
+                    "cls": "history-line-stats",
+                    "w": 48,
+                    "h": 16,
+                    "x": 20,
+                    "y": 404,
+                },
+            ],
+        },
+        page_errors=[],
+        console_errors=[],
+        screenshot=None,
+    )
+    assert overlap.ok is False
+    assert any("overlaps" in item for item in overlap.smashed)
+
+    separated = _from_eval(
+        "http://127.0.0.1:9/",
+        {
+            "title": "loco",
+            "text": "Past runs",
+            "errors": [],
+            "elements": [
+                {
+                    "tag": "button",
+                    "name": "↻ Rerun",
+                    "cls": "rerun-btn",
+                    "w": 72,
+                    "h": 24,
+                    "x": 900,
+                    "y": 400,
+                },
+                {
+                    "tag": "span",
+                    "name": "+12 −3",
+                    "cls": "history-line-stats",
+                    "w": 48,
+                    "h": 16,
+                    "x": 16,
+                    "y": 400,
+                },
+            ],
+        },
+        page_errors=[],
+        console_errors=[],
+        screenshot=None,
+    )
+    assert separated.ok is True
+    assert separated.smashed == []
+
+
 def test_classify_network_failure_ignores_favicon_and_screenshots() -> None:
     assert classify_network_failure("http://127.0.0.1:9/favicon.ico", 404) == "ignore"
     assert (
@@ -656,3 +726,72 @@ def test_load_project_reads_preview_command(tmp_path: Path) -> None:
     )
     project = load_project(tmp_path)
     assert project.preview_command == "python3 -m http.server {port}"
+
+
+def test_loco_template_paths_use_the_running_app(tmp_path: Path, monkeypatch) -> None:
+    from agent_loco.runtime.uireview import _is_loco_template_path, start_preview
+    from agent_loco.runtime.project import load_project
+
+    (tmp_path / "src" / "agent_loco" / "templates").mkdir(parents=True)
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    template = tmp_path / "src" / "agent_loco" / "templates" / "index.html"
+    template.write_text("<html>{{ ws.name }}</html>\n", encoding="utf-8")
+    workspace = Workspace(tmp_path)
+    assert _is_loco_template_path(workspace, "src/agent_loco/templates/index.html")
+    calls: list[str] = []
+
+    def fake_loco(ws, port):
+        calls.append(f"loco:{port}")
+
+        class Preview:
+            url = f"http://127.0.0.1:{port}/"
+
+            def close(self) -> None:
+                return None
+
+        return Preview()
+
+    monkeypatch.setattr("agent_loco.runtime.uireview._start_loco_preview", fake_loco)
+    preview = start_preview(
+        workspace,
+        load_project(tmp_path),
+        path="src/agent_loco/templates/index.html",
+        port=9,
+    )
+    assert calls == ["loco:9"]
+    assert preview is not None
+    assert preview.url == "http://127.0.0.1:9/"
+
+
+def test_review_goal_keeps_met_when_iteration_limit_but_ui_verified(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(
+            ok=True,
+            snapshot="button: ↻ Rerun (72x24 @ 900,400)\nspan: +12 −3 (48x16 @ 16,400)",
+            screenshot="ok.png",
+            clicked=['[data-main-pane="history"]'],
+        ),
+    )
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    llm = ScriptedClient(
+        [AssistantTurn(text='{"met": true, "reason": "rerun no longer overlaps +/- stats"}')]
+    )
+    token = bind_progress()
+    try:
+        verdict = _review_goal(
+            Workspace(tmp_path),
+            load_project(tmp_path),
+            llm,
+            "Fix the overlapping of the past runs rerun button",
+            "diff --git a/src/agent_loco/templates/index.html",
+            "Stopped after reaching the iteration limit.",
+            True,
+            stopped_reason="max_iterations",
+        )
+    finally:
+        reset_progress(token)
+    assert verdict.met is True

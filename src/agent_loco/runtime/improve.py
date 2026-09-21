@@ -753,7 +753,15 @@ def _review_goal(
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
     incomplete = incomplete_agent_run(summary, stopped_reason)
-    if verdict.met and incomplete and not existing:
+    ui_verified = bool(
+        ui_evidence is not None
+        and ui_evidence.ok
+        and not blocking
+        and not smashed
+        and not ui_evidence.dead_controls
+        and (ui_evidence.snapshot or ui_evidence.screenshot)
+    )
+    if verdict.met and incomplete and not existing and not ui_verified:
         overridden = GoalReview(False, incomplete, parsed=True, ui_errors=ui_errors)
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
