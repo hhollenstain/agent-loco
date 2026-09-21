@@ -106,6 +106,10 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function fileReviewDiff(" in home.content
         assert b'data-task-pane="changes"' in home.content
         assert b'data-task-pane="screenshots"' in home.content
+        assert b'<link rel="stylesheet" href="/static/themes.css">' in home.content
+        assert b'<link rel="stylesheet" href="/static/layout.css">' in home.content
+        assert b"<style>" in home.content
+        assert home.content.index(b"<style>") < home.content.index(b"* { box-sizing")
         assert b'data-main-pane="current"' in home.content
         assert b'data-main-pane="history"' in home.content
         assert b'id="current-run"' in home.content
@@ -199,6 +203,13 @@ def test_web_ui_paginates_tasks_and_serves_favicon(
         icon = client.get("/favicon.ico")
         assert icon.status_code == 200
         assert b"<svg" in icon.content
+        themes = client.get("/static/themes.css")
+        assert themes.status_code == 200
+        assert b"--bg:" in themes.content
+        assert b"--accent:" in themes.content
+        layout = client.get("/static/layout.css")
+        assert layout.status_code == 200
+        assert b"box-sizing: border-box" in layout.content
     finally:
         manager.shutdown(wait=False)
 

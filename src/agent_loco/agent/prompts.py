@@ -46,6 +46,10 @@ Rules:
   layout (zero-size, crushed labels, missing controls), and controls that do
   not change the page. The requested panels must be visible in the capture
   (non-zero size, not display:none). A diff is not done until the rendered page works.
+- If review_ui reports 404s for CSS or JS you linked, that is not done. Serve
+  those files from the web app (static mount or route) or fix the href so it
+  matches a real path. Call review_ui again until the URLs load. Do not stop
+  while the page is missing styles or scripts you added.
 - Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """

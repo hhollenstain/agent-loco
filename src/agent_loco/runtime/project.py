@@ -9,6 +9,7 @@ from agent_loco.agent.prompts import SYSTEM_PROMPT
 from agent_loco.tools.files import SKIP_DIR_NAMES
 
 GUIDELINES_FILE = "guidelines.md"
+DEFAULT_MAX_REPAIR_ATTEMPTS = 4
 
 
 @dataclass(frozen=True)
@@ -52,9 +53,18 @@ def load_project(root: Path) -> ProjectConfig:
         publish_branch=publish.get("branch"),
         create_pr=bool(publish.get("create_pr", False)),
         goals_file=str(raw.get("goals_file") or "goals.md"),
-        max_repair_attempts=int(raw.get("max_repair_attempts") or 2),
+        max_repair_attempts=_max_repair_attempts(raw.get("max_repair_attempts")),
         preview_command=str(raw["preview_command"]) if raw.get("preview_command") else None,
     )
+
+
+def _max_repair_attempts(value: object) -> int:
+    if value is None or value == "":
+        return DEFAULT_MAX_REPAIR_ATTEMPTS
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_REPAIR_ATTEMPTS
 
 
 def infer_test_command(root: Path) -> str | None:
@@ -121,7 +131,7 @@ def write_default_project_files(root: Path) -> list[Path]:
             (
                 f"name: {root.name}\n"
                 f"test_command: {test_command}\n"
-                "max_repair_attempts: 2\n"
+                f"max_repair_attempts: {DEFAULT_MAX_REPAIR_ATTEMPTS}\n"
                 "publish:\n"
                 "  enabled: false\n"
                 "  remote: origin\n"

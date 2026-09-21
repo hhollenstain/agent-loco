@@ -484,7 +484,11 @@ def _handle_empty_diff(
             "Agent finished without edits; sending it back to implement "
             f"({attempt + 1}/{project.max_repair_attempts})"
         )
-        follow = agent.run(_empty_diff_retry_prompt(goal, review_reason(verdict)), context)
+        follow = agent.run(
+            _empty_diff_retry_prompt(goal, review_reason(verdict)),
+            context,
+            require_change=True,
+        )
         if follow.summary:
             summary = follow.summary
         tests_after = _maybe_test(workspace, project, settings, phase="retry")
@@ -609,6 +613,7 @@ def _review_goal(
     if ui_evidence is not None:
         blocking = ui_evidence.blocking_errors
         smashed = ui_evidence.smashed
+    ui_errors = tuple(blocking[:12])
     if verdict.met and blocking:
         first = blocking[0]
         js = bool(ui_evidence and (ui_evidence.page_errors or ui_evidence.console_errors))
@@ -617,11 +622,7 @@ def _review_goal(
             if js
             else f"Rendered UI failed to load a required resource: {first}"
         )
-        overridden = GoalReview(
-            False,
-            reason,
-            parsed=True,
-        )
+        overridden = GoalReview(False, reason, parsed=True, ui_errors=ui_errors)
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
     if verdict.met and smashed:
@@ -629,14 +630,23 @@ def _review_goal(
             False,
             f"Rendered UI controls are unusable: {smashed[0]}",
             parsed=True,
+            ui_errors=ui_errors,
         )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
     unverified = unverified_interactive_ui(goal, ui_evidence) if ui_evidence else None
     if verdict.met and unverified:
-        overridden = GoalReview(False, unverified, parsed=True)
+        overridden = GoalReview(False, unverified, parsed=True, ui_errors=ui_errors)
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
+    if ui_errors and verdict.ui_errors != ui_errors:
+        return GoalReview(
+            met=verdict.met,
+            reason=verdict.reason,
+            raw=verdict.raw,
+            parsed=verdict.parsed,
+            ui_errors=ui_errors,
+        )
     return verdict
 
 
@@ -665,17 +675,24 @@ def _ensure_goal_met(
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     attempts = 0
-    while (
-        not verdict.met
-        and verdict.parsed
-        and attempts < project.max_repair_attempts
-    ):
+    stalls = 0
+    extra_granted = False
+    last_diff = work_diff
+    limit = project.max_repair_attempts
+    while not verdict.met and attempts < limit:
         attempts += 1
-        log_progress(f"Goal retry {attempts}/{project.max_repair_attempts}: {verdict.reason}")
+        log_progress(f"Goal retry {attempts}/{limit}: {review_reason(verdict)}")
         work_diff = collect_work_diff(workspace, sha_before, goal=goal)
         follow = agent.run(
-            _goal_retry_prompt(goal, verdict.reason, work_diff),
+            _goal_retry_prompt(
+                goal,
+                review_reason(verdict),
+                work_diff,
+                ui_errors=verdict.ui_errors,
+                stalled=stalls > 0,
+            ),
             context,
+            require_change=True,
         )
         if follow.summary:
             summary = follow.summary
@@ -698,6 +715,17 @@ def _ensure_goal_met(
                 "tests_failed": True,
             }
         work_diff = collect_work_diff(workspace, sha_before, goal=goal)
+        if work_diff == last_diff:
+            stalls += 1
+            if not extra_granted and attempts >= project.max_repair_attempts:
+                extra_granted = True
+                limit = attempts + GOAL_RETRY_STALL_EXTRA
+                log_progress(
+                    "Retry made no file changes; continuing instead of giving up."
+                )
+        else:
+            stalls = 0
+        last_diff = work_diff
         verdict = _review_goal(
             workspace,
             project,
@@ -717,8 +745,38 @@ def _ensure_goal_met(
     }
 
 
-def _goal_retry_prompt(goal: str, reason: str, diff: str) -> str:
+GOAL_RETRY_STALL_EXTRA = 2
+
+
+def _goal_retry_prompt(
+    goal: str,
+    reason: str,
+    diff: str,
+    *,
+    ui_errors: list[str] | tuple[str, ...] | None = None,
+    stalled: bool = False,
+) -> str:
+    stall = ""
+    if stalled:
+        stall = (
+            "You inspected the repo on the last retry but did not change files. "
+            "This is not done. Call str_replace or write_file now.\n\n"
+        )
+    broken = ""
+    errors = [str(item).strip() for item in (ui_errors or []) if str(item).strip()]
+    if errors:
+        listed = "\n".join(f"- {item}" for item in errors[:12])
+        broken = (
+            "\n\nRendered UI still has broken resources. Fix them in this retry. "
+            "A 404 means the HTML/CSS/JS href does not match a file the web "
+            "server actually serves. Do not only create the files; mount or route "
+            "them (FastAPI StaticFiles, express.static, or the project's existing "
+            "static path) or correct the href. Then call review_ui and confirm "
+            "those URLs load.\n"
+            f"Broken resources:\n{listed}"
+        )
     return (
+        f"{stall}"
         "The stated goal is not done. The current diff does not fulfill it. "
         "Do not summarize. Do not switch to a different task. "
         "Do not write placeholder, status, or unrelated verification files. "
@@ -727,9 +785,11 @@ def _goal_retry_prompt(goal: str, reason: str, diff: str) -> str:
         "If existing tests assert old markup, APIs, or layout that this goal "
         "replaces, update those tests. "
         "If this is a UI change, call review_ui after editing, click new tabs, "
-        "and fix render errors or dead controls.\n\n"
+        "and fix render errors, 404s, or dead controls. Do not stop while the "
+        "page fails to load CSS or JS you added.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
-        f"Why it is not done:\n{reason.strip()}\n\n"
+        f"Why it is not done:\n{reason.strip()}"
+        f"{broken}\n\n"
         f"Current diff:\n{diff}"
     )
 
@@ -759,7 +819,11 @@ def _repair_failing_tests(
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     for attempt in range(project.max_repair_attempts):
         log_progress(f"Repair attempt {attempt + 1}/{project.max_repair_attempts}")
-        agent.run(_test_repair_prompt(tests_after.output), context)
+        agent.run(
+            _test_repair_prompt(tests_after.output),
+            context,
+            require_change=True,
+        )
         tests_after = _maybe_test(workspace, project, settings, phase="repair")
         if tests_after is None or tests_after.ok:
             break

@@ -282,6 +282,17 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     assert "verification" in retry.lower()
     assert "unrelated" in retry.lower()
     assert "update those tests" in retry
+    broken = _goal_retry_prompt(
+        "Extract CSS into files",
+        "CSS files are returning 404",
+        "diff --git a/src/app/static/theme.css",
+        ui_errors=["404 http://127.0.0.1:9/static/theme.css"],
+        stalled=True,
+    )
+    assert "did not change files" in broken
+    assert "404 http://127.0.0.1:9/static/theme.css" in broken
+    assert "StaticFiles" in broken
+    assert "review_ui" in broken
     repair = _test_repair_prompt("AssertionError: id=\"guidelines\"")
     assert "update that test" in repair
     assert "do not revert the goal" in repair.lower()
@@ -530,7 +541,7 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
     assert "toggle-sidebar" in (tmp_path / "ui.html").read_text(encoding="utf-8")
 
 
-def test_cycle_does_not_agent_retry_unparsed_review(
+def test_cycle_retries_unparsed_review(
     tmp_path: Path, settings: Settings
 ) -> None:
     _green_project(tmp_path)
@@ -542,14 +553,19 @@ def test_cycle_does_not_agent_retry_unparsed_review(
         ),
         encoding="utf-8",
     )
-    leftover = AssistantTurn(text="SHOULD NOT BE CONSUMED")
     llm = ScriptedClient(
         [
             _write_file_turn("app.py", "def add(left, right):\n    return left + right\n# note\n"),
             AssistantTurn(text="Tweaked the adder."),
             AssistantTurn(text="Looks done to me."),
             AssistantTurn(text="Still looks done."),
-            leftover,
+            _write_file_turn(
+                "ui.html",
+                "<aside id='sidebar'><button id='toggle-sidebar'>collapse</button></aside>\n",
+                call_id="call-2",
+            ),
+            AssistantTurn(text="Removed the header and added a collapse control."),
+            _review_turn(True, "sidebar toggle is present"),
         ]
     )
     result = run_cycle(
@@ -558,15 +574,54 @@ def test_cycle_does_not_agent_retry_unparsed_review(
         llm,
         goal="Remove the top header and make the sidebar collapsible",
     )
-    assert result.status == "failed"
-    assert result.committed is False
-    assert "verdict" in (result.reason or "")
-    assert "Still looks done" in (result.reason or "")
+    assert result.status == "success"
+    assert result.committed is True
+    assert "toggle-sidebar" in (tmp_path / "ui.html").read_text(encoding="utf-8")
     reviews = [event for event in result.events if event["kind"] == "review"]
-    assert len(reviews) == 2
     assert reviews[0]["parsed"] is False
-    assert reviews[0]["raw"] == "Looks done to me."
-    assert leftover in llm._turns
+    assert any(event.get("parsed") is True and event.get("met") is True for event in reviews)
+
+
+def test_cycle_keeps_retrying_after_noop_goal_retry(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "max_repair_attempts: 0\n",
+            "max_repair_attempts: 1\n",
+        ),
+        encoding="utf-8",
+    )
+    tight = settings.model_copy(update={"max_iterations": 2})
+    llm = ScriptedClient(
+        [
+            _write_file_turn("ui.html", "<header>loco</header>\n"),
+            AssistantTurn(text="Added a header."),
+            _review_turn(False, "CSS files are returning 404"),
+            AssistantTurn(text="I will inspect the static mount next."),
+            AssistantTurn(text="Still looking at the server."),
+            _review_turn(False, "CSS files are still returning 404"),
+            _write_file_turn(
+                "ui.html",
+                "<aside id='sidebar'><button id='toggle-sidebar'>collapse</button></aside>\n",
+                call_id="call-2",
+            ),
+            AssistantTurn(text="Served the CSS and added the toggle."),
+            _review_turn(True, "css loads and sidebar toggle is present"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        tight,
+        llm,
+        goal="Remove the top header and make the sidebar collapsible",
+    )
+    assert result.status == "success"
+    assert "toggle-sidebar" in (tmp_path / "ui.html").read_text(encoding="utf-8")
+    steps = [event.get("message", "") for event in result.events if event["kind"] == "step"]
+    assert any("continuing instead of giving up" in message for message in steps)
 
 
 def test_cycle_review_prompt_includes_lockfile_versions(

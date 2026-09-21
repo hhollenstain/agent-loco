@@ -16,6 +16,7 @@ log = logging.getLogger("loco")
 MUTATING_TOOLS = {"write_file", "str_replace"}
 VERIFY_TOOLS = {"review_ui", "run_tests"}
 MAX_PLAN_NUDGES = 3
+MAX_REQUIRE_CHANGE_NUDGES = 8
 MAX_UNFINISHED_NUDGES = 4
 MAX_INSPECT_ROUNDS = 3
 CONTINUE_NUDGE = (
@@ -29,6 +30,12 @@ UNFINISHED_NUDGE = (
     "That reply is not a finish. You still have work left on the stated goal. "
     "Call a tool now and apply the next edit. Do not narrate the change; "
     "str_replace it."
+)
+MUST_EDIT_NUDGE = (
+    "The goal is still unmet. Do not stop. Call str_replace or write_file "
+    "and fix the failure. If CSS or JS returned 404, the file is missing or "
+    "the web server is not serving that path — add the static mount/route "
+    "or correct the href, then call review_ui until those URLs load."
 )
 INSPECT_NUDGE = (
     "You have been inspecting the repo without changing files. "
@@ -77,7 +84,7 @@ class CodingAgent:
         prompt = (system_prompt or "").strip()
         self.system_prompt = prompt or SYSTEM_PROMPT.strip()
 
-    def run(self, goal: str, context: str = "") -> AgentResult:
+    def run(self, goal: str, context: str = "", *, require_change: bool = False) -> AgentResult:
         messages: list[dict] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_prompt(goal, context)},
@@ -122,12 +129,17 @@ class CodingAgent:
                         messages.append({"role": "user", "content": _nudge(INSPECT_NUDGE, goal)})
                 continue
 
-            if not mutated and plan_nudges < MAX_PLAN_NUDGES:
-                plan_nudges += 1
-                log.info("nudging agent to keep working after a plan-only turn")
-                messages.append({"role": "assistant", "content": turn.text or ""})
-                messages.append({"role": "user", "content": _nudge(CONTINUE_NUDGE, goal)})
-                continue
+            if not mutated:
+                nudge_limit = (
+                    MAX_REQUIRE_CHANGE_NUDGES if require_change else MAX_PLAN_NUDGES
+                )
+                if plan_nudges < nudge_limit:
+                    plan_nudges += 1
+                    log.info("nudging agent to keep working after a plan-only turn")
+                    messages.append({"role": "assistant", "content": turn.text or ""})
+                    nudge = MUST_EDIT_NUDGE if require_change else CONTINUE_NUDGE
+                    messages.append({"role": "user", "content": _nudge(nudge, goal)})
+                    continue
 
             if looks_unfinished(turn.text) and unfinished_nudges < MAX_UNFINISHED_NUDGES:
                 unfinished_nudges += 1

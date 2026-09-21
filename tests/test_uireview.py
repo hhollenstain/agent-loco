@@ -394,6 +394,7 @@ def test_agent_prompt_requires_review_ui_after_ui_edits() -> None:
     assert "review_ui" in SYSTEM_PROMPT
     assert "zero-size" in SYSTEM_PROMPT
     assert "Click new tabs" in SYSTEM_PROMPT
+    assert "404" in SYSTEM_PROMPT
     assert "Markup for a Screenshots tab is not enough" in REVIEW_SYSTEM
     assert "0x0 or display:none" in REVIEW_SYSTEM
 

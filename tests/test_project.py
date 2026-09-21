@@ -54,6 +54,17 @@ def test_render_tree_includes_nested_source(tmp_path: Path) -> None:
     assert ".git" not in tree
 
 
+def test_load_project_preserves_zero_repair_attempts(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text(
+        "name: demo\nmax_repair_attempts: 0\n",
+        encoding="utf-8",
+    )
+    project = load_project(tmp_path)
+    assert project.max_repair_attempts == 0
+
+
 def test_init_ignores_run_logs(tmp_path: Path) -> None:
     created = write_default_project_files(tmp_path)
     gitignore = tmp_path / ".loco" / ".gitignore"
@@ -65,6 +76,8 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
     guidelines = tmp_path / ".loco" / "guidelines.md"
     assert guidelines in created
     assert "You are loco" in guidelines.read_text(encoding="utf-8")
+    config = (tmp_path / ".loco" / "config.yaml").read_text(encoding="utf-8")
+    assert "max_repair_attempts: 4" in config
 
 
 def test_guidelines_default_until_overridden(tmp_path: Path) -> None:

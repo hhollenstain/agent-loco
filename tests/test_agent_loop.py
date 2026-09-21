@@ -423,3 +423,45 @@ def test_agent_accepts_qwen_xml_str_replace(tmp_path: Path) -> None:
     assert "<main class='stages'></main>" in (tmp_path / "ui.html").read_text(
         encoding="utf-8"
     )
+
+
+def test_agent_require_change_keeps_going_until_edit(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="I will look at the server next."),
+            AssistantTurn(text="Still inspecting static files."),
+            AssistantTurn(text="I think the CSS exists."),
+            AssistantTurn(text="Ready to stop."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={"path": "app.py", "content": "mounted\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Mounted static files."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run(
+        "Serve the CSS files",
+        require_change=True,
+    )
+    assert result.stopped_reason == "completed"
+    assert (tmp_path / "app.py").read_text(encoding="utf-8") == "mounted\n"
+    contents = [
+        message["content"]
+        for message in llm.calls[-1]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("404" in content for content in contents)

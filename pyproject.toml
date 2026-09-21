@@ -43,7 +43,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-agent_loco = ["templates/*.html"]
+agent_loco = ["templates/*.html", "static/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

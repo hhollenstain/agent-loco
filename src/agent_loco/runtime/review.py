@@ -75,6 +75,7 @@ class GoalReview:
     reason: str
     raw: str = ""
     parsed: bool = True
+    ui_errors: tuple[str, ...] = ()
 
 
 def is_test_suite_goal(goal: str) -> bool:

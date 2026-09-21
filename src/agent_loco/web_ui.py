@@ -9,6 +9,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -40,6 +41,7 @@ from agent_loco.runtime.workspaces import (
 )
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 FAVICON_SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
@@ -631,6 +633,7 @@ def create_app(
             return JSONResponse({"error": str(exc)}, status_code=400)
         return _workspace_payload(ui)
 
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     return app
 
 

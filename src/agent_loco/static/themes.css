@@ -1,0 +1,162 @@
+/* Themes configuration for loco - easy to customize and extend */
+:root {
+  /* Base colors (dark theme) */
+  --bg: #11140f;
+  --panel: #1a1f18;
+  --panel-2: #23291f;
+  --ink: #e7eedf;
+  --muted: #9aa58e;
+  --line: #31392c;
+  
+  /* Accent color - can be customized via settings */
+  --accent: #c4e38a;
+  
+  /* Semantic colors */
+  --warn: #e6c07b;
+  --bad: #e08b73;
+  --ok: #8fca7a;
+  --queued: #8eb4d4;
+  
+  /* Toast notifications */
+  --toast-bg: #141910;
+  --toast-border: var(--line);
+  
+  /* Scrollbars */
+  --scrollbar-track: #0c0e0b;
+  --scrollbar-thumb: #4a5244;
+  --scrollbar-thumb-hover: #636d55;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg: #ffffff;
+  --panel: #f5f5f5;
+  --panel-2: #e8e8e8;
+  --ink: #1a1a1a;
+  --muted: #666666;
+  --line: #dddddd;
+  --accent: #c4e38a; /* Same base accent, but you can customize */
+  --toast-bg: #f0f5e8;
+  --scrollbar-track: #f0f0f0;
+  --scrollbar-thumb: #b8b8b8;
+  --scrollbar-thumb-hover: #999999;
+}
+
+/* Light green theme */
+[data-theme="light-green"] {
+  --bg: #f5f9f2;
+  --panel: #e8f0e0;
+  --panel-2: #dce8d0;
+  --ink: #1a2a1a;
+  --muted: #5a7a4a;
+  --line: #c4cec0;
+  --accent: #8fca7a;
+  --warn: #e6c07b;
+  --bad: #e08b73;
+  --ok: #8fca7a;
+  --queued: #8eb4d4;
+  --toast-bg: #e8f5e0;
+  --scrollbar-track: #e0ece0;
+  --scrollbar-thumb: #8fa88a;
+  --scrollbar-thumb-hover: #7b9a7a;
+}
+
+/* Blue theme */
+[data-theme="blue"] {
+  --bg: #0f141f;
+  --panel: #181f2a;
+  --panel-2: #1f293a;
+  --ink: #e7efff;
+  --muted: #9aaec4;
+  --line: #2c3952;
+  --accent: #7dba5d;
+  --warn: #c0d4e6;
+  --bad: #e07373;
+  --ok: #7aca8f;
+  --queued: #d48eb4;
+  --toast-bg: #101825;
+  --scrollbar-track: #0c0e15;
+  --scrollbar-thumb: #445a7a;
+  --scrollbar-thumb-hover: #5a7292;
+}
+
+/* Purple theme */
+[data-theme="purple"] {
+  --bg: #140f1f;
+  --panel: #1f182a;
+  --panel-2: #291f3a;
+  --ink: #efe7ff;
+  --muted: #9a8ec4;
+  --line: #392c52;
+  --accent: #c08ae4;
+  --warn: #e6c07b;
+  --bad: #e073c5;
+  --ok: #7aca8f;
+  --queued: #d48eb4;
+  --toast-bg: #171025;
+  --scrollbar-track: #100c15;
+  --scrollbar-thumb: #6a447a;
+  --scrollbar-thumb-hover: #7a5a92;
+}
+
+/* Orange theme */
+[data-theme="orange"] {
+  --bg: #1f140f;
+  --panel: #2a1818;
+  --panel-2: #3a1f1f;
+  --ink: #ffe7d7;
+  --muted: #c48e5a;
+  --line: #522c2c;
+  --accent: #e67c3a;
+  --warn: #e6c07b;
+  --bad: #e07373;
+  --ok: #8fca7a;
+  --queued: #8eb4d4;
+  --toast-bg: #25170f;
+  --scrollbar-track: #150c0c;
+  --scrollbar-thumb: #7a4444;
+  --scrollbar-thumb-hover: #925a5a;
+}
+
+/* Pink theme */
+[data-theme="pink"] {
+  --bg: #1f0f14;
+  --panel: #2a181f;
+  --panel-2: #3a1f29;
+  --ink: #ffe7ef;
+  --muted: #c45a8e;
+  --line: #522c39;
+  --accent: #e08bc4;
+  --warn: #e6c07b;
+  --bad: #e073c5;
+  --ok: #8fca7a;
+  --queued: #8eb4d4;
+  --toast-bg: #250f17;
+  --scrollbar-track: #150c10;
+  --scrollbar-thumb: #7a446a;
+  --scrollbar-thumb-hover: #925a7a;
+}
+
+/* Red theme */
+[data-theme="red"] {
+  --bg: #1f0f0f;
+  --panel: #2a0f18;
+  --panel-2: #3a1f1f;
+  --ink: #ffe7d7;
+  --muted: #c45a5a;
+  --line: #522c2c;
+  --accent: #e63a44;
+  --warn: #e6c07b;
+  --bad: #e67373;
+  --ok: #8fca7a;
+  --queued: #8eb4d4;
+  --toast-bg: #250f0f;
+  --scrollbar-track: #150c0c;
+  --scrollbar-thumb: #7a445a;
+  --scrollbar-thumb-hover: #925a5a;
+}
+
+/* Custom accent from settings - can be overridden inline */
+.accent-custom {
+  --accent: var(--custom-accent, var(--accent));
+}
