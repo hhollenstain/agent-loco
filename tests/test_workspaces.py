@@ -124,6 +124,7 @@ def test_create_workspace_inits_loco_and_git(tmp_path: Path) -> None:
     assert created["path"] == str(target.resolve())
     assert created["is_loco"] is True
     assert created["is_git"] is True
+    assert created["git_remote"] == ""
     assert (target / ".loco" / "config.yaml").exists()
     assert (target / ".loco" / "guidelines.md").exists()
     assert (target / ".git").exists()
@@ -140,6 +141,8 @@ def test_clone_workspace_from_local_repo(tmp_path: Path) -> None:
     assert cloned["path"] == str(dest.resolve())
     assert (dest / "readme.txt").read_text(encoding="utf-8") == "hello\n"
     assert cloned["is_loco"] is True
+    assert cloned["is_git"] is True
+    assert cloned["git_remote"]
     with pytest.raises(ValueError, match="already exists"):
         clone_workspace(str(source), parent, name="checkout")
     with pytest.raises(ValueError, match="repository URL"):

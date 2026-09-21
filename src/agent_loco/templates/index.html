@@ -138,7 +138,7 @@
       display: flex;
       align-items: stretch;
       gap: 0.4rem;
-      padding: 0.5rem 4.1rem 0 0.75rem;
+      padding: 0.5rem 6.4rem 0 0.75rem;
       border-bottom: 1px solid var(--line);
       background: var(--bg);
       flex: 0 0 auto;
@@ -225,6 +225,48 @@
     #guidelines, #picker-guidelines { min-height: 8rem; font-size: 0.82rem; line-height: 1.4; }
     .workspace-row { display: flex; gap: 0.45rem; align-items: stretch; }
     .workspace-row input { flex: 1; min-width: 0; font-size: 0.82rem; }
+    .workspace-row input[type="hidden"] { display: none; }
+    .workspace-row #open-workspace-picker {
+      flex: 0 0 auto;
+      align-self: stretch;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.82rem;
+    }
+    .workspace-summary {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      line-height: 1.35;
+      color: var(--ink);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.4rem 0.6rem;
+    }
+    .workspace-kind {
+      flex: 0 0 auto;
+      width: 1.15rem;
+      height: 1.15rem;
+      color: var(--ink);
+    }
+    .workspace-kind svg {
+      display: none;
+      width: 1.15rem;
+      height: 1.15rem;
+    }
+    .workspace-kind[data-kind="github"] .icon-github,
+    .workspace-kind[data-kind="git"] .icon-git,
+    .workspace-kind[data-kind="folder"] .icon-folder { display: block; }
+    .workspace-summary .path {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -344,6 +386,137 @@
       pointer-events: none;
     }
     .toasts .notice { pointer-events: auto; animation: toast-in 0.18s ease-out; }
+    .settings-dock {
+      position: fixed;
+      top: 0.85rem;
+      right: 3.5rem;
+      z-index: 51;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      width: auto;
+      pointer-events: auto;
+    }
+    #open-settings {
+      position: relative;
+      width: 2.4rem;
+      min-width: 2.4rem;
+      height: 2.4rem;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    #open-settings:hover, #open-settings:focus,
+    .settings-dock.open #open-settings {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    #open-settings svg {
+      width: 1.15rem;
+      height: 1.15rem;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+    }
+    .settings-panel {
+      display: none;
+      width: min(28rem, calc(100vw - 1.7rem));
+      max-height: min(36rem, calc(100vh - 5rem));
+      overflow: auto;
+      position: absolute;
+      top: 3.2rem;
+      right: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+    }
+    .settings-dock.open .settings-panel { display: flex; flex-direction: column; }
+    .settings-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      padding: 0.7rem 0.8rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .settings-panel-head h2 {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 650;
+    }
+    .settings-panel-head #close-settings {
+      width: auto;
+      min-width: 0;
+      height: auto;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.78rem;
+    }
+    .settings-panel-content { padding: 0.65rem 0.7rem 0.8rem; }
+    .settings-location {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      margin: 0.4rem 0 0.85rem;
+    }
+    .settings-location .workspace-kind {
+      width: 1.35rem;
+      height: 1.35rem;
+      margin-top: 0.12rem;
+    }
+    .settings-location .workspace-kind svg {
+      width: 1.35rem;
+      height: 1.35rem;
+    }
+    .settings-location-text { min-width: 0; flex: 1; }
+    .settings-kind-label {
+      margin: 0;
+      font-size: 0.84rem;
+      font-weight: 650;
+    }
+    .settings-remote, .settings-path {
+      margin: 0.18rem 0 0;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.4;
+      word-break: break-all;
+    }
+    .settings-guidelines {
+      margin-top: 0.55rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .settings-guidelines label {
+      font-size: 0.78rem;
+      margin: 0;
+    }
+    .settings-guidelines textarea {
+      font: inherit;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      min-height: 8rem;
+    }
+    .settings-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.65rem;
+    }
+    .settings-actions button {
+      flex: 1 1 8rem;
+      width: auto;
+      min-width: 0;
+      height: auto;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
     .notify-dock {
       position: fixed;
       top: 0.85rem;
@@ -866,6 +1039,8 @@
   </style>
 </head>
 <body>
+  {% set ws_kind = 'github' if workspace_git_remote and 'github.com' in (workspace_git_remote|lower) else ('git' if workspace_is_git else 'folder') %}
+  {% set ws_kind_label = 'GitHub repository' if ws_kind == 'github' else ('Git repository' if ws_kind == 'git' else 'Local folder') %}
   <nav class="workspace-tabs" id="workspace-tabs" aria-label="Workspaces">
     <div class="workspace-tab-list" id="workspace-tab-list" role="tablist">
       {% for ws in known_workspaces %}
@@ -884,21 +1059,20 @@
         <h1 class="sidebar-title">loco</h1>
       </div>
       <form id="task-form">
-      <label for="workspace">Workspace</label>
+      <label>Workspace</label>
       <div class="workspace-row">
-        <input id="workspace" name="workspace" type="text" required value="{{ default_workspace }}">
+        <input id="workspace" name="workspace" type="hidden" required value="{{ default_workspace }}">
+        <div class="workspace-summary" id="workspace-summary" title="{{ default_workspace }}">
+          <span class="workspace-kind" id="workspace-kind" data-kind="{{ ws_kind }}" title="{{ ws_kind_label }}" aria-label="{{ ws_kind_label }}">
+            <svg class="icon-github" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+            <svg class="icon-git" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23.546 10.93 13.067.452a1.55 1.55 0 0 0-2.188 0L8.548 2.783l2.762 2.762a1.838 1.838 0 0 1 2.327 2.341l2.658 2.658a1.838 1.838 0 1 1-1.1 1.1L12.45 8.9v6.897a1.838 1.838 0 1 1-1.51-.055v-6.97a1.838 1.838 0 0 1-.997-2.414L7.43 3.902.452 10.88a1.55 1.55 0 0 0 0 2.188l10.48 10.477a1.55 1.55 0 0 0 2.188 0l10.425-10.425a1.55 1.55 0 0 0 0-2.188"/></svg>
+            <svg class="icon-folder" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.31 5.55 1 5 1H1.75Z"/></svg>
+          </span>
+          <span class="path" id="workspace-summary-path">{{ default_workspace }}</span>
+        </div>
         <button type="button" class="secondary" id="open-workspace-picker">Browse</button>
       </div>
-      <p class="hint">Pick a local folder or clone a git repo to work on it here.</p>
-
-      <label for="guidelines">Rules / guidelines</label>
-      <textarea id="guidelines" name="guidelines" spellcheck="false">{{ guidelines }}</textarea>
-      <p class="hint" id="guidelines-status">{% if custom_guidelines %}Custom rules for this workspace.{% else %}Using default rules.{% endif %}</p>
-      <div class="guidelines-actions">
-        <button type="button" class="secondary" id="save-guidelines">Save guidelines</button>
-        <button type="button" class="secondary" id="reset-guidelines">Use defaults</button>
-      </div>
-      <p class="hint">Override the agent rules for this workspace. New workspaces start with the defaults unless you change them when adding the tab.</p>
+      <p class="hint" id="workspace-info">Switch with Browse or the tab bar. Full location and rules are in settings.</p>
 
       <label for="goal">Goal</label>
       <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
@@ -1015,6 +1189,44 @@
       <div class="notice-slot" id="workspace-picker-error"></div>
     </div>
   </div>
+  <div class="settings-dock" id="settings-dock">
+    <button type="button" class="secondary" id="open-settings" aria-label="Workspace settings" aria-expanded="false" aria-controls="settings-panel" title="Workspace settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+    <div class="settings-panel" id="settings-panel" hidden>
+      <div class="settings-panel-head">
+        <h2>Workspace settings</h2>
+        <button type="button" class="secondary" id="close-settings">Close</button>
+      </div>
+      <div class="settings-panel-content">
+        <label>Location</label>
+        <div class="settings-location" id="workspace-location">
+          <span class="workspace-kind" id="settings-kind" data-kind="{{ ws_kind }}" title="{{ ws_kind_label }}" aria-hidden="true">
+            <svg class="icon-github" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+            <svg class="icon-git" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23.546 10.93 13.067.452a1.55 1.55 0 0 0-2.188 0L8.548 2.783l2.762 2.762a1.838 1.838 0 0 1 2.327 2.341l2.658 2.658a1.838 1.838 0 1 1-1.1 1.1L12.45 8.9v6.897a1.838 1.838 0 1 1-1.51-.055v-6.97a1.838 1.838 0 0 1-.997-2.414L7.43 3.902.452 10.88a1.55 1.55 0 0 0 0 2.188l10.48 10.477a1.55 1.55 0 0 0 2.188 0l10.425-10.425a1.55 1.55 0 0 0 0-2.188"/></svg>
+            <svg class="icon-folder" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.31 5.55 1 5 1H1.75Z"/></svg>
+          </span>
+          <div class="settings-location-text">
+            <p class="settings-kind-label" id="settings-kind-label">{{ ws_kind_label }}</p>
+            <p class="settings-remote" id="settings-remote"{% if not workspace_git_remote %} hidden{% endif %}>{{ workspace_git_remote }}</p>
+            <p class="settings-path" id="settings-path">{{ default_workspace }}</p>
+          </div>
+        </div>
+        <div class="settings-guidelines">
+          <label for="guidelines">Rules / guidelines</label>
+          <textarea id="guidelines" spellcheck="false">{{ guidelines }}</textarea>
+          <p class="hint" id="guidelines-status">{% if custom_guidelines %}Custom rules for this workspace.{% else %}Using default rules.{% endif %}</p>
+          <div class="settings-actions">
+            <button type="button" id="save-guidelines">Save rules</button>
+            <button type="button" class="secondary" id="reset-guidelines">Use defaults</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="notify-dock">
     <button type="button" class="secondary notify-toggle" id="notify-toggle" aria-label="Notification history" aria-expanded="false" aria-controls="notify-history" title="Notification history">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1054,6 +1266,16 @@
     const browsePathEl = document.getElementById("browse-path");
     const pickerErrorEl = document.getElementById("workspace-picker-error");
     const workspaceEl = document.getElementById("workspace");
+    const workspaceSummaryEl = document.getElementById("workspace-summary");
+    const workspaceKindEl = document.getElementById("workspace-kind");
+    const workspaceSummaryPathEl = document.getElementById("workspace-summary-path");
+    const settingsKindEl = document.getElementById("settings-kind");
+    const settingsKindLabelEl = document.getElementById("settings-kind-label");
+    const settingsRemoteEl = document.getElementById("settings-remote");
+    const settingsPathEl = document.getElementById("settings-path");
+    const settingsDockEl = document.getElementById("settings-dock");
+    const settingsToggleEl = document.getElementById("open-settings");
+    const settingsPanelEl = document.getElementById("settings-panel");
     const guidelinesEl = document.getElementById("guidelines");
     const guidelinesStatusEl = document.getElementById("guidelines-status");
     const workspaceTabListEl = document.getElementById("workspace-tab-list");
@@ -1278,12 +1500,63 @@
       return body;
     }
 
+    function settingsOpen() {
+      return settingsDockEl.classList.contains("open");
+    }
+
+    function setSettingsOpen(open) {
+      settingsDockEl.classList.toggle("open", open);
+      settingsPanelEl.hidden = !open;
+      settingsToggleEl.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    const WORKSPACE_KIND_LABELS = {
+      github: "GitHub repository",
+      git: "Git repository",
+      folder: "Local folder",
+    };
+
+    function workspaceType(item) {
+      const remote = String((item && item.git_remote) || "");
+      if (/github\.com/i.test(remote)) return "github";
+      if (item && item.is_git) return "git";
+      return "folder";
+    }
+
+    function applyWorkspaceKind(el, kind) {
+      if (!el) return;
+      const label = WORKSPACE_KIND_LABELS[kind] || WORKSPACE_KIND_LABELS.folder;
+      el.dataset.kind = kind;
+      el.title = label;
+      if (el.getAttribute("aria-hidden") !== "true") el.setAttribute("aria-label", label);
+    }
+
+    function updateWorkspaceDisplay(body) {
+      const path = (body && body.current) || workspaceEl.value;
+      if (path) workspaceEl.value = path;
+      const item = ((body && body.workspaces) || []).find((ws) => ws.path === path) || {};
+      const kind = workspaceType(item);
+      applyWorkspaceKind(workspaceKindEl, kind);
+      applyWorkspaceKind(settingsKindEl, kind);
+      if (workspaceSummaryPathEl) workspaceSummaryPathEl.textContent = path;
+      if (workspaceSummaryEl) {
+        workspaceSummaryEl.title = `${WORKSPACE_KIND_LABELS[kind]} · ${path}`;
+      }
+      if (settingsKindLabelEl) settingsKindLabelEl.textContent = WORKSPACE_KIND_LABELS[kind];
+      if (settingsRemoteEl) {
+        settingsRemoteEl.textContent = item.git_remote || "";
+        settingsRemoteEl.hidden = !item.git_remote;
+      }
+      if (settingsPathEl) settingsPathEl.textContent = path;
+    }
+
     function applyWorkspacePayload(body) {
       if (body.default_guidelines) state.defaultGuidelines = body.default_guidelines;
       if (body.current) workspaceEl.value = body.current;
       if (body.home && !cloneParentEl.value) {
         cloneParentEl.value = `${body.home.replace(/\/$/, "")}/projects`;
       }
+      updateWorkspaceDisplay(body);
       renderWorkspaceTabs(body.workspaces || [], body.current);
       if (archivedEl && !pickerEl.hidden) {
         renderArchivedWorkspaces(body.archived || []);
@@ -1412,6 +1685,7 @@
     }
 
     async function openPicker() {
+      setSettingsOpen(false);
       pickerEl.hidden = false;
       pickerEl.classList.add("open");
       pickerErrorEl.replaceChildren();
@@ -1564,16 +1838,28 @@
         showPickerError(err);
       }
     });
+    document.getElementById("close-settings").addEventListener("click", () => setSettingsOpen(false));
+    settingsToggleEl.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = !settingsOpen();
+      if (open) setNotifyPanel(false);
+      setSettingsOpen(open);
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (pickerEl.classList.contains("open")) {
         closePicker();
         return;
       }
+      if (settingsOpen()) {
+        setSettingsOpen(false);
+        return;
+      }
       if (notifyPanelOpen()) setNotifyPanel(false);
     });
     notifyToggleEl.addEventListener("click", (event) => {
       event.stopPropagation();
+      setSettingsOpen(false);
       setNotifyPanel(!notifyPanelOpen());
     });
     document.getElementById("notify-clear").addEventListener("click", () => {
@@ -1581,6 +1867,7 @@
       renderNotificationHistory();
     });
     document.addEventListener("click", (event) => {
+      if (settingsOpen() && !settingsDockEl.contains(event.target)) setSettingsOpen(false);
       if (!notifyPanelOpen()) return;
       if (notifyDockEl.contains(event.target)) return;
       setNotifyPanel(false);

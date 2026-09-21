@@ -533,6 +533,14 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert b'id="archived-workspaces"' in home.content
         assert b"workspace-tab-archive" in home.content
         assert b'id="guidelines"' in home.content
+        assert b'id="open-settings"' in home.content
+        assert b'id="workspace-location"' in home.content
+        assert b'id="workspace-summary"' in home.content
+        assert b'class="icon-github"' in home.content
+        assert b'class="icon-folder"' in home.content
+        assert b'id="settings-kind-label"' in home.content
+        assert b'id="save-guidelines"' in home.content
+        assert b'id="workspace" name="workspace" type="hidden"' in home.content
         assert b"Clone a repository" in home.content
 
         listed = client.get("/api/workspaces")
@@ -541,6 +549,8 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert body["current"] == str(tmp_path.resolve())
         assert body["home"]
         assert any(item["path"] == str(tmp_path.resolve()) for item in body["workspaces"])
+        assert "is_git" in body["workspaces"][0]
+        assert "git_remote" in body["workspaces"][0]
 
         browse = client.get("/api/workspaces/browse", params={"path": str(tmp_path)})
         assert browse.status_code == 200

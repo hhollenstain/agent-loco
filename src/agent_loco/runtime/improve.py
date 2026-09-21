@@ -174,18 +174,14 @@ def _run_cycle(
 
     log_progress("Running after tests...")
     tests_after = _maybe_test(workspace, project, settings, phase="after")
-    if tests_after and not tests_after.ok:
-        for attempt in range(project.max_repair_attempts):
-            log_progress(f"Repair attempt {attempt + 1}")
-            agent.run(
-                "The test suite failed after the last changes. "
-                "Fix the failures and nothing else.\n\n"
-                + tests_after.output,
-                collect_context(workspace.root, project, allow_publish=allow_create_pr),
-            )
-            tests_after = _maybe_test(workspace, project, settings, phase="repair")
-            if tests_after.ok:
-                break
+    tests_after = _repair_failing_tests(
+        workspace,
+        project,
+        settings,
+        agent,
+        tests_after,
+        allow_create_pr=allow_create_pr,
+    )
 
     tests_passed = None if tests_after is None else tests_after.ok
     if settings.require_tests and tests_after is not None and not tests_after.ok:
@@ -471,6 +467,14 @@ def _handle_empty_diff(
         if follow.summary:
             summary = follow.summary
         tests_after = _maybe_test(workspace, project, settings, phase="retry")
+        tests_after = _repair_failing_tests(
+            workspace,
+            project,
+            settings,
+            agent,
+            tests_after,
+            allow_create_pr=allow_create_pr,
+        )
         tests_passed = None if tests_after is None else tests_after.ok
         if settings.require_tests and tests_after is not None and not tests_after.ok:
             result = CycleResult(
@@ -514,10 +518,11 @@ def _empty_diff_retry_prompt(goal: str, reason: str) -> str:
     return (
         "You inspected the repo but did not change any files that implement the goal. "
         "The goal is not already done. Do not summarize. Do not only read more files "
-        "or run tests. Do not write a placeholder, status note, or verification test. "
-        "Call str_replace on the existing files (or write_file for a new/small "
-        "file) and implement this exact goal. Do not rewrite a large file with "
-        "write_file.\n\n"
+        "or run tests. Do not write a placeholder, status note, or unrelated "
+        "verification test. Call str_replace on the existing files (or write_file "
+        "for a new/small file) and implement this exact goal. Do not rewrite a "
+        "large file with write_file. If existing tests assert old markup, APIs, "
+        "or layout that this goal replaces, update those tests in the same change.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}"
     )
@@ -654,6 +659,14 @@ def _ensure_goal_met(
         if follow.summary:
             summary = follow.summary
         tests_after = _maybe_test(workspace, project, settings, phase="retry")
+        tests_after = _repair_failing_tests(
+            workspace,
+            project,
+            settings,
+            agent,
+            tests_after,
+            allow_create_pr=allow_create_pr,
+        )
         tests_passed = None if tests_after is None else tests_after.ok
         if settings.require_tests and tests_after is not None and not tests_after.ok:
             return {
@@ -687,15 +700,49 @@ def _goal_retry_prompt(goal: str, reason: str, diff: str) -> str:
     return (
         "The stated goal is not done. The current diff does not fulfill it. "
         "Do not summarize. Do not switch to a different task. "
-        "Do not write placeholder, status, or verification files. "
+        "Do not write placeholder, status, or unrelated verification files. "
         "If the diff is unrelated, replace or remove it and implement this exact goal. "
         "Use str_replace for surgical edits; do not rewrite large files. "
+        "If existing tests assert old markup, APIs, or layout that this goal "
+        "replaces, update those tests. "
         "If this is a UI change, call review_ui after editing, click new tabs, "
         "and fix render errors or dead controls.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}\n\n"
         f"Current diff:\n{diff}"
     )
+
+
+def _test_repair_prompt(output: str) -> str:
+    return (
+        "The test suite failed after the last changes. Fix the failures. "
+        "If a test asserts old markup, API shape, or behavior that this goal "
+        "intentionally changed, update that test to match the new implementation. "
+        "Do not revert the goal. Do not write placeholder or unrelated "
+        "verification tests.\n\n"
+        f"{(output or '').strip()}"
+    )
+
+
+def _repair_failing_tests(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    agent: CodingAgent,
+    tests_after,
+    *,
+    allow_create_pr: bool,
+):
+    if tests_after is None or tests_after.ok:
+        return tests_after
+    context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    for attempt in range(project.max_repair_attempts):
+        log_progress(f"Repair attempt {attempt + 1}/{project.max_repair_attempts}")
+        agent.run(_test_repair_prompt(tests_after.output), context)
+        tests_after = _maybe_test(workspace, project, settings, phase="repair")
+        if tests_after is None or tests_after.ok:
+            break
+    return tests_after
 
 
 def _choose_goal(project: ProjectConfig, tests_before) -> str | None:

@@ -70,11 +70,30 @@ def _raw_paths(items: object) -> list[str]:
     return result
 
 
+def _git_remote_url(path: Path) -> str:
+    if not (path / ".git").exists():
+        return ""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=path,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return (result.stdout or "").strip()
+
+
 def _entry(path: Path) -> dict[str, str | bool]:
     return {
         "path": str(path),
         "name": path.name or str(path),
         "is_git": (path / ".git").exists(),
+        "git_remote": _git_remote_url(path),
         "is_loco": (path / ".loco" / "config.yaml").exists(),
         "guidelines": load_guidelines(path),
         "custom_guidelines": guidelines_are_custom(path),

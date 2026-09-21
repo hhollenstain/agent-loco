@@ -195,8 +195,75 @@ def test_cycle_retries_when_agent_inspects_but_goal_is_unmet(
     assert result.committed is True
 
 
+def test_cycle_repairs_tests_broken_by_empty_diff_retry(
+    tmp_path: Path, settings: Settings
+) -> None:
+    (tmp_path / "ui.html").write_text(
+        '<textarea id="guidelines"></textarea>\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "check.py").write_text(
+        "from pathlib import Path\n"
+        "assert 'id=\"guidelines\"' in Path('ui.html').read_text()\n",
+        encoding="utf-8",
+    )
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text(
+        "name: fixture\n"
+        "test_command: python3 check.py\n"
+        "max_repair_attempts: 1\n"
+        "publish:\n  enabled: false\n"
+        "goals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    (loco / "goals.md").write_text(
+        "- [ ] Move guidelines into a settings menu\n",
+        encoding="utf-8",
+    )
+    init_git_repo(tmp_path)
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text="I will inspect the UI first."),
+            AssistantTurn(text="The templates exist; I will move guidelines next."),
+            AssistantTurn(text="Here is the write_file JSON I would send."),
+            AssistantTurn(text="Done looking at the current UI."),
+            _review_turn(False, "guidelines are still in the sidebar"),
+            _write_file_turn(
+                "ui.html",
+                '<div id="settings-panel"><textarea id="rules"></textarea></div>\n',
+            ),
+            AssistantTurn(text="Moved guidelines into settings."),
+            _write_file_turn(
+                "check.py",
+                "from pathlib import Path\n"
+                "assert 'id=\"settings-panel\"' in Path('ui.html').read_text()\n",
+                call_id="call-2",
+            ),
+            AssistantTurn(text="Updated the HTML assertion."),
+            _review_turn(True, "guidelines are in the settings panel"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path, settings, llm, goal="Move guidelines into a settings menu"
+    )
+    assert result.status == "success"
+    html = (tmp_path / "ui.html").read_text(encoding="utf-8")
+    assert "settings-panel" in html
+    assert 'id="guidelines"' not in html
+    assert "settings-panel" in (tmp_path / "check.py").read_text(encoding="utf-8")
+    assert result.committed is True
+    tests = [event for event in result.events if event["kind"] == "test"]
+    assert any(event.get("phase") == "retry" and event.get("ok") is False for event in tests)
+    assert any(event.get("phase") == "repair" and event.get("ok") is True for event in tests)
+
+
 def test_retry_prompts_forbid_placeholder_work() -> None:
-    from agent_loco.runtime.improve import _empty_diff_retry_prompt, _goal_retry_prompt
+    from agent_loco.runtime.improve import (
+        _empty_diff_retry_prompt,
+        _goal_retry_prompt,
+        _test_repair_prompt,
+    )
 
     empty = _empty_diff_retry_prompt(
         "Add a task progress bar",
@@ -205,6 +272,7 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     assert "Add a task progress bar" in empty
     assert "placeholder" in empty.lower()
     assert "str_replace" in empty
+    assert "update those tests" in empty
     retry = _goal_retry_prompt(
         "Add a task progress bar",
         "only a verification test was added",
@@ -213,6 +281,11 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     assert "Add a task progress bar" in retry
     assert "verification" in retry.lower()
     assert "unrelated" in retry.lower()
+    assert "update those tests" in retry
+    repair = _test_repair_prompt("AssertionError: id=\"guidelines\"")
+    assert "update that test" in repair
+    assert "do not revert the goal" in repair.lower()
+    assert 'id="guidelines"' in repair
 
 
 def test_cycle_create_pr_uses_feature_branch_not_main(

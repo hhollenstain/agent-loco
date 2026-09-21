@@ -174,6 +174,8 @@ class UiState:
         return {
             "default_workspace": self.default_workspace,
             "known_workspaces": workspaces,
+            "workspace_is_git": bool((current or {}).get("is_git")),
+            "workspace_git_remote": (current or {}).get("git_remote") or "",
             "guidelines": (current or {}).get("guidelines") or default_guidelines(),
             "custom_guidelines": bool((current or {}).get("custom_guidelines")),
             "default_guidelines": default_guidelines(),
