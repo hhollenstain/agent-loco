@@ -113,8 +113,9 @@ def issues_tools(workspace: Workspace) -> list[ToolSpec]:
         ToolSpec(
             name="list_goals_from_issues",
             description=(
-                "Pull issues from a GitHub/GitLab repository and convert them to actionable goals. "
+                "Pull issues from a GitHub repository and convert them to actionable goals. "
                 "This is the main tool for importing goals from issues. "
+                "Auto-updates the current branch and pushes commits after successful pull. "
                 "Returns a formatted list suitable for adding to goals.md."
             ),
             parameters=object_schema(
@@ -123,7 +124,7 @@ def issues_tools(workspace: Workspace) -> list[ToolSpec]:
                         "type": "string",
                         "description": (
                             "Repository in 'owner/repo' format. "
-                            "Defaults to the git remote repository."
+                            "Defaults to the git remote repository (must be a known GitHub repo)."
                         ),
                     },
                     "limit": {
@@ -255,14 +256,16 @@ def _pull_goals_from_issues(
     prefix: str | None,
     status_filter: str,
 ) -> ToolResult:
-    """Pull issues from a repo and format them as goals."""
+    """Pull issues from a GitHub repo and format them as goals. Auto-updates branch and pushes commits."""
     
     if not repo:
-        repo_tuple = _extract_repo_from_remote(workspace)
+        # Only accept known GitHub repos (via github_owner_repo which uses _GITHUB_REMOTE_RE)
+        from agent_loco.tools.git import github_owner_repo
+        repo_tuple = github_owner_repo(workspace)
         if repo_tuple:
             repo = f"{repo_tuple[0]}/{repo_tuple[1]}"
         else:
-            return ToolResult(False, "No repository specified and no remote found")
+            return ToolResult(False, "No repository specified and no known GitHub remote found")
     
     limit = min(max(limit, 1), 100)
     status = status_filter.lower()
@@ -299,7 +302,60 @@ def _pull_goals_from_issues(
     
     lines.append("```")
     
-    return ToolResult(True, "\n".join(lines))
+    # Auto-populate goals.md with the pulled issues
+    goals_file = workspace.root / ".loco" / "goals.md"
+    goals_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Append new goals to existing file
+    existing_content = goals_file.read_text(encoding="utf-8") if goals_file.exists() else ""
+    new_goals_content = "\n".join(lines)
+    if existing_content:
+        final_content = f"{existing_content}\n\n{new_goals_content}\n"
+        goals_file.write_text(final_content, encoding="utf-8")
+    else:
+        final_content = f"{new_goals_content}\n"
+        goals_file.write_text(final_content, encoding="utf-8")
+    
+    # Auto-commit and push the changes
+    from agent_loco.tools.git import (
+        current_branch,
+        is_protected_branch,
+        _output,
+        run_git,
+    )
+    
+    # Check if we're on a protected branch
+    branch = current_branch(workspace)
+    if is_protected_branch(branch):
+        # Create a new branch for this work
+        from datetime import UTC, datetime
+        slug = branch if branch else "goals"
+        new_branch = f"loco/{slug}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+        create_branch = run_git(workspace, ["checkout", "-b", new_branch])
+        if create_branch.returncode != 0:
+            return ToolResult(False, f"Failed to create branch: {_output(create_branch)}")
+        branch = new_branch
+    
+    # Stage and commit the goals.md file
+    stage = run_git(workspace, ["add", str(goals_file.relative_to(workspace.root))])
+    if stage.returncode != 0:
+        return ToolResult(False, f"Failed to stage goals.md: {_output(stage)}")
+    
+    commit = run_git(workspace, [
+        "commit",
+        "-m", f"Updated goals.md with issues from {repo}: {status_filter} issues",
+        "--author", "agent-loco <agent-loco@users.noreply.github.com>",
+    ])
+    if commit.returncode != 0:
+        return ToolResult(False, f"Failed to commit: {_output(commit)}")
+    
+    # Push the changes (if on a feature branch and not on protected branch)
+    if not is_protected_branch(current_branch(workspace)):
+        push = run_git(workspace, ["push", "origin", current_branch(workspace)])
+        if push.returncode != 0:
+            return ToolResult(False, f"Failed to push: {_output(push)}")
+    
+    return ToolResult(True, "\n".join(lines) + "\n\nGoals updated and pushed to current branch.")
 
 
 def _generate_mock_issues(

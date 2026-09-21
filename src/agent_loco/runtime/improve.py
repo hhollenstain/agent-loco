@@ -19,7 +19,13 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
 )
-from agent_loco.runtime.review import GoalReview, is_open_pr_goal, review_goal, review_reason
+from agent_loco.runtime.review import (
+    GoalReview,
+    half_baked_diff_markers,
+    is_open_pr_goal,
+    review_goal,
+    review_reason,
+)
 from agent_loco.runtime.uireview import (
     UiEvidence,
     collect_ui_evidence,
@@ -613,7 +619,8 @@ def _empty_diff_retry_prompt(goal: str, reason: str) -> str:
         "You inspected the repo but did not change any files that implement the goal. "
         "The goal is not already done. Do not summarize. Do not only read more files "
         "or run tests. Do not write a placeholder, status note, or unrelated "
-        "verification test. Call str_replace on the existing files (or write_file "
+        "verification test. Do not ship a stub, mock, or unused form field. "
+        "Call str_replace on the existing files (or write_file "
         "for a new/small file) and implement this exact goal. Do not rewrite a "
         "large file with write_file. If existing tests assert old markup, APIs, "
         "or layout that this goal replaces, update those tests in the same change.\n\n"
@@ -706,6 +713,16 @@ def _review_goal(
     unverified = unverified_interactive_ui(goal, ui_evidence) if ui_evidence else None
     if verdict.met and unverified:
         overridden = GoalReview(False, unverified, parsed=True, ui_errors=ui_errors)
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
+    markers = half_baked_diff_markers(diff)
+    if verdict.met and markers and not existing:
+        overridden = GoalReview(
+            False,
+            f"diff still has unfinished work: {markers[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
     if ui_errors and verdict.ui_errors != ui_errors:
@@ -849,6 +866,9 @@ def _goal_retry_prompt(
         "The stated goal is not done. The current diff does not fulfill it. "
         "Do not summarize. Do not switch to a different task. "
         "Do not write placeholder, status, or unrelated verification files. "
+        "Do not leave a stub, mock, unused required field, or a follow-up for "
+        "a later run. If the workspace already has the data (git remote, config), "
+        "use it instead of asking a human to re-type it. "
         "If the diff is unrelated, replace or remove it and implement this exact goal. "
         "Use str_replace for surgical edits; do not rewrite large files. "
         "If existing tests assert old markup, APIs, or layout that this goal "

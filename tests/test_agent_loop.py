@@ -189,6 +189,9 @@ def test_looks_unfinished_detects_mid_work_replies() -> None:
         "There are two failing tests - I need to fix the mocks. Let me update the tests:"
     )
     assert looks_unfinished("I'll write the missing assertions next.")
+    assert looks_unfinished("For now this returns mock data.")
+    assert looks_unfinished("In a real implementation this would call GitHub.")
+    assert looks_unfinished("This enables listing issues later.")
     assert not looks_unfinished("Wrote tests and they pass. Two cases still lack coverage.")
 
 

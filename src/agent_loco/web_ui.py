@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
+from agent_loco.runtime.importer import load_goals_from_workspace
 from agent_loco.runtime.project import (
     default_guidelines,
     guidelines_are_custom,
@@ -245,6 +246,15 @@ class UiState:
 
         return results
 
+    def load_goals_from_github(
+        self,
+        workspace: str | Path | None = None,
+        state: str = "open",
+    ) -> dict[str, Any]:
+        """Load issues as selectable goals from the workspace's GitHub remote."""
+        root = Path(workspace or self.default_workspace)
+        return load_goals_from_workspace(root, state=state)
+
     def paginate_history(
         self,
         workspace_root: Path,
@@ -393,6 +403,25 @@ def create_app(
             "last_base_url": selected["last_base_url"],
             "last_model": selected["last_model"],
         }
+
+    @app.get("/api/goals", response_model=None)
+    def goals_from_issues(
+        request: Request,
+        workspace: str | None = None,
+        state: str = "open",
+    ) -> Any:
+        """Get selectable goals from the current workspace's GitHub issues."""
+        ui: UiState = request.app.state.ui
+        result = ui.load_goals_from_github(workspace, state=state)
+        if result.get("error"):
+            status = (
+                400
+                if result["error"] == "workspace is not a GitHub repository"
+                else 502
+            )
+            return JSONResponse(result, status_code=status)
+        return result
+
 
     @app.get("/api/tasks", response_model=None)
     def list_tasks(

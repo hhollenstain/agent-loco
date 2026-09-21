@@ -29,6 +29,13 @@ Rules:
 - If capture could not click (static dump-dom) and the goal adds tabs, screenshots,
   or other interactive controls, the goal is unmet.
 - A summary that claims the work is done does not count unless the diff shows it.
+- Mocks, stubs, NotImplementedError, generated sample data, or comments like
+  "in a real implementation" mean unmet unless the goal is explicitly to add a stub.
+- A UI that asks the user to re-type owner/repo (or similar) when the workspace
+  git remote already identifies the repository is unmet. Infer it and load the data.
+- Changing flags, guards, or docs so a later step *could* do the goal is unmet.
+  The requested behavior must actually happen (create the PR, load the issues,
+  serve the CSS).
 - Opening a PR is done by the cycle after review, not by editing publish guards
   or shell tools. If the goal is to open a PR from the current branch and that
   branch already contains the work, set met=true.
@@ -57,6 +64,8 @@ Rules:
   buttons) mean the goal is unmet.
 - A missing diff does not mean the goal is unmet if the tree already has the
   requested result (for example a lockfile already on the requested version).
+- Scaffolding, mocks, unused required fields, or "this enables a later step" mean
+  the goal is not already met.
 - If the goal is to open a pull request from the current feature branch and
   that branch already has the work, the goal is met. The cycle opens the PR.
 - Set met=true only if a careful reviewer would accept the current tree as complete.
@@ -72,6 +81,46 @@ REVIEW_JSON_NUDGE = (
 )
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+_HALF_BAKED_ADDED = re.compile(
+    r"(?i)("
+    r"\bNotImplementedError\b|"
+    r"in a real implementation|"
+    r"for demonstration|"
+    r"generate_mock_|"
+    r"mock[_ ]issues?|"
+    r"fake data|"
+    r"coming soon|"
+    r"half[- ]baked|"
+    r"pass\s*#\s*(?:stub|todo|later|not implemented)"
+    r")"
+)
+
+
+def half_baked_diff_markers(diff: str | None) -> list[str]:
+    """Added lines that show a stub, mock, or placeholder instead of the real work."""
+    hits: list[str] = []
+    untracked_body = False
+    for line in (diff or "").splitlines():
+        if line.startswith("+++ "):
+            untracked_body = True
+            continue
+        if (
+            line.startswith("diff --git ")
+            or line.startswith("@@")
+            or line.startswith("--- ")
+        ):
+            untracked_body = False
+            continue
+        added = False
+        text = line
+        if line.startswith("+") and not line.startswith("+++"):
+            added = True
+            text = line[1:]
+        elif untracked_body and not line.startswith("-"):
+            added = True
+        if added and _HALF_BAKED_ADDED.search(text):
+            hits.append(text.strip()[:160])
+    return hits
 
 
 @dataclass(frozen=True)

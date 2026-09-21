@@ -28,8 +28,9 @@ CONTINUE_NUDGE = (
 )
 UNFINISHED_NUDGE = (
     "That reply is not a finish. You still have work left on the stated goal. "
-    "Call a tool now and apply the next edit. Do not narrate the change; "
-    "str_replace it."
+    "Finish the real behavior now: no stubs, mocks, TODOs, unused fields, or "
+    "follow-up for a later run. Call a tool and apply the next edit. "
+    "Do not narrate the change; str_replace it."
 )
 MUST_EDIT_NUDGE = (
     "The goal is still unmet. Do not stop. Call str_replace or write_file "
@@ -47,7 +48,14 @@ _UNFINISHED_RE = re.compile(
     r"(?is)("
     r"\blet me\b|"
     r"\bi(?:'m about to|'ll| will| am going to)\b|"
-    r"\bi need to (?:fix|update|write|add|change|edit|run|implement|adjust)\b"
+    r"\bi need to (?:fix|update|write|add|change|edit|run|implement|adjust)\b|"
+    r"\bhalf[- ]baked\b|"
+    r"\bfor now\b|"
+    r"\bin a real implementation\b|"
+    r"\bleave (?:it|this|the rest) (?:for|to) (?:a )?later\b|"
+    r"\bthis enables\b|"
+    r"\bgenerated? sample\b|"
+    r"\bmock(?:ed)? data\b"
     r")"
 )
 
