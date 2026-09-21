@@ -24,6 +24,7 @@ from agent_loco.runtime.uireview import (
     UiEvidence,
     collect_ui_evidence,
     format_ui_evidence,
+    resolve_ui_screenshot,
     ui_review_needed,
     unverified_interactive_ui,
 )
@@ -39,8 +40,10 @@ from agent_loco.tools.git import (
     default_base_branch,
     ensure_pr_branch,
     extract_pr_url,
+    github_owner_repo,
     has_changes,
     is_protected_branch,
+    is_tracked,
     push_changes,
     upstream_state,
 )
@@ -268,7 +271,15 @@ def _run_cycle(
     if sha_before and sha and sha != sha_before:
         committed = True
 
-    will_commit = settings.auto_commit and has_changes(workspace)
+    screenshot_files = (
+        _pr_screenshot_files(workspace) if allow_create_pr else []
+    )
+    unpublished_shots = [
+        path for path in screenshot_files if not is_tracked(workspace, path)
+    ]
+    will_commit = settings.auto_commit and (
+        has_changes(workspace) or bool(unpublished_shots)
+    )
     if allow_create_pr and (committed or will_commit):
         log_progress("Moving work onto a pull-request branch...")
         branched = ensure_pr_branch(workspace, selected_goal, sha_before)
@@ -289,13 +300,14 @@ def _run_cycle(
             return result
         log_progress(f"On branch {branched.output}")
 
-    if settings.auto_commit and has_changes(workspace):
+    if will_commit:
         log_progress("Committing changes...")
         message = _commit_message(selected_goal, agent_result.summary)
         commit = commit_changes(
             workspace,
             message,
             env=_git_env(settings),
+            extra_paths=unpublished_shots,
         )
         if not commit.ok:
             log_progress("Commit failed.")
@@ -361,7 +373,16 @@ def _run_cycle(
                 tests_passed=tests_passed,
                 commit_sha=sha,
                 branch=branch or "",
-                screenshots=_pr_screenshot_names(),
+                screenshots=[
+                    path.name
+                    for path in screenshot_files
+                    if is_tracked(workspace, path)
+                ],
+                image_base=_pr_image_base(
+                    workspace,
+                    sha,
+                    project.publish_remote,
+                ),
             ),
             base=base,
         )
@@ -777,19 +798,66 @@ def _commit_message(goal: str, summary: str) -> str:
     return first_goal_line
 
 
+_AGENT_REVIEW_UI_SLUG = "ui-review_review-ui_"
+
+
+def _pr_screenshot_rel(name: str) -> str:
+    filename = Path(name).name
+    if filename == "ui-review.png":
+        return f".loco/{filename}"
+    return f".loco/ui-screenshots/{filename}"
+
+
 def _pr_screenshot_names() -> list[str]:
-    names: list[str] = []
-    seen: set[str] = set()
+    """Keep the last successful capture of the change, not every review_ui dump."""
+    change_shots: list[str] = []
+    fallback: list[str] = []
     for event in current_events():
         if event.get("kind") != "ui":
+            continue
+        if event.get("ok") is False:
             continue
         name = str(event.get("screenshot_filename") or "").strip()
         if not name:
             name = Path(str(event.get("screenshot") or "")).name
-        if name and name not in seen:
-            seen.add(name)
-            names.append(name)
-    return names
+        name = Path(name).name
+        if not name:
+            continue
+        if _AGENT_REVIEW_UI_SLUG in name.lower():
+            fallback.append(name)
+            continue
+        change_shots.append(name)
+    chosen = change_shots or fallback
+    return chosen[-1:] if chosen else []
+
+
+def _pr_screenshot_files(workspace: Workspace) -> list[Path]:
+    files: list[Path] = []
+    seen: set[str] = set()
+    for name in _pr_screenshot_names():
+        path = resolve_ui_screenshot(workspace.root, name)
+        if path is None:
+            continue
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        files.append(path)
+    return files
+
+
+def _pr_image_base(
+    workspace: Workspace,
+    commit_sha: str | None,
+    remote: str = "origin",
+) -> str | None:
+    if not commit_sha:
+        return None
+    parsed = github_owner_repo(workspace, remote)
+    if not parsed:
+        return None
+    owner, repo = parsed
+    return f"https://github.com/{owner}/{repo}/raw/{commit_sha}"
 
 
 def _pr_body(
@@ -800,6 +868,7 @@ def _pr_body(
     commit_sha: str | None,
     branch: str,
     screenshots: list[str] | None = None,
+    image_base: str | None = None,
 ) -> str:
     detail = (summary or "").strip() or goal.strip()
     if tests_passed is True:
@@ -824,15 +893,11 @@ def _pr_body(
         "- [ ] Review this feature branch; do not merge unreviewed commits to main",
     ]
     shots = [Path(name).name for name in (screenshots or []) if str(name).strip()]
-    if shots:
+    hosted = (image_base or "").rstrip("/")
+    if shots and hosted:
         lines.extend(["", "## Screenshots", ""])
         for name in shots:
-            rel = (
-                f".loco/{name}"
-                if name == "ui-review.png"
-                else f".loco/ui-screenshots/{name}"
-            )
-            lines.append(f"![{name}]({rel})")
+            lines.append(f"![{name}]({hosted}/{_pr_screenshot_rel(name)})")
     if commit_sha:
         lines.extend(["", f"Commit: `{commit_sha}`"])
     if branch:

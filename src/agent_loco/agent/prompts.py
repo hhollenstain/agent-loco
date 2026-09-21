@@ -44,7 +44,8 @@ Rules:
 - When the goal changes UI (HTML, CSS, JS, templates, layout), call review_ui
   after editing. Click new tabs and buttons. Fix JavaScript errors, unusable
   layout (zero-size, crushed labels, missing controls), and controls that do
-  not change the page. A diff is not done until the rendered page works.
+  not change the page. The requested panels must be visible in the capture
+  (non-zero size, not display:none). A diff is not done until the rendered page works.
 - Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """

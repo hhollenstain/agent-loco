@@ -46,6 +46,52 @@ def extract_pr_url(text: str | None) -> str | None:
     return match.group(0).rstrip(").,;")
 
 
+_GITHUB_REMOTE_RE = re.compile(
+    r"(?:github\.com[:/]|github\.com/)(?P<owner>[^/]+)/(?P<repo>[^/#?\s]+)",
+    re.IGNORECASE,
+)
+
+
+def parse_github_remote(url: str) -> tuple[str, str] | None:
+    """Return (owner, repo) from an origin-style GitHub remote URL."""
+    match = _GITHUB_REMOTE_RE.search((url or "").strip())
+    if not match:
+        return None
+    owner = match.group("owner")
+    repo = match.group("repo").rstrip("/")
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    if not owner or not repo:
+        return None
+    return owner, repo
+
+
+def github_owner_repo(
+    workspace: Workspace,
+    remote: str = "origin",
+) -> tuple[str, str] | None:
+    result = run_git(workspace, ["remote", "get-url", remote or "origin"])
+    if result.returncode != 0:
+        return None
+    return parse_github_remote(result.stdout.strip())
+
+
+def is_tracked(workspace: Workspace, path: Path | str) -> bool:
+    candidate = Path(path)
+    root = workspace.root.resolve()
+    try:
+        if candidate.is_absolute():
+            rel = candidate.resolve().relative_to(root).as_posix()
+        else:
+            rel = _posix_rel(candidate)
+    except (OSError, ValueError):
+        return False
+    if not rel:
+        return False
+    result = run_git(workspace, ["ls-files", "--error-unmatch", "--", rel])
+    return result.returncode == 0
+
+
 @dataclass(frozen=True)
 class UpstreamState:
     branch: str | None
@@ -407,6 +453,7 @@ def commit_changes(
     workspace: Workspace,
     message: str,
     env: dict[str, str] | None = None,
+    extra_paths: list[Path | str] | None = None,
 ) -> ToolResult:
     message = with_loco_coauthor(message)
     if not message:
@@ -422,6 +469,7 @@ def commit_changes(
     if add.returncode != 0:
         return ToolResult(False, _output(add))
     _unstage_runtime_artifacts(workspace)
+    _force_add_paths(workspace, extra_paths)
 
     leftover_secrets = _staged_secrets(workspace)
     if leftover_secrets:
@@ -488,6 +536,23 @@ def _unstage_runtime_artifacts(workspace: Workspace) -> None:
     ]
     if runtime:
         run_git(workspace, ["reset", "HEAD", "--", *runtime])
+
+
+def _force_add_paths(workspace: Workspace, extra_paths: list[Path | str] | None) -> None:
+    """Stage gitignored files that should ship with a PR, such as one UI screenshot."""
+    root = workspace.root.resolve()
+    for raw in extra_paths or []:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        try:
+            path = candidate.resolve()
+            rel = path.relative_to(root)
+        except (OSError, ValueError):
+            continue
+        if not path.is_file():
+            continue
+        run_git(workspace, ["add", "-f", "--", rel.as_posix()])
 
 
 def _changed_paths(workspace: Workspace) -> list[Path]:
