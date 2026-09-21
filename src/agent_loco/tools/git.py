@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from dataclasses import dataclass
@@ -523,8 +524,53 @@ def create_pull_request(
         capture_output=True,
         text=True,
     )
-    ok = result.returncode == 0
-    return ToolResult(ok, (result.stdout or result.stderr).strip())
+    output = (result.stdout or result.stderr).strip()
+    if result.returncode == 0:
+        return ToolResult(True, output)
+    if extract_pr_url(output):
+        return ToolResult(True, output)
+    return ToolResult(False, output)
+
+
+def existing_pull_request(workspace: Workspace) -> str | None:
+    """URL of the open PR for the current branch, if one already exists."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", "--json", "url"],
+            cwd=workspace.root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        return extract_pr_url((result.stdout or result.stderr).strip())
+    try:
+        data = json.loads(result.stdout or "")
+    except json.JSONDecodeError:
+        return extract_pr_url(result.stdout)
+    if not isinstance(data, dict):
+        return extract_pr_url(result.stdout)
+    url = str(data.get("url") or "").strip()
+    return url or extract_pr_url(result.stdout)
+
+
+def commits_ahead_of_base(workspace: Workspace, base: str | None = None) -> int:
+    """How many commits HEAD has that are not on the default base branch."""
+    target = (base or default_base_branch(workspace)).strip() or "main"
+    for ref in (f"origin/{target}", target):
+        exists = run_git(workspace, ["rev-parse", "--verify", "--quiet", ref])
+        if exists.returncode != 0:
+            continue
+        counted = run_git(workspace, ["rev-list", "--count", f"{ref}..HEAD"])
+        if counted.returncode != 0:
+            continue
+        try:
+            return int(counted.stdout.strip() or "0")
+        except ValueError:
+            return 0
+    return 0
 
 
 def _unstage_runtime_artifacts(workspace: Workspace) -> None:

@@ -451,6 +451,144 @@ def _review_turn(met: bool, reason: str) -> AssistantTurn:
     return AssistantTurn(text=payload % reason)
 
 
+def _inspect_only_turns() -> list[AssistantTurn]:
+    return [
+        AssistantTurn(text="Looked at the current branch."),
+        AssistantTurn(text="No files to change."),
+        AssistantTurn(text="The work is already on this branch."),
+        AssistantTurn(text="Stopping without edits."),
+    ]
+
+
+def _commit_on_feature_branch(root: Path, name: str = "loco/existing-work") -> None:
+    workspace = Workspace(root)
+    run_git(workspace, ["checkout", "-b", name])
+    app = root / "app.py"
+    app.write_text(app.read_text(encoding="utf-8") + "# feature\n", encoding="utf-8")
+    run_git(workspace, ["add", "app.py"])
+    run_git(workspace, ["commit", "-m", "feature work"])
+
+
+def test_cycle_opens_pr_for_existing_feature_branch_without_new_files(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _green_project(tmp_path)
+    _commit_on_feature_branch(tmp_path)
+    captured: dict[str, str | None] = {}
+
+    def fake_pr(ws, title, body, *, base=None):
+        captured["branch"] = current_branch(ws)
+        captured["base"] = base
+        return ToolResult(True, "https://example.test/pull/11")
+
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.push_changes",
+        lambda *args, **kwargs: ToolResult(True, "pushed"),
+    )
+    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_loco.runtime.improve.existing_pull_request", lambda _ws: None)
+    llm = ScriptedClient(
+        [
+            *_inspect_only_turns(),
+            _review_turn(False, "the cycle has not opened a pull request yet"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="from the current branch create a PR",
+        cli_create_pr=True,
+    )
+    assert result.status == "success"
+    assert result.committed is False
+    assert result.published is True
+    assert result.pr_url == "https://example.test/pull/11"
+    assert captured["branch"] == "loco/existing-work"
+    assert captured["base"] in {"main", "master"}
+    assert "without new files" in (result.reason or "")
+    assert any(
+        event.get("kind") == "pr" and event.get("url") == result.pr_url
+        for event in result.events
+    )
+
+
+def test_cycle_reuses_existing_pr_without_creating_another(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _green_project(tmp_path)
+    _commit_on_feature_branch(tmp_path)
+    created = {"count": 0}
+
+    def fake_pr(*args, **kwargs):
+        created["count"] += 1
+        return ToolResult(True, "https://example.test/pull/8")
+
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.push_changes",
+        lambda *args, **kwargs: ToolResult(True, "pushed"),
+    )
+    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.existing_pull_request",
+        lambda _ws: "https://example.test/pull/7",
+    )
+    llm = ScriptedClient(
+        [
+            *_inspect_only_turns(),
+            _review_turn(True, "the feature branch already has the work"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="from the current branch create a PR",
+        cli_create_pr=True,
+    )
+    assert result.status == "success"
+    assert result.committed is False
+    assert result.published is True
+    assert result.pr_url == "https://example.test/pull/7"
+    assert created["count"] == 0
+
+
+def test_cycle_does_not_open_pr_from_main_without_new_files(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _green_project(tmp_path)
+    created = {"count": 0}
+
+    def fake_pr(*args, **kwargs):
+        created["count"] += 1
+        return ToolResult(True, "https://example.test/pull/3")
+
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.push_changes",
+        lambda *args, **kwargs: ToolResult(True, "pushed"),
+    )
+    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    llm = ScriptedClient(
+        [
+            *_inspect_only_turns(),
+            _review_turn(True, "the workspace already matches the goal"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="from the current branch create a PR",
+        cli_create_pr=True,
+    )
+    assert result.status == "success"
+    assert result.committed is False
+    assert result.published is False
+    assert result.pr_url is None
+    assert created["count"] == 0
+    assert current_branch(Workspace(tmp_path)) in {"main", "master"}
+
+
 def test_cycle_skips_pr_when_goal_is_not_met(
     tmp_path: Path, settings: Settings, monkeypatch
 ) -> None:

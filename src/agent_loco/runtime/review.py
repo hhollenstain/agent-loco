@@ -29,6 +29,9 @@ Rules:
 - If capture could not click (static dump-dom) and the goal adds tabs, screenshots,
   or other interactive controls, the goal is unmet.
 - A summary that claims the work is done does not count unless the diff shows it.
+- Opening a PR is done by the cycle after review, not by editing publish guards
+  or shell tools. If the goal is to open a PR from the current branch and that
+  branch already contains the work, set met=true.
 - Use the changed-file list. A lockfile may be summarized as `package: old -> new`
   instead of a hash dump; that still counts as updating the package.
 - Do not infer that a dependency was not updated just because hashes were omitted.
@@ -54,6 +57,8 @@ Rules:
   buttons) mean the goal is unmet.
 - A missing diff does not mean the goal is unmet if the tree already has the
   requested result (for example a lockfile already on the requested version).
+- If the goal is to open a pull request from the current feature branch and
+  that branch already has the work, the goal is met. The cycle opens the PR.
 - Set met=true only if a careful reviewer would accept the current tree as complete.
 - Set met=false if the goal still requires work.
 
@@ -81,6 +86,17 @@ class GoalReview:
 def is_test_suite_goal(goal: str) -> bool:
     first = goal.strip().splitlines()[0].lower() if goal.strip() else ""
     return first.startswith("make the project's test suite pass")
+
+
+_OPEN_PR_GOAL_RE = re.compile(
+    r"\b(create|open|make|publish)\b.{0,48}\b(pr|pull request)\b",
+    re.IGNORECASE,
+)
+
+
+def is_open_pr_goal(goal: str) -> bool:
+    """True when the user asked to open a PR from the current branch, not to change code."""
+    return bool(_OPEN_PR_GOAL_RE.search(goal or ""))
 
 
 def parse_review(text: str | None) -> GoalReview:

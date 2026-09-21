@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from agent_loco.llm.client import AssistantTurn, ScriptedClient
 from agent_loco.progress import bind_progress, current_events, reset_progress
-from agent_loco.runtime.review import parse_review, review_goal, review_reason
+from agent_loco.runtime.review import (
+    is_open_pr_goal,
+    parse_review,
+    review_goal,
+    review_reason,
+)
+
+
+def test_is_open_pr_goal_matches_create_pr_wording() -> None:
+    assert is_open_pr_goal("from the current branch create a PR")
+    assert is_open_pr_goal("Open a pull request for this work")
+    assert not is_open_pr_goal("Improve the UI")
+    assert not is_open_pr_goal("Make the adder work")
 
 
 def test_parse_review_accepts_plain_json() -> None:

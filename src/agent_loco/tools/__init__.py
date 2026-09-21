@@ -5,6 +5,7 @@ from agent_loco.tools.base import ToolResult, ToolSpec
 from agent_loco.tools.browser import browser_tools
 from agent_loco.tools.files import file_tools
 from agent_loco.tools.git import git_tools
+from agent_loco.tools.issues import issues_tools
 from agent_loco.tools.shell import shell_tools
 from agent_loco.tools.tests import test_tools
 
@@ -24,6 +25,7 @@ def build_tools(
         *shell_tools(workspace, command_timeout_seconds, allow_publish=allow_publish),
         *test_tools(workspace, test_command, command_timeout_seconds),
         *git_tools(workspace, git_author_name, git_author_email, allow_publish=allow_publish),
+        *issues_tools(workspace),
     ]
 
 

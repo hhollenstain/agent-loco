@@ -119,3 +119,34 @@ def test_search_finds_literal(tmp_path: Path) -> None:
     result = _tool(workspace, "search_text").handler(query="loco")
     assert result.ok
     assert "note.txt" in result.output
+
+
+from agent_loco.sandbox import SandboxError, Workspace
+from agent_loco.tools.base import ToolSpec
+from agent_loco.tools.issues import issues_tools
+
+
+def _issues_tool(workspace: Workspace, name: str):
+    from agent_loco.tools.issues import issues_tools
+    return next(tool for tool in issues_tools(workspace) if tool.name == name)
+
+
+def test_issue_tools_exist(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    tools = issues_tools(workspace)
+    tool_names = [t.name for t in tools]
+    assert "list_issues" in tool_names
+    assert "get_issue" in tool_names
+    assert "parse_issue_url" in tool_names
+    assert "list_goals_from_issues" in tool_names
+
+
+def test_parse_issue_url(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    result = _issues_tool(workspace, "parse_issue_url").handler(
+        url="https://github.com/octocat/Spoon-Knife/issues/123"
+    )
+    assert result.ok
+    assert "123" in result.output
+    assert "octocat" in result.output
+    assert "Spoon-Knife" in result.output
