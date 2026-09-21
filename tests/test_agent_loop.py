@@ -634,3 +634,43 @@ def test_agent_requires_run_tests_after_readme_edit(tmp_path: Path) -> None:
         if message.get("role") == "user" and isinstance(message.get("content"), str)
     ]
     assert any("run_tests" in content for content in contents)
+
+
+def test_agent_verifies_ui_itself_when_it_hits_the_turn_cap(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "agent_loco.tools.browser.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Rerun (72x24)"),
+    )
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="edit-1",
+                        name="write_file",
+                        arguments={
+                            "path": "ui.html",
+                            "content": "<button class='rerun-btn'>Rerun</button>",
+                        },
+                    )
+                ],
+            ),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=1).run("Add a rerun button")
+    assert result.stopped_reason == "completed"
+    assert result.tool_calls >= 2

@@ -171,8 +171,10 @@ class CodingAgent:
         validate_nudges = 0
         inspect_rounds = 0
 
+        last_text = ""
         for iteration in range(1, self.max_iterations + 1):
             turn = timed_complete(self.llm, messages, schemas, purpose="agent")
+            last_text = turn.text or last_text
             calls = turn.tool_calls or parse_tool_calls(turn.text, known_names)
             if calls:
                 native = bool(turn.tool_calls)
@@ -265,6 +267,24 @@ class CodingAgent:
                 iterations=iteration,
                 tool_calls=tool_calls,
                 stopped_reason="completed",
+            )
+
+        if mutated_ui and not verified_ui and "review_ui" in known_names:
+            result = execute_tool(self.tools, "review_ui", {})
+            tool_calls += 1
+            log.info("tool review_ui ok=%s (end-of-run)", result.ok)
+            if result.ok:
+                record_event(kind="step", message="Verified rendered UI at the end of the run.")
+                summary = (last_text or "").strip() or "Verified rendered UI after edits."
+                return AgentResult(
+                    summary=summary,
+                    iterations=self.max_iterations,
+                    tool_calls=tool_calls,
+                    stopped_reason="completed",
+                )
+            record_event(
+                kind="step",
+                message="Rendered UI still failing at iteration limit.",
             )
 
         return AgentResult(

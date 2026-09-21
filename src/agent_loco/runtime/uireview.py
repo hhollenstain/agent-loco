@@ -52,7 +52,8 @@ GENERIC_RESOURCE_CONSOLE_RE = re.compile(
 PAGE_EVAL = """() => {
   const nodes = [...document.querySelectorAll(
     'button, a, [role="tab"], [role="button"], h1, h2, h3, label, input,'
-    + ' select, textarea, .progress-stage, .task, .task-card'
+    + ' select, textarea, .progress-stage, .task, .task-card,'
+    + ' .rerun-btn, .history-line-stats, .pr-link'
   )];
   const isHidden = (el) => {
     if (!el) return true;
@@ -95,6 +96,7 @@ PAGE_EVAL = """() => {
       return {
         tag: el.tagName.toLowerCase(),
         name,
+        cls: (typeof el.className === "string" ? el.className : "").slice(0, 80),
         hidden: isHidden(el),
         w: Math.round(box.width),
         h: Math.round(box.height),
@@ -313,12 +315,16 @@ def start_preview(
     command = getattr(project, "preview_command", None)
     if command:
         return _start_command_preview(workspace, str(command), host_port)
+    # Never serve agent-loco Jinja templates as static HTML. That captures
+    # `{{ ws.name }}` and 404s /static CSS instead of the running app.
+    if _is_loco_project(workspace.root) and (
+        not path or _is_loco_template_path(workspace, path)
+    ):
+        return _start_loco_preview(workspace, host_port)
     if path:
         html_path = workspace.resolve(path)
         if html_path.is_file():
             return _start_static_preview(html_path.parent, host_port, html_path.name)
-    if _is_loco_project(workspace.root):
-        return _start_loco_preview(workspace, host_port)
     html = _first_html_file(workspace.root)
     if html is not None:
         return _start_static_preview(html.parent, host_port, html.name)
@@ -634,6 +640,7 @@ def _from_eval(
         height = int(item.get("h") or 0)
         if name and width < 8 and height < 8:
             smashed.append(f"{name} ({width}x{height})")
+    smashed.extend(_overlapping_controls(elements))
     injected = data.get("errors") if isinstance(data.get("errors"), list) else []
     errors = [str(item) for item in [*page_errors, *injected] if str(item).strip()]
     text = str(data.get("text") or "")
@@ -692,7 +699,10 @@ def _format_snapshot(text: str, elements: list[Any], tabs: list[Any] | None = No
         if not name:
             continue
         tag = item.get("tag") or "node"
-        lines.append(f"{tag}: {name} ({item.get('w')}x{item.get('h')})")
+        loc = ""
+        if item.get("x") is not None and item.get("y") is not None:
+            loc = f" @ {item.get('x')},{item.get('y')}"
+        lines.append(f"{tag}: {name} ({item.get('w')}x{item.get('h')}{loc})")
         if len(lines) >= 40:
             break
     body = text.strip()
@@ -730,6 +740,12 @@ def unverified_interactive_ui(goal: str, evidence: UiEvidence) -> str | None:
                 "Rendered UI never clicked the Current/Past runs tabs; "
                 "those controls were not verified"
             )
+    if re.search(r"overlap|overlapping", goal or "", re.I):
+        if evidence.smashed:
+            return f"Rendered UI controls overlap or are unusable: {evidence.smashed[0]}"
+        snapshot = (evidence.snapshot or "").lower()
+        if "rerun" in (goal or "").lower() and "rerun" not in snapshot:
+            return "Rendered UI never showed the rerun control after capture"
     return None
 
 
@@ -798,6 +814,81 @@ def _is_loco_project(root: Path) -> bool:
     return (root / "src" / "agent_loco" / "web_ui.py").is_file() or (
         root / "src" / "agent_loco" / "templates" / "index.html"
     ).is_file()
+
+
+def _is_loco_template_path(workspace: Workspace, path: str | None) -> bool:
+    """True when path is this app's Jinja template, not a standalone HTML file."""
+    if not path or not _is_loco_project(workspace.root):
+        return False
+    try:
+        resolved = workspace.resolve(path)
+        rel = resolved.resolve().relative_to(workspace.root.resolve()).as_posix()
+    except (OSError, ValueError, Exception):
+        rel = str(path or "").replace("\\", "/")
+    lowered = rel.lower()
+    return "/templates/" in f"/{lowered}" and lowered.endswith((".html", ".htm"))
+
+
+def _control_class(item: dict) -> str:
+    return str(item.get("cls") or "").lower()
+
+
+def _control_rect(item: dict) -> tuple[int, int, int, int] | None:
+    try:
+        width = int(item.get("w") or 0)
+        height = int(item.get("h") or 0)
+        x = int(item.get("x") or 0)
+        y = int(item.get("y") or 0)
+    except (TypeError, ValueError):
+        return None
+    if width < 4 or height < 4:
+        return None
+    return (x, y, x + width, y + height)
+
+
+def _rects_overlap(
+    left: tuple[int, int, int, int],
+    right: tuple[int, int, int, int],
+    *,
+    slack: int = 1,
+) -> bool:
+    return (
+        left[0] < right[2] - slack
+        and right[0] < left[2] - slack
+        and left[1] < right[3] - slack
+        and right[1] < left[3] - slack
+    )
+
+
+def _overlapping_controls(elements: list[Any]) -> list[str]:
+    """Rerun / PR / +/- stats that share screen space are a layout failure."""
+    interesting: list[tuple[str, str, tuple[int, int, int, int]]] = []
+    for item in elements:
+        if not isinstance(item, dict) or item.get("hidden"):
+            continue
+        cls = _control_class(item)
+        name = str(item.get("name") or item.get("tag") or "control").strip()
+        kind = None
+        if "rerun-btn" in cls:
+            kind = "rerun"
+        elif "history-line-stats" in cls:
+            kind = "stats"
+        elif "pr-link" in cls:
+            kind = "pr"
+        if not kind:
+            continue
+        rect = _control_rect(item)
+        if rect is None:
+            continue
+        interesting.append((kind, name or kind, rect))
+    hits: list[str] = []
+    for index, (left_kind, left_name, left_rect) in enumerate(interesting):
+        for right_kind, right_name, right_rect in interesting[index + 1 :]:
+            if left_kind == right_kind:
+                continue
+            if _rects_overlap(left_rect, right_rect):
+                hits.append(f"{left_kind} ({left_name}) overlaps {right_kind} ({right_name})")
+    return hits
 
 
 def _first_html_file(root: Path) -> Path | None:
