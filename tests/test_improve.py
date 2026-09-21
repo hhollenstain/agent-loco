@@ -500,6 +500,62 @@ def test_cycle_rejects_mock_implementation_even_if_reviewer_says_met(
     assert "generate_mock_issues" in (result.reason or "")
 
 
+def test_cycle_rejects_invented_readme_commands_even_if_reviewer_says_met(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "README.md",
+                "docker clone git@github.com:user/repo.git /workspaces/my-repo\n",
+            ),
+            AssistantTurn(text="Documented how to clone a repo in Docker."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[ToolCall(id="test-1", name="run_tests", arguments={})],
+            ),
+            AssistantTurn(text="Tests passed."),
+            _review_turn(True, "docker workflow is documented"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="Setup app to run in docker/docker compose",
+    )
+    assert result.status == "failed"
+    assert result.committed is False
+    assert "cannot work" in (result.reason or "")
+    assert "docker clone" in (result.reason or "")
+
+
+def test_cycle_rejects_iteration_limit_even_if_reviewer_says_met(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    tight = settings.model_copy(update={"max_iterations": 1})
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "app.py",
+                "def add(left, right):\n    return left + right\n# note\n",
+            ),
+            _review_turn(True, "adder still works"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        tight,
+        llm,
+        goal="Make the adder work",
+    )
+    assert result.status == "failed"
+    assert result.committed is False
+    assert "iteration limit" in (result.reason or "")
+
+
 def _inspect_only_turns() -> list[AssistantTurn]:
     return [
         AssistantTurn(text="Looked at the current branch."),
@@ -784,20 +840,24 @@ def test_cycle_keeps_retrying_after_noop_goal_retry(
         ),
         encoding="utf-8",
     )
-    tight = settings.model_copy(update={"max_iterations": 2})
+    tight = settings.model_copy(update={"max_iterations": 4})
     llm = ScriptedClient(
         [
             _write_file_turn("ui.html", "<header>loco</header>\n"),
+            _review_ui_turn("ui-header"),
             AssistantTurn(text="Added a header."),
             _review_turn(False, "CSS files are returning 404"),
             AssistantTurn(text="I will inspect the static mount next."),
             AssistantTurn(text="Still looking at the server."),
+            AssistantTurn(text="Checking the server config."),
+            AssistantTurn(text="No edits this round."),
             _review_turn(False, "CSS files are still returning 404"),
             _write_file_turn(
                 "ui.html",
                 "<aside id='sidebar'><button id='toggle-sidebar'>collapse</button></aside>\n",
                 call_id="call-2",
             ),
+            _review_ui_turn("ui-toggle"),
             AssistantTurn(text="Served the CSS and added the toggle."),
             _review_turn(True, "css loads and sidebar toggle is present"),
         ]

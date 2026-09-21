@@ -94,21 +94,28 @@ Publish/create-PR is off until you turn it on in `.loco/config.yaml` or pass `--
 
 ## Containerized
 
-The agent image is multi-arch (`linux/arm64` and `linux/amd64`) and does **not** need a GPU. Mount the project and talk to a model server.
+The agent image is multi-arch (`linux/arm64` and `linux/amd64`) and does **not** need a GPU. Mount a host directory at `/workspaces` and talk to a model server.
 
-The `.loco/` directory (config, goals, runs history) is automatically mounted from your local workspace, ensuring it persists across container restarts.
+`LOCO_WORKSPACE` (default `./workspaces`) is the only project volume. Cloned repos and each project's `.loco/` (config, goals, run history) persist on the host because they live *inside* that folder. Do not bind-mount this app's `.loco` over `/workspaces/.loco`; that hides the mounted project's own config.
 
-### Quick start with example project
+`docker compose up` starts the web UI on [http://127.0.0.1:8080](http://127.0.0.1:8080). One-off commands replace that with `run`, `clone`, `init`, `watch`, or `doctor`.
 
-Clone a repo or point at an existing workspace, then run cycles:
+### Clone a repo into the container
+
+`git` is in the image; the entrypoint is `loco`, so clone with `loco clone` (or clone on the host into `$LOCO_WORKSPACE`). The destination must not exist yet — clone first, then `init` only if you still need scaffolding.
 
 ```bash
-export LOCO_WORKSPACE=/absolute/path/to/your/project
-docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
-  init /workspaces/my-repo
-docker clone git@github.com:user/repo.git /workspaces/my-repo
-docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
-  run -w /workspaces/my-repo --goal "Add a README.md"
+mkdir -p workspaces
+export LOCO_WORKSPACE="$(pwd)/workspaces"
+docker compose run --rm agent clone git@github.com:user/repo.git
+docker compose run --rm agent init /workspaces/repo
+docker compose run --rm agent run -w /workspaces/repo --goal "Add a README.md"
+```
+
+Private GitHub repos need the SSH mount in `docker-compose.yml` uncommented, or clone on the host:
+
+```bash
+git clone git@github.com:user/repo.git "$LOCO_WORKSPACE/repo"
 ```
 
 ### Mac + Docker Desktop
@@ -116,21 +123,12 @@ docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
 Keep Ollama on the host (Metal), then:
 
 ```bash
-export LOCO_WORKSPACE=/absolute/path/to/your/project
+export LOCO_WORKSPACE="$(pwd)/workspaces"
 docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent doctor
+docker compose -f docker-compose.yml -f docker-compose.mac.yml up --build
+# UI: http://127.0.0.1:8080
 docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
   run --workspace /workspaces --goal "Make the test suite pass."
-```
-
-The `.loco` directory (containing `config.yaml`, `goals.md`, and `.loco/runs/`) is automatically mounted from your local workspace, ensuring persistence across container restarts.
-
-For development or cloning repos:
-
-```bash
-export LOCO_WORKSPACE=/absolute/path/to/your/project
-docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
-  init /workspaces/my-repo
-docker clone git@github.com:user/repo.git /workspaces/my-repo
 ```
 
 ### NVIDIA home lab (5090 and similar)
@@ -144,21 +142,15 @@ On the Linux host:
 Then:
 
 ```bash
-export LOCO_WORKSPACE=/absolute/path/to/your/project
+export LOCO_WORKSPACE="$(pwd)/workspaces"
 export LOCO_MODEL_NAME=qwen2.5-coder:32b
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up --build -d ollama
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml exec ollama ollama pull qwen2.5-coder:32b
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent doctor
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent \
-  watch --workspace /workspaces
-```
-
-The `.loco` directory is persisted automatically via volume mount. Run commands from within the container:
-
-```bash
+  clone git@github.com:user/repo.git
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent \
-  init /workspaces/my-repo
-docker clone git@github.com:user/repo.git /workspaces/my-repo
+  watch --workspace /workspaces/repo
 ```
 
 A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LOCO_MODEL_NAME` if you prefer vLLM or a larger quant. Any server that speaks `/v1/chat/completions` works; set `LOCO_MODEL_BASE_URL` accordingly.
@@ -178,7 +170,8 @@ This is still a coding agent with a shell inside a trusted workspace. Do not poi
 | Command | Purpose |
 | --- | --- |
 | `loco doctor` | Hardware, git/docker, model health |
-| `loco init [path]` | Write `.loco/` scaffolding |
+| `loco init [path]` | Write `.loco/` scaffolding (path must already exist) |
+| `loco clone URL [DIR]` | `git clone` into `DIR` or `./<repo>` and write `.loco/` |
 | `loco run -w PATH -g "..." -m MODEL --base-url URL` | One improve → test → commit cycle |
 | `loco ui -w PATH --base-url URL` | Local web UI to queue and run tasks (`--web-ui` on `run` also works) |
 | `loco watch -w PATH` | Repeat cycles on an interval |

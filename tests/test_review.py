@@ -179,3 +179,44 @@ def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
         "+        return {}\n"
     )
     assert unwired_ui_markers(wired) == []
+
+
+def test_invalid_doc_commands_catch_docker_clone_and_overlay() -> None:
+    from agent_loco.runtime.review import invalid_doc_commands
+
+    stub = (
+        "diff --git a/README.md b/README.md\n"
+        "--- a/README.md\n"
+        "+++ b/README.md\n"
+        "+docker clone git@github.com:user/repo.git /workspaces/my-repo\n"
+        "+loco frobnicate\n"
+        "diff --git a/docker-compose.yml b/docker-compose.yml\n"
+        "--- a/docker-compose.yml\n"
+        "+++ b/docker-compose.yml\n"
+        "+      - ./.loco:/workspaces/.loco\n"
+    )
+    markers = invalid_doc_commands(stub)
+    assert any("docker clone" in item for item in markers)
+    assert any("loco frobnicate" in item for item in markers)
+    assert any("/workspaces/.loco" in item for item in markers)
+
+    ok = (
+        "diff --git a/README.md b/README.md\n"
+        "--- a/README.md\n"
+        "+++ b/README.md\n"
+        "+docker compose run --rm agent clone git@github.com:user/repo.git\n"
+        "+loco init /workspaces/repo\n"
+        "diff --git a/docker-compose.yml b/docker-compose.yml\n"
+        "--- a/docker-compose.yml\n"
+        "+++ b/docker-compose.yml\n"
+        "+      - ${LOCO_WORKSPACE:-./workspaces}:/workspaces\n"
+    )
+    assert invalid_doc_commands(ok) == []
+
+
+def test_incomplete_agent_run_detects_iteration_limit() -> None:
+    from agent_loco.runtime.review import incomplete_agent_run
+
+    assert incomplete_agent_run("done", "completed") is None
+    assert incomplete_agent_run("Stopped after reaching the iteration limit.")
+    assert incomplete_agent_run("finishing up", "max_iterations")

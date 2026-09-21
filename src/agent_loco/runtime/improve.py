@@ -23,6 +23,8 @@ from agent_loco.runtime.project import (
 from agent_loco.runtime.review import (
     GoalReview,
     half_baked_diff_markers,
+    incomplete_agent_run,
+    invalid_doc_commands,
     is_open_pr_goal,
     review_goal,
     review_reason,
@@ -249,6 +251,7 @@ def _run_cycle(
         sha_before,
         tests_passed,
         allow_create_pr,
+        stopped_reason=agent_result.stopped_reason,
     )
     tests_passed = review["tests_passed"]
     agent_result_summary = review["summary"]
@@ -665,6 +668,7 @@ def _review_goal(
     *,
     existing: bool = False,
     upstream: str | None = None,
+    stopped_reason: str | None = None,
 ) -> GoalReview:
     ui_text = ""
     ui_evidence = None
@@ -738,6 +742,21 @@ def _review_goal(
         )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
+    invented = invalid_doc_commands(diff)
+    if verdict.met and invented and not existing:
+        overridden = GoalReview(
+            False,
+            f"diff documents a command or mount that cannot work: {invented[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
+    incomplete = incomplete_agent_run(summary, stopped_reason)
+    if verdict.met and incomplete and not existing:
+        overridden = GoalReview(False, incomplete, parsed=True, ui_errors=ui_errors)
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
     if ui_errors and verdict.ui_errors != ui_errors:
         return GoalReview(
             met=verdict.met,
@@ -760,6 +779,8 @@ def _ensure_goal_met(
     sha_before: str | None,
     tests_passed: bool | None,
     allow_create_pr: bool,
+    *,
+    stopped_reason: str | None = None,
 ) -> dict[str, object]:
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     work_diff = collect_work_diff(workspace, sha_before, goal=goal)
@@ -771,6 +792,7 @@ def _ensure_goal_met(
         work_diff,
         summary,
         tests_passed,
+        stopped_reason=stopped_reason,
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     attempts = 0
@@ -833,6 +855,7 @@ def _ensure_goal_met(
             work_diff,
             summary,
             tests_passed,
+            stopped_reason=follow.stopped_reason,
         )
         log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     return {
@@ -888,7 +911,10 @@ def _goal_retry_prompt(
         "replaces, update those tests. "
         "If this is a UI change, call review_ui after editing, click new tabs, "
         "and fix render errors, 404s, or dead controls. Do not stop while the "
-        "page fails to load CSS or JS you added.\n\n"
+        "page fails to load CSS or JS you added. "
+        "If you edited docs or compose files, the commands must actually exist "
+        "(loco clone, docker compose, git clone — never docker clone). Run tests. "
+        "Do not bind-mount this app's .loco over the mounted workspace.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}"
         f"{broken}\n\n"

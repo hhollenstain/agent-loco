@@ -60,6 +60,10 @@ Rules:
   this change. A visible control that does not fetch or change state is unfinished.
 - After behavior changes, call run_tests when the project has a test command.
   Do not summarize until that validation has run since the last edit.
+- After Docker, compose, or README edits, call run_tests. Documented commands
+  must exist (loco clone, docker compose, git clone). Never document
+  `docker clone`. Never bind-mount this app's `.loco` over `/workspaces/.loco`.
+  `loco init` requires a directory that already exists; clone first.
 - If review_ui reports 404s for CSS or JS you linked, that is not done. Serve
   those files from the web app (static mount or route) or fix the href so it
   matches a real path. Call review_ui again until the URLs load. Do not stop
@@ -83,6 +87,7 @@ def user_prompt(goal: str, context: str) -> str:
             "stub, mock, unused form field, or a follow-up for a later run. "
             "Do not switch to a different task you notice in the repo. Test your "
             "changes. If you edited UI, call review_ui and click the new control. "
+            "If you edited Docker or docs, call run_tests; documented commands must run. "
             "Do not commit on main/master; the cycle commits after review. "
             "A later review will reject a PR if the diff does not fulfill this goal.",
         ]

@@ -112,6 +112,35 @@ def init(
         console.print("project already has .loco config")
 
 
+@app.command()
+def clone(
+    url: Annotated[str, typer.Argument(help="Git URL or local repo to clone.")],
+    dest: Annotated[
+        Path | None,
+        typer.Argument(help="Directory to create. Defaults to ./<repo-name>."),
+    ] = None,
+) -> None:
+    """Clone a git repo into the workspace volume and write .loco scaffolding."""
+    from agent_loco.runtime.workspaces import clone_workspace
+
+    if dest is None:
+        parent = Path.cwd()
+        name = None
+    else:
+        target = dest.expanduser()
+        parent = target.parent
+        name = target.name
+        if not parent.exists():
+            console.print(f"parent does not exist: {parent}")
+            raise typer.Exit(code=1)
+    try:
+        cloned = clone_workspace(url, parent, name=name)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"cloned {cloned['path']}")
+
+
 def _serve_ui(
     workspace: Path,
     settings: Settings,

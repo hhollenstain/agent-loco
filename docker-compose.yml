@@ -12,10 +12,13 @@ services:
       LOCO_REQUIRE_TESTS: ${LOCO_REQUIRE_TESTS:-true}
       LOCO_PUBLISH: ${LOCO_PUBLISH:-false}
     volumes:
+      # Host folder at /workspaces. Cloned repos and each project's .loco/runs live here.
       - ${LOCO_WORKSPACE:-./workspaces}:/workspaces
-      - ./.loco:/workspaces/.loco
-      # Uncomment to publish from the container:
+      # Uncomment to clone private repos from the container:
       # - ${HOME}/.ssh:/home/loco/.ssh:ro
     working_dir: /workspaces
+    ports:
+      - "${LOCO_UI_PORT:-8080}:8080"
+    command: ["ui", "--host", "0.0.0.0", "--port", "8080", "--workspace", "/workspaces"]
     stdin_open: true
     tty: true
