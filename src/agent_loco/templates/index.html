@@ -526,6 +526,126 @@
       font-size: 0.82rem;
       white-space: nowrap;
     }
+    /* Scrollbars - hidden or theme-matching */
+    /* Default: hide all scrollbars */
+    ::-webkit-scrollbar { width: 0; height: 0; background: transparent; }
+    * { scrollbar-width: auto; }
+    /* Hide scrollbars on elements with explicit overflow styling */
+    .workspace-tab-list,
+    .folder-list,
+    .settings-panel,
+    .notify-panel,
+    .modal,
+    .timeline,
+    .file-changes,
+    .ui-screenshots,
+    .sidebar,
+    .tasks,
+    #task-form {
+      scrollbar-width: none;
+    }
+    .workspace-tab-list::-webkit-scrollbar,
+    .folder-list::-webkit-scrollbar,
+    .settings-panel::-webkit-scrollbar,
+    .notify-panel::-webkit-scrollbar,
+    .modal::-webkit-scrollbar,
+    .timeline::-webkit-scrollbar,
+    .file-changes::-webkit-scrollbar,
+    .ui-screenshots::-webkit-scrollbar,
+    .sidebar::-webkit-scrollbar,
+    .tasks::-webkit-scrollbar,
+    #task-form::-webkit-scrollbar {
+      display: none;
+    }
+    /* Theme-matching scrollbars for scrollable content areas */
+    .timeline::-webkit-scrollbar,
+    .timeline-item pre.diff::-webkit-scrollbar,
+    pre::-webkit-scrollbar,
+    .file-changes::-webkit-scrollbar,
+    .ui-screenshots::-webkit-scrollbar,
+    .modal::-webkit-scrollbar,
+    .settings-panel::-webkit-scrollbar,
+    .notify-panel::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .timeline::-webkit-scrollbar-track,
+    .timeline-item pre.diff::-webkit-scrollbar-track,
+    pre::-webkit-scrollbar-track,
+    .file-changes::-webkit-scrollbar-track,
+    .ui-screenshots::-webkit-scrollbar-track,
+    .modal::-webkit-scrollbar-track,
+    .settings-panel::-webkit-scrollbar-track,
+    .notify-panel::-webkit-scrollbar-track {
+      background: #0c0e0b;
+      border-radius: 0;
+    }
+    .timeline::-webkit-scrollbar-thumb,
+    .timeline-item pre.diff::-webkit-scrollbar-thumb,
+    pre::-webkit-scrollbar-thumb,
+    .file-changes::-webkit-scrollbar-thumb,
+    .ui-screenshots::-webkit-scrollbar-thumb,
+    .modal::-webkit-scrollbar-thumb,
+    .settings-panel::-webkit-scrollbar-thumb,
+    .notify-panel::-webkit-scrollbar-thumb {
+      background: #4a5244;
+      border-radius: 5px;
+      border: 0;
+    }
+    .timeline::-webkit-scrollbar-thumb:hover,
+    .timeline-item pre.diff::-webkit-scrollbar-thumb:hover,
+    pre::-webkit-scrollbar-thumb:hover,
+    .file-changes::-webkit-scrollbar-thumb:hover,
+    .ui-screenshots::-webkit-scrollbar-thumb:hover,
+    .modal::-webkit-scrollbar-thumb:hover,
+    .settings-panel::-webkit-scrollbar-thumb:hover,
+    .notify-panel::-webkit-scrollbar-thumb:hover {
+      background: #636d55;
+    }
+    /* Firefox scrollbar styling for theme matching */
+    .timeline,
+    .timeline-item pre.diff,
+    pre,
+    .file-changes,
+    .ui-screenshots,
+    .modal,
+    .settings-panel,
+    .notify-panel {
+      scrollbar-width: thin;
+      scrollbar-color: #4a5244 #0c0e0b;
+    }
+    .timeline:hover,
+    .timeline-item pre.diff:hover,
+    pre:hover,
+    .file-changes:hover,
+    .ui-screenshots:hover,
+    .modal:hover,
+    .settings-panel:hover,
+    .notify-panel:hover {
+      scrollbar-color: #636d55 #0c0e0b;
+    }
+    /* Firefox scrollbar styling for theme matching */
+    .timeline,
+    .timeline-item pre.diff,
+    pre,
+    .file-changes,
+    .ui-screenshots,
+    .modal,
+    .settings-panel,
+    .notify-panel {
+      scrollbar-width: thin;
+      scrollbar-color: #4a5244 #0c0e0b;
+    }
+    .timeline:hover,
+    .timeline-item pre.diff:hover,
+    pre:hover,
+    .file-changes:hover,
+    .ui-screenshots:hover,
+    .modal:hover,
+    .settings-panel:hover,
+    .notify-panel:hover {
+      scrollbar-color: #636d55 #0c0e0b;
+    }
     .notify-dock {
       position: fixed;
       top: 0.85rem;
