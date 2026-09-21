@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from agent_loco.progress import record_event
 from agent_loco.runtime.project import ProjectConfig
@@ -39,11 +39,27 @@ INTERACTIVE_UI_RE = re.compile(
     re.IGNORECASE,
 )
 MAX_SNAPSHOT_CHARS = 6_000
+IGNORABLE_RESOURCE_RE = re.compile(
+    r"(?:^|/)(?:favicon\.ico|apple-touch-icon[^/]*|site\.webmanifest|manifest\.json)$",
+    re.IGNORECASE,
+)
+SCREENSHOT_RESOURCE_RE = re.compile(r"/api/ui-screenshot(?:/|$)", re.IGNORECASE)
+BLOCKING_RESOURCE_RE = re.compile(r"\.(?:js|mjs|cjs|css)$", re.IGNORECASE)
+GENERIC_RESOURCE_CONSOLE_RE = re.compile(
+    r"failed to load resource|net::err_|status of 404|file not found",
+    re.IGNORECASE,
+)
 PAGE_EVAL = """() => {
   const nodes = [...document.querySelectorAll(
     'button, a, [role="tab"], [role="button"], h1, h2, h3, label, input,'
     + ' select, textarea, .progress-stage, .task, .task-card'
   )];
+  const isHidden = (el) => {
+    if (!el) return true;
+    if (el.closest("[hidden]")) return true;
+    const style = window.getComputedStyle(el);
+    return style.display === "none" || style.visibility === "hidden";
+  };
     return {
     title: document.title || "",
     url: location.href,
@@ -71,6 +87,7 @@ PAGE_EVAL = """() => {
       return {
         tag: el.tagName.toLowerCase(),
         name,
+        hidden: isHidden(el),
         w: Math.round(box.width),
         h: Math.round(box.height),
         x: Math.round(box.x),
@@ -97,6 +114,8 @@ class UiEvidence:
     title: str = ""
     page_errors: list[str] = field(default_factory=list)
     console_errors: list[str] = field(default_factory=list)
+    network_failures: list[str] = field(default_factory=list)
+    network_notes: list[str] = field(default_factory=list)
     smashed: list[str] = field(default_factory=list)
     dead_controls: list[str] = field(default_factory=list)
     clicked: list[str] = field(default_factory=list)
@@ -107,10 +126,20 @@ class UiEvidence:
     interactive: bool = True
 
     @property
+    def blocking_errors(self) -> list[str]:
+        items = []
+        for item in [*self.page_errors, *self.console_errors, *self.network_failures]:
+            text = str(item).strip()
+            if not text or is_generic_resource_console(text):
+                continue
+            items.append(text)
+        return items
+
+    @property
     def summary(self) -> str:
         if not self.ok and self.notes:
             return f"UI review skipped: {self.notes}"
-        errors = self.page_errors + self.console_errors
+        errors = self.blocking_errors
         bits = ["Rendered UI"]
         if self.title:
             bits.append(self.title)
@@ -147,10 +176,20 @@ def format_ui_evidence(evidence: UiEvidence | None) -> str:
         lines.append(f"Title: {evidence.title}")
     if evidence.notes:
         lines.append(evidence.notes)
-    errors = evidence.page_errors + evidence.console_errors
-    if errors:
+    js_errors = [
+        item
+        for item in [*evidence.page_errors, *evidence.console_errors]
+        if item and not is_generic_resource_console(item)
+    ]
+    if js_errors:
         lines.append("JavaScript errors:")
-        lines.extend(f"- {item}" for item in errors[:12])
+        lines.extend(f"- {item}" for item in js_errors[:12])
+    if evidence.network_failures:
+        lines.append("Missing page resources:")
+        lines.extend(f"- {item}" for item in evidence.network_failures[:12])
+    if evidence.network_notes:
+        lines.append("Optional resources missing (not a review failure):")
+        lines.extend(f"- {item}" for item in evidence.network_notes[:12])
     if evidence.smashed:
         lines.append("Controls with no usable size (hidden, crushed, or off-screen):")
         lines.extend(f"- {item}" for item in evidence.smashed[:12])
@@ -246,7 +285,7 @@ def collect_ui_evidence(
             snapshot=page.snapshot,
             screenshot=page.screenshot,
             screenshot_filename=page.screenshot_filename,
-            errors=page.page_errors + page.console_errors,
+            errors=page.blocking_errors,
         )
         return page
     except Exception as exc:  # noqa: BLE001 - capture failures become evidence
@@ -311,15 +350,38 @@ def _playwright_capture(
 
     console: list[str] = []
     page_errors: list[str] = []
+    network_failures: list[str] = []
+    network_notes: list[str] = []
+
+    def on_console(msg: Any) -> None:
+        if getattr(msg, "type", None) != "error":
+            return
+        text = str(getattr(msg, "text", "") or "")
+        if is_generic_resource_console(text):
+            return
+        console.append(text)
+
+    def on_response(response: Any) -> None:
+        try:
+            status = int(response.status)
+        except (TypeError, ValueError):
+            return
+        if status < 400:
+            return
+        record_network_failure(
+            str(getattr(response, "url", "") or ""),
+            status,
+            network_failures,
+            network_notes,
+        )
+
     with sync_playwright() as playwright:
         browser = _launch_playwright(playwright)
         page = browser.new_page(viewport={"width": 1280, "height": 800})
         page.add_init_script(INIT_SCRIPT)
         page.on("pageerror", lambda err: page_errors.append(str(err)))
-        page.on(
-            "console",
-            lambda msg: console.append(msg.text) if msg.type == "error" else None,
-        )
+        page.on("console", on_console)
+        page.on("response", on_response)
         page.goto(url, wait_until="domcontentloaded", timeout=max(wait_ms, 8000))
         page.wait_for_timeout(min(wait_ms, 2500))
         clicked, dead = _playwright_probe(page, clicks, wait_ms)
@@ -334,6 +396,8 @@ def _playwright_capture(
         raw,
         page_errors=page_errors,
         console_errors=console,
+        network_failures=network_failures,
+        network_notes=network_notes,
         screenshot=shot,
         clicked=clicked,
         dead_controls=dead,
@@ -459,6 +523,45 @@ def _chrome_capture(url: str, *, screenshot: Path | None, wait_ms: int) -> UiEvi
     )
 
 
+def classify_network_failure(url: str, status: int | str | None = None) -> str:
+    """Classify a failed request as ignore, note, or block.
+
+    Favicon and touch-icon 404s are noise. Historical screenshot files are
+    optional. Missing JS/CSS the page requested is a real render failure.
+    """
+    path = urlparse(str(url or "")).path
+    if IGNORABLE_RESOURCE_RE.search(path):
+        return "ignore"
+    if SCREENSHOT_RESOURCE_RE.search(path):
+        return "note"
+    if BLOCKING_RESOURCE_RE.search(path):
+        return "block"
+    return "note"
+
+
+def is_generic_resource_console(message: str) -> bool:
+    return bool(GENERIC_RESOURCE_CONSOLE_RE.search(message or ""))
+
+
+def record_network_failure(
+    url: str,
+    status: int | str | None,
+    failures: list[str],
+    notes: list[str],
+) -> None:
+    kind = classify_network_failure(url, status)
+    if kind == "ignore":
+        return
+    code = str(status).strip() if status is not None else "failed"
+    line = f"{code} {url}".strip()
+    if not line or line in failures or line in notes:
+        return
+    if kind == "block":
+        failures.append(line)
+    else:
+        notes.append(line)
+
+
 def _from_eval(
     url: str,
     raw: Any,
@@ -469,6 +572,8 @@ def _from_eval(
     clicked: list[str] | None = None,
     dead_controls: list[str] | None = None,
     interactive: bool = True,
+    network_failures: list[str] | None = None,
+    network_notes: list[str] | None = None,
 ) -> UiEvidence:
     data = raw if isinstance(raw, dict) else {}
     elements = data.get("elements") if isinstance(data.get("elements"), list) else []
@@ -476,6 +581,8 @@ def _from_eval(
     smashed = []
     for item in elements:
         if not isinstance(item, dict):
+            continue
+        if item.get("hidden"):
             continue
         name = str(item.get("name") or item.get("tag") or "control").strip()
         width = int(item.get("w") or 0)
@@ -487,19 +594,25 @@ def _from_eval(
     text = str(data.get("text") or "")
     dead = list(dead_controls or [])
     snapshot = _format_snapshot(text, elements, tabs)
-    return UiEvidence(
-        ok=not errors and not smashed and not dead,
+    failures = [item for item in (network_failures or []) if item]
+    notes = [item for item in (network_notes or []) if item]
+    evidence = UiEvidence(
         url=str(data.get("url") or url),
         title=str(data.get("title") or ""),
         page_errors=errors,
         console_errors=[item for item in console_errors if item],
+        network_failures=failures,
+        network_notes=notes,
         smashed=smashed,
         dead_controls=dead,
         clicked=list(clicked or []),
         snapshot=snapshot,
         screenshot=screenshot,
         interactive=interactive,
+        ok=True,
     )
+    evidence.ok = not evidence.blocking_errors and not smashed and not dead
+    return evidence
 
 
 def _format_snapshot(text: str, elements: list[Any], tabs: list[Any] | None = None) -> str:

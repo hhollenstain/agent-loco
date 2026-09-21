@@ -14,6 +14,7 @@ from agent_loco.tools import ToolSpec, execute_tool
 log = logging.getLogger("loco")
 
 MUTATING_TOOLS = {"write_file", "str_replace"}
+VERIFY_TOOLS = {"review_ui", "run_tests"}
 MAX_PLAN_NUDGES = 3
 MAX_UNFINISHED_NUDGES = 4
 MAX_INSPECT_ROUNDS = 3
@@ -99,6 +100,7 @@ class CodingAgent:
                 else:
                     messages.append({"role": "assistant", "content": turn.text or ""})
                 wrote = False
+                inspected = False
                 for call in calls:
                     tool_calls += 1
                     result = execute_tool(self.tools, call.name, call.arguments)
@@ -107,12 +109,14 @@ class CodingAgent:
                     if call.name in MUTATING_TOOLS and result.ok:
                         mutated = True
                         wrote = True
+                    elif call.name not in VERIFY_TOOLS:
+                        inspected = True
                     messages.append(_tool_result_message(call, result.output, native=native))
                 if wrote:
                     inspect_rounds = 0
-                else:
+                elif inspected and not mutated:
                     inspect_rounds += 1
-                    if not mutated and inspect_rounds >= MAX_INSPECT_ROUNDS:
+                    if inspect_rounds >= MAX_INSPECT_ROUNDS:
                         inspect_rounds = 0
                         log.info("nudging agent to stop inspecting and write files")
                         messages.append({"role": "user", "content": _nudge(INSPECT_NUDGE, goal)})

@@ -578,15 +578,22 @@ def _review_goal(
         upstream=upstream,
         ui_evidence=ui_text or None,
     )
-    errors = []
+    blocking = []
     smashed = []
     if ui_evidence is not None:
-        errors = ui_evidence.page_errors + ui_evidence.console_errors
+        blocking = ui_evidence.blocking_errors
         smashed = ui_evidence.smashed
-    if verdict.met and errors:
+    if verdict.met and blocking:
+        first = blocking[0]
+        js = bool(ui_evidence and (ui_evidence.page_errors or ui_evidence.console_errors))
+        reason = (
+            f"Rendered UI has JavaScript errors: {first}"
+            if js
+            else f"Rendered UI failed to load a required resource: {first}"
+        )
         overridden = GoalReview(
             False,
-            f"Rendered UI has JavaScript errors: {errors[0]}",
+            reason,
             parsed=True,
         )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)

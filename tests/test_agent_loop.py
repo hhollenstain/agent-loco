@@ -4,6 +4,7 @@ from pathlib import Path
 
 from agent_loco.agent.loop import CodingAgent
 from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
+from agent_loco.runtime.uireview import UiEvidence
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools
 
@@ -292,6 +293,62 @@ def test_agent_nudges_after_inspect_only_tools(tmp_path: Path) -> None:
         if message.get("role") == "user" and isinstance(message.get("content"), str)
     ]
     assert any("without changing files" in content for content in contents)
+
+
+def test_agent_does_not_inspect_nudge_after_review_ui(tmp_path: Path, monkeypatch) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "agent_loco.tools.browser.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Queue task"),
+    )
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    reviews = [
+        AssistantTurn(
+            text=None,
+            tool_calls=[
+                ToolCall(
+                    id=f"ui-{index}",
+                    name="review_ui",
+                    arguments={},
+                )
+            ],
+        )
+        for index in range(3)
+    ]
+    llm = ScriptedClient(
+        [
+            *reviews,
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="write-1",
+                        name="write_file",
+                        arguments={"path": "done.txt", "content": "ok\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Wrote done.txt"),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run("Write done.txt")
+    assert result.tool_calls >= 4
+    assert (tmp_path / "done.txt").read_text(encoding="utf-8") == "ok\n"
+    contents = [
+        message["content"]
+        for message in llm.calls[-1]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert not any("without changing files" in content for content in contents)
 
 
 def test_agent_str_replace_counts_as_mutation(tmp_path: Path) -> None:

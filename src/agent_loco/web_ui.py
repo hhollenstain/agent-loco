@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -40,6 +41,12 @@ from agent_loco.runtime.workspaces import (
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+    '<rect width="16" height="16" rx="3" fill="#111111"/>'
+    '<circle cx="8" cy="8" r="4" fill="#7dba5d"/>'
+    "</svg>"
+)
 
 
 class TaskCreate(BaseModel):
@@ -313,6 +320,10 @@ def create_app(
         ui: UiState = request.app.state.ui
         return templates.TemplateResponse(request, "index.html", ui.template_vars())
 
+    @app.get("/favicon.ico")
+    def favicon() -> Response:
+        return Response(FAVICON_SVG, media_type="image/svg+xml")
+
     @app.get("/api/meta")
     def meta(request: Request) -> dict[str, Any]:
         ui: UiState = request.app.state.ui
@@ -379,10 +390,28 @@ def create_app(
             "last_model": selected["last_model"],
         }
 
-    @app.get("/api/tasks")
-    def list_tasks(request: Request) -> list[dict[str, Any]]:
+    @app.get("/api/tasks", response_model=None)
+    def list_tasks(
+        request: Request,
+        page: int | None = None,
+        page_size: int | None = None,
+    ) -> Any:
         ui: UiState = request.app.state.ui
-        return [task.to_dict() for task in ui.manager.list()]
+        tasks = [task.to_dict() for task in ui.manager.list()]
+        if page is None and page_size is None:
+            return tasks
+        size = max(1, min(page_size or 10, 100))
+        total = len(tasks)
+        total_pages = max(1, math.ceil(total / size) if size else 1)
+        current = max(1, min(page or 1, total_pages))
+        start = (current - 1) * size
+        return {
+            "items": tasks[start : start + size],
+            "page": current,
+            "page_size": size,
+            "total": total,
+            "total_pages": total_pages,
+        }
 
     @app.get("/api/tasks/{task_id}", response_model=None)
     def get_task(task_id: str, request: Request) -> Any:

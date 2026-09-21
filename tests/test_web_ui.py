@@ -106,6 +106,8 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function fileReviewDiff(" in home.content
         assert b'data-task-pane="changes"' in home.content
         assert b'data-task-pane="screenshots"' in home.content
+        assert b'id="task-pagination"' in home.content
+        assert b"taskPageSize" in home.content
         assert b"function taskPaneFromTab(" in home.content
         assert b"/api/ui-screenshot" in home.content
         assert b'id="file-changes"' in home.content
@@ -146,6 +148,44 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert "error" in bad.json()
     finally:
         gate.set()
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_paginates_tasks_and_serves_favicon(
+    settings: Settings, tmp_path: Path
+) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        for index in range(3):
+            created = client.post(
+                "/api/tasks",
+                json={
+                    "workspace": str(tmp_path),
+                    "goal": f"Task {index}",
+                    "auto_commit": False,
+                },
+            )
+            assert created.status_code == 201
+        listed = client.get("/api/tasks")
+        assert listed.status_code == 200
+        assert isinstance(listed.json(), list)
+        assert len(listed.json()) == 3
+        paged = client.get("/api/tasks", params={"page": 1, "page_size": 2})
+        assert paged.status_code == 200
+        body = paged.json()
+        assert body["total"] == 3
+        assert body["total_pages"] == 2
+        assert body["page"] == 1
+        assert len(body["items"]) == 2
+        page_two = client.get("/api/tasks", params={"page": 2, "page_size": 2}).json()
+        assert page_two["page"] == 2
+        assert len(page_two["items"]) == 1
+        icon = client.get("/favicon.ico")
+        assert icon.status_code == 200
+        assert b"<svg" in icon.content
+    finally:
         manager.shutdown(wait=False)
 
 

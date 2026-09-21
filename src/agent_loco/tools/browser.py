@@ -62,6 +62,8 @@ def _review_ui(
         wait_ms=int(wait_ms or 4000),
     )
     report = format_ui_evidence(evidence)
-    if not evidence.ok and evidence.notes and not (evidence.page_errors or evidence.snapshot):
+    if evidence.blocking_errors or evidence.smashed or evidence.dead_controls:
+        return ToolResult(False, report)
+    if not evidence.ok and evidence.notes and not evidence.snapshot:
         return ToolResult(False, report)
     return ToolResult(True, report)

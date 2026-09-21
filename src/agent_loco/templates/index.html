@@ -838,6 +838,9 @@
       border: 1px solid var(--accent);
       pointer-events: none;
     }
+    .task-toolbar {
+      padding: 0 0 0.5rem;
+    }
     .tasks-toolbar {
       display: flex;
       flex-direction: column;
@@ -944,6 +947,9 @@
           </select>
         </div>
       </div>
+      <div class="task-toolbar">
+        <div id="task-pagination" class="pagination" aria-label="Task pagination"></div>
+      </div>
       <div id="task-list" class="task-list"></div>
       <div id="detail"></div>
       <div class="history">
@@ -1026,7 +1032,7 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], historyPage: 1, history: [], taskPage: 1, taskPageSize: 10, taskTotalPages: 1, selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("task-list");
     const detailEl = document.getElementById("detail");
     const countsEl = document.getElementById("counts");
@@ -1036,6 +1042,7 @@
     const submitEl = document.getElementById("submit");
     const searchInput = document.getElementById("history-search");
     const paginationEl = document.getElementById("pagination");
+    const taskPaginationEl = document.getElementById("task-pagination");
     const mainEl = document.getElementById("main");
     const toggleBtn = document.getElementById("toggle-sidebar");
     const serverFilterEl = document.getElementById("server-filter");
@@ -2419,11 +2426,16 @@
       lastProgressHtml = progressHtml;
       restoreScroll(scroll, page, { running: live });
       requestAnimationFrame(() => restoreScroll(scroll, page, { running: live }));
+      renderTaskPagination(state.taskPage, state.taskTotalPages);
     }
 
-    function renderPagination(page, totalPages) {
+    function renderTaskPagination(page, totalPages) {
+      renderPagination(page, totalPages, taskPaginationEl);
+    }
+
+    function renderPagination(page, totalPages, element = paginationEl) {
       if (totalPages <= 1) {
-        paginationEl.innerHTML = "";
+        element.innerHTML = "";
         return;
       }
       const prevDisabled = page <= 1;
@@ -2434,29 +2446,31 @@
       html += `<button type="button" class="current">${page}</button>`;
       html += `<button type="button" class="secondary" ${nextDisabled ? 'disabled' : ''} data-page="${Math.min(totalPages, page + 1)}">→</button>`;
       
-      paginationEl.innerHTML = html;
+      element.innerHTML = html;
     }
 
     async function refresh() {
       const [tasksRes, historyRes] = await Promise.all([
-        fetch("/api/tasks"),
+        fetch(`/api/tasks?page=${state.taskPage}&page_size=${state.taskPageSize}`),
         fetch(`/api/history?page=${state.historyPage}&page_size=${state.pageSize}${state.search ? `&search=${encodeURIComponent(state.search)}` : ''}`),
       ]);
-      state.tasks = await tasksRes.json();
+      const tasksData = await tasksRes.json();
+      if (Array.isArray(tasksData)) {
+        state.tasks = tasksData;
+        state.taskTotalPages = Math.max(1, Math.ceil(state.tasks.length / state.taskPageSize) || 1);
+      } else {
+        state.tasks = tasksData.items || [];
+        state.taskTotalPages = tasksData.total_pages || 1;
+        state.taskPage = tasksData.page || 1;
+        state.taskPageSize = tasksData.page_size || state.taskPageSize;
+      }
       for (const task of state.tasks) {
         announceTaskStatus(task, state.taskStatus[task.id]);
         state.taskStatus[task.id] = task.status;
       }
       const historyData = historyRes.ok ? await historyRes.json() : [];
-      if (Array.isArray(historyData)) {
-        // Legacy format (unpaginated)
-        state.history = historyData;
-      } else {
-        // Paginated format
-        state.history = historyData;
-      }
-      
-      // Update server filter dropdown with unique servers from tasks
+      state.history = historyData;
+
       const servers = new Set();
       for (const task of state.tasks) {
         if (task.base_url) {
@@ -2473,9 +2487,19 @@
         }
         serverFilterEl.appendChild(option);
       }
-      
+
       render();
     }
+
+    taskPaginationEl.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const page = parseInt(button.dataset.page, 10);
+      if (page && !isNaN(page) && page !== state.taskPage) {
+        state.taskPage = page;
+        refresh();
+      }
+    });
 
     listEl.addEventListener("click", (event) => {
       if (event.target.closest("a.pr-link")) return;

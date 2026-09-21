@@ -12,7 +12,9 @@ from agent_loco.runtime.uireview import (
     UiEvidence,
     _from_eval,
     _playwright_probe,
+    classify_network_failure,
     format_ui_evidence,
+    is_generic_resource_console,
     resolve_ui_screenshot,
     ui_review_needed,
     unverified_interactive_ui,
@@ -83,6 +85,58 @@ def test_from_eval_marks_js_errors_and_zero_size_controls() -> None:
     assert "Init (0x0)" in evidence.smashed
     assert "Queue task (120x32)" in evidence.snapshot
     assert "tab: Screenshots" in evidence.snapshot
+    hidden = _from_eval(
+        "http://127.0.0.1:9/",
+        {
+            "title": "loco",
+            "text": "Queue task",
+            "errors": [],
+            "elements": [
+                {"tag": "button", "name": "Init", "w": 0, "h": 0, "hidden": True},
+                {"tag": "button", "name": "Queue task", "w": 120, "h": 32},
+            ],
+        },
+        page_errors=[],
+        console_errors=[],
+        screenshot=None,
+    )
+    assert hidden.ok is True
+    assert hidden.smashed == []
+
+
+def test_classify_network_failure_ignores_favicon_and_screenshots() -> None:
+    assert classify_network_failure("http://127.0.0.1:9/favicon.ico", 404) == "ignore"
+    assert (
+        classify_network_failure("http://127.0.0.1:9/apple-touch-icon.png", 404)
+        == "ignore"
+    )
+    assert (
+        classify_network_failure(
+            "http://127.0.0.1:9/api/ui-screenshot?name=ui-review.png", 404
+        )
+        == "note"
+    )
+    assert classify_network_failure("http://127.0.0.1:9/static/app.js", 404) == "block"
+    assert is_generic_resource_console(
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    )
+
+
+def test_format_ui_evidence_keeps_optional_404s_out_of_js_errors() -> None:
+    text = format_ui_evidence(
+        UiEvidence(
+            ok=True,
+            url="http://127.0.0.1:9/",
+            console_errors=[
+                "Failed to load resource: the server responded with a status of 404 (Not Found)"
+            ],
+            network_notes=["404 http://127.0.0.1:9/api/ui-screenshot?name=ui-review.png"],
+            snapshot="button: Queue task (120x32)",
+        )
+    )
+    assert "Optional resources missing" in text
+    assert "JavaScript errors:" not in text
+    assert "ui-screenshot" in text
 
 
 def test_review_goal_includes_rendered_ui_section() -> None:
@@ -138,6 +192,72 @@ def test_review_goal_overrides_met_when_rendered_ui_throws(
         reset_progress(token)
     assert verdict.met is False
     assert "label is not defined" in verdict.reason
+
+
+def test_review_goal_does_not_override_met_for_favicon_or_screenshot_404s(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(
+            ok=True,
+            console_errors=[
+                "Failed to load resource: the server responded with a status of 404 (Not Found)"
+            ],
+            network_notes=["404 http://127.0.0.1:9/favicon.ico"],
+        ),
+    )
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    llm = ScriptedClient(
+        [AssistantTurn(text='{"met": true, "reason": "pagination is at the top"}')]
+    )
+    token = bind_progress()
+    try:
+        verdict = _review_goal(
+            Workspace(tmp_path),
+            load_project(tmp_path),
+            llm,
+            "Add task pagination at the top",
+            "diff --git a/src/agent_loco/templates/index.html",
+            "added top pagination",
+            True,
+        )
+    finally:
+        reset_progress(token)
+    assert verdict.met is True
+
+
+def test_review_goal_overrides_met_when_required_script_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(
+            ok=False,
+            network_failures=["404 http://127.0.0.1:9/static/app.js"],
+        ),
+    )
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    llm = ScriptedClient(
+        [AssistantTurn(text='{"met": true, "reason": "template includes the script tag"}')]
+    )
+    token = bind_progress()
+    try:
+        verdict = _review_goal(
+            Workspace(tmp_path),
+            load_project(tmp_path),
+            llm,
+            "Add a progress bar",
+            "diff --git a/src/agent_loco/templates/index.html",
+            "added script",
+            True,
+        )
+    finally:
+        reset_progress(token)
+    assert verdict.met is False
+    assert "app.js" in verdict.reason
 
 
 def test_review_goal_overrides_met_when_screenshot_tab_is_dead(
@@ -241,7 +361,7 @@ def test_review_ui_tool_reports_capture(tmp_path: Path, monkeypatch) -> None:
         git_author_email=None,
     )
     result = execute_tool(tools, "review_ui", {})
-    assert result.ok
+    assert not result.ok
     assert "label is not defined" in result.output
     assert "Init (0x0)" in result.output
 

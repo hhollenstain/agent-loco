@@ -18,7 +18,9 @@ Rules:
 - If the goal says to remove something, it must actually be gone from the diff.
 - If the goal asks for a user-visible control, it must be visible and wired, not
   display:none or otherwise non-functional.
-- When a Rendered UI section is present, JavaScript errors mean the goal is unmet.
+- When a Rendered UI section is present, JavaScript exceptions (ReferenceError,
+  uncaught errors) mean the goal is unmet. Missing JS or CSS the page requested
+  is unmet. Favicon 404s and missing historical screenshots are not unmet.
   Controls with 0x0 or tiny sizes are unmet. A template diff is not enough if the
   rendered page is blank, crushed, or throws.
 - Dead controls (a tab or button that does not reveal its panel when clicked) are
@@ -43,9 +45,10 @@ already fulfills the stated goal.
 Rules:
 - Passing tests is not enough by itself.
 - Use the current evidence: dependency versions, manifests, and files.
-- When a Rendered UI section is present, JavaScript errors mean the goal is unmet.
-  Controls with 0x0 or tiny sizes are unmet. A missing diff does not save a
-  broken page.
+- When a Rendered UI section is present, JavaScript exceptions mean the goal is
+  unmet. Missing JS or CSS the page requested is unmet. Favicon 404s and missing
+  historical screenshots are not unmet. Controls with 0x0 or tiny sizes are unmet.
+  A missing diff does not save a broken page.
 - Dead controls and static dump-dom captures of interactive UI (tabs, screenshots,
   buttons) mean the goal is unmet.
 - A missing diff does not mean the goal is unmet if the tree already has the
