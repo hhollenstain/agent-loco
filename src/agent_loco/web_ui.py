@@ -334,6 +334,7 @@ def create_app(
         default_goal=default_goal,
         default_create_pr=default_create_pr,
     )
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
