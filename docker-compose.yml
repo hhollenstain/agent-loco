@@ -13,6 +13,7 @@ services:
       LOCO_PUBLISH: ${LOCO_PUBLISH:-false}
     volumes:
       - ${LOCO_WORKSPACE:-./workspaces}:/workspaces
+      - ./.loco:/workspaces/.loco
       # Uncomment to publish from the container:
       # - ${HOME}/.ssh:/home/loco/.ssh:ro
     working_dir: /workspaces

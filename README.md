@@ -96,6 +96,21 @@ Publish/create-PR is off until you turn it on in `.loco/config.yaml` or pass `--
 
 The agent image is multi-arch (`linux/arm64` and `linux/amd64`) and does **not** need a GPU. Mount the project and talk to a model server.
 
+The `.loco/` directory (config, goals, runs history) is automatically mounted from your local workspace, ensuring it persists across container restarts.
+
+### Quick start with example project
+
+Clone a repo or point at an existing workspace, then run cycles:
+
+```bash
+export LOCO_WORKSPACE=/absolute/path/to/your/project
+docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
+  init /workspaces/my-repo
+docker clone git@github.com:user/repo.git /workspaces/my-repo
+docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
+  run -w /workspaces/my-repo --goal "Add a README.md"
+```
+
 ### Mac + Docker Desktop
 
 Keep Ollama on the host (Metal), then:
@@ -105,6 +120,17 @@ export LOCO_WORKSPACE=/absolute/path/to/your/project
 docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent doctor
 docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
   run --workspace /workspaces --goal "Make the test suite pass."
+```
+
+The `.loco` directory (containing `config.yaml`, `goals.md`, and `.loco/runs/`) is automatically mounted from your local workspace, ensuring persistence across container restarts.
+
+For development or cloning repos:
+
+```bash
+export LOCO_WORKSPACE=/absolute/path/to/your/project
+docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent \
+  init /workspaces/my-repo
+docker clone git@github.com:user/repo.git /workspaces/my-repo
 ```
 
 ### NVIDIA home lab (5090 and similar)
@@ -125,6 +151,14 @@ docker compose -f docker-compose.yml -f docker-compose.nvidia.yml exec ollama ol
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent doctor
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent \
   watch --workspace /workspaces
+```
+
+The `.loco` directory is persisted automatically via volume mount. Run commands from within the container:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent \
+  init /workspaces/my-repo
+docker clone git@github.com:user/repo.git /workspaces/my-repo
 ```
 
 A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LOCO_MODEL_NAME` if you prefer vLLM or a larger quant. Any server that speaks `/v1/chat/completions` works; set `LOCO_MODEL_BASE_URL` accordingly.
