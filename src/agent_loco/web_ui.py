@@ -20,6 +20,7 @@ from agent_loco.runtime.project import (
     guidelines_are_custom,
     save_guidelines,
 )
+from agent_loco.runtime.importer import load_goals_from_issues
 from agent_loco.runtime.servers import (
     list_known_servers,
     load_selection,
@@ -245,6 +246,10 @@ class UiState:
 
         return results
 
+    def load_goals_from_github(self, owner: str, repo: str) -> dict[str, Any]:
+        """Load issues as selectable goals from a GitHub repository."""
+        return load_goals_from_issues(owner, repo)
+
     def paginate_history(
         self,
         workspace_root: Path,
@@ -393,6 +398,13 @@ def create_app(
             "last_base_url": selected["last_base_url"],
             "last_model": selected["last_model"],
         }
+
+    @app.get("/api/goals", response_model=None)
+    def goals_from_issues(request: Request, owner: str, repo: str) -> dict[str, Any]:
+        """Get goals populated from GitHub issues."""
+        ui: UiState = request.app.state.ui
+        return ui.load_goals_from_github(owner, repo)
+
 
     @app.get("/api/tasks", response_model=None)
     def list_tasks(

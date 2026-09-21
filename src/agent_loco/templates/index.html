@@ -1340,6 +1340,24 @@
       </div>
       <p class="hint" id="workspace-info">Switch with Browse or the tab bar. Full location and rules are in settings.</p>
 
+      <div class="github-goals-section">
+        <label for="github-issues">Import goals from GitHub issues</label>
+        <div class="github-issues-row">
+          <input id="github-owner" type="text" placeholder="owner (e.g., agnt-loco)" spellcheck="false">
+          <input id="github-repo" type="text" placeholder="repo (e.g., agent-loco)" spellcheck="false">
+          <select id="github-state">
+            <option value="open" selected>open</option>
+            <option value="closed">closed</option>
+            <option value="all">all</option>
+          </select>
+          <button type="button" class="secondary" id="load-goals">Load</button>
+        </div>
+        <div id="goals-picker" class="goals-picker" hidden>
+          <div class="goals-list" id="goals-list"></div>
+          <button type="button" class="secondary" id="close-goals-picker">Close</button>
+        </div>
+      </div>
+
       <label for="goal">Goal</label>
       <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
 
@@ -3364,6 +3382,121 @@
     document.getElementById("load-models").addEventListener("click", () => loadModels(true));
     document.getElementById("base-url").addEventListener("change", () => loadModels(true));
     document.getElementById("model").addEventListener("change", () => loadModels(false));
+
+    // GitHub goals picker
+    const githubOwnerEl = document.getElementById("github-owner");
+    const githubRepoEl = document.getElementById("github-repo");
+    const githubStateEl = document.getElementById("github-state");
+    const loadGoalsBtn = document.getElementById("load-goals");
+    const goalsPickerEl = document.getElementById("goals-picker");
+    const goalsListEl = document.getElementById("goals-list");
+    const closeGoalsBtn = document.getElementById("close-goals-picker");
+    let githubGoals = [];
+
+    function githubOptionLabel(issue) {
+      return `#${issue.number} — ${escapeHtml(issue.title)}`;
+    }
+
+    function renderGoalsList(issues) {
+      goalsListEl.replaceChildren();
+      if (!issues || !issues.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "No issues found.";
+        goalsListEl.appendChild(empty);
+        return;
+      }
+      for (const issue of issues) {
+        const div = document.createElement("div");
+        div.className = "goal-option";
+        const title = document.createElement("div");
+        title.className = "goal-title";
+        title.textContent = `${issue.title}`;
+        title.dataset.issueId = String(issue.id);
+        title.dataset.issueNumber = String(issue.number);
+        const meta = document.createElement("div");
+        meta.className = "goal-meta";
+        const id = document.createElement("span");
+        id.className = "goal-id";
+        id.textContent = `#${issue.number}`;
+        id.title = `GitHub #${issue.number}`;
+        id.dataset.issueNumber = String(issue.number);
+        id.dataset.issueId = String(issue.id);
+        const label = document.createElement("span");
+        label.className = "goal-state";
+        label.textContent = issue.state;
+        label.dataset.issueId = String(issue.id);
+        label.dataset.issueNumber = String(issue.number);
+        meta.appendChild(id);
+        meta.appendChild(label);
+        div.appendChild(title);
+        div.appendChild(meta);
+        div.addEventListener("click", () => {
+          document.querySelectorAll(".goal-option").forEach(opt => opt.classList.remove("selected"));
+          div.classList.add("selected");
+          document.getElementById("goal").value = issue.title;
+          closeGoalsPicker();
+        });
+        goalsListEl.appendChild(div);
+      }
+      // Add click handlers for inner elements
+      goalsListEl.addEventListener("click", (e) => {
+        const title = e.target.closest(".goal-title");
+        const id = e.target.closest(".goal-id");
+        const label = e.target.closest(".goal-state");
+        const opt = (title || id || label) ? e.target.closest(".goal-option") : null;
+        document.querySelectorAll(".goal-option").forEach(o => o.classList.remove("selected"));
+        if (opt) {
+          opt.classList.add("selected");
+          document.getElementById("goal").value = title?.dataset.title || id?.dataset.title || label?.dataset.title || "";
+          closeGoalsPicker();
+        }
+      });
+    }
+
+    function openGoalsPicker() {
+      goalsPickerEl.hidden = false;
+      githubGoals = [];
+      goalsListEl.innerHTML = '<div class="loading">Loading...</div>';
+    }
+
+    function closeGoalsPicker() {
+      goalsPickerEl.hidden = true;
+      document.querySelectorAll(".goal-option").forEach(opt => opt.classList.remove("selected"));
+    }
+
+    async function loadGitHubGoals() {
+      const owner = githubOwnerEl.value.trim();
+      const repo = githubRepoEl.value.trim();
+      const state = githubStateEl.value;
+      if (!owner || !repo) {
+        notify("warning", "Please enter both owner and repo.");
+        return;
+      }
+      openGoalsPicker();
+      showNotice(errorEl, "info", `Loading issues from ${owner}/${repo} (${state})...`);
+      try {
+        const res = await fetch(`/api/goals?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&state=${state}`);
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          const err = data.error || "Failed to load issues";
+          notify("error", err, { title: "Could not load issues" });
+          goalsListEl.innerHTML = `<p class="error">Error: ${escapeHtml(err)}</p>`;
+          return;
+        }
+        githubGoals = data.issues || [];
+        renderGoalsList(githubGoals);
+      } catch (err) {
+        notify("error", err.message, { title: "Failed to load issues" });
+        goalsListEl.innerHTML = `<p class="error">Network error: ${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    loadGoalsBtn.addEventListener("click", loadGitHubGoals);
+    closeGoalsBtn.addEventListener("click", closeGoalsPicker);
+
+    // Toggle goals picker visibility on label click
+    document.querySelector(".github-goals-section label")?.addEventListener("click", openGoalsPicker);
 
     renderNotificationHistory();
     refresh();
