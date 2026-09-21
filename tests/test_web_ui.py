@@ -99,6 +99,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function notify(" in home.content
         assert b"class=\"pr-link\"" in home.content
         assert b"function prLinkHtml(" in home.content
+        assert b"function rerunFailedTask(" in home.content
+        assert b"data-rerun-id" in home.content
+        assert b"/rerun" in home.content
         assert b"GITHUB_MARK" in home.content
         assert b'event.kind === "pr"' in home.content
         assert b'event.kind === "ui"' in home.content
@@ -964,6 +967,90 @@ def test_web_ui_loads_github_issues_from_workspace_remote(
         )
         assert filtered.status_code == 200
         assert filtered.json()["issues"][0]["number"] == 12
+    finally:
+        manager.shutdown(wait=False)
+
+
+def _failed_result(goal: str | None = "do the thing", branch: str | None = None) -> CycleResult:
+    return CycleResult(
+        status="failed",
+        goal=goal,
+        summary="not done",
+        tests_passed=False,
+        committed=False,
+        published=False,
+        commit_sha=None,
+        reason="goal not met",
+        branch=branch,
+    )
+
+
+def test_web_ui_reruns_failed_task(settings: Settings, tmp_path: Path) -> None:
+    statuses = iter(["failed", "success"])
+
+    def runner(task: Task) -> CycleResult:
+        status = next(statuses)
+        if status == "failed":
+            return _failed_result(task.goal, branch="loco/feature")
+        return _ok_result(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Allow rerun", "auto_commit": False},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        body = None
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            match = next((item for item in listed if item["id"] == task_id), None)
+            if match and match["status"] not in {"queued", "running"}:
+                body = match
+                break
+            time.sleep(0.05)
+        assert body is not None
+        assert body["status"] == "failed"
+        rerun = client.post(f"/api/tasks/{task_id}/rerun", json={})
+        assert rerun.status_code == 201
+        assert rerun.json()["id"] != task_id
+        assert rerun.json()["goal"] == "Allow rerun"
+        success = client.post(f"/api/tasks/{rerun.json()['id']}/rerun", json={})
+        assert success.status_code == 404
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_submit_accepts_resume_branch(settings: Settings, tmp_path: Path) -> None:
+    seen: list[str | None] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append(task.resume_branch)
+        return _ok_result(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={
+                "workspace": str(tmp_path),
+                "goal": "Continue the work",
+                "resume_branch": "loco/feature",
+                "auto_commit": False,
+            },
+        )
+        assert created.status_code == 201
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            if listed and listed[0]["status"] not in {"queued", "running"}:
+                break
+            time.sleep(0.05)
+        assert seen == ["loco/feature"]
     finally:
         manager.shutdown(wait=False)
 

@@ -31,6 +31,9 @@ Rules:
 - A summary that claims the work is done does not count unless the diff shows it.
 - If the goal is a GitHub issue, the body and comments are the spec. Matching
   only the title is unmet. The requested behavior must be in the diff.
+- A new button, tab, or form control with no JavaScript handler in the same
+  change is unmet. An API route with no client that calls it is unmet unless
+  the goal is backend-only.
 - Mocks, stubs, NotImplementedError, generated sample data, or comments like
   "in a real implementation" mean unmet unless the goal is explicitly to add a stub.
 - A UI that asks the user to re-type owner/repo (or similar) when the workspace
@@ -122,6 +125,110 @@ def half_baked_diff_markers(diff: str | None) -> list[str]:
             added = True
         if added and _HALF_BAKED_ADDED.search(text):
             hits.append(text.strip()[:160])
+    return hits
+
+
+_BUTTON_CLASS_RE = re.compile(
+    r"<button\b[^>]*\bclass\s*=\s*[\"']([^\"']+)[\"']",
+    re.IGNORECASE,
+)
+_APP_ROUTE_RE = re.compile(
+    r"""@app\.(?:post|get|put|patch|delete)\(\s*['\"]([^'\"]+)['\"]""",
+    re.IGNORECASE,
+)
+_HANDLER_HINTS = (
+    "addEventListener",
+    "onclick",
+    "fetch(",
+    "closest(",
+    "querySelector",
+    "getElementById",
+)
+_GENERIC_BUTTON_CLASSES = frozenset(
+    {
+        "task",
+        "secondary",
+        "primary",
+        "selected",
+        "sidebar-toggle",
+        "workspace-tab-select",
+        "workspace-tab-add",
+        "workspace-tab-archive",
+        "progress-stage",
+    }
+)
+_GENERIC_ROUTE_SEGMENTS = frozenset(
+    {"", "api", "tasks", "history", "goals", "models", "workspaces", "servers"}
+)
+
+
+def unwired_ui_markers(diff: str | None) -> list[str]:
+    """Buttons or API routes added in the diff without a matching client call."""
+    html_added: list[str] = []
+    js_added: list[str] = []
+    py_added: list[str] = []
+    current = ""
+    untracked_body = False
+    for line in (diff or "").splitlines():
+        if line.startswith("+++ "):
+            current = line[4:].strip()
+            if current.startswith("b/"):
+                current = current[2:]
+            untracked_body = True
+            continue
+        if (
+            line.startswith("diff --git ")
+            or line.startswith("@@")
+            or line.startswith("--- ")
+        ):
+            untracked_body = False
+            continue
+        added = False
+        text = line
+        if line.startswith("+") and not line.startswith("+++"):
+            added = True
+            text = line[1:]
+        elif untracked_body and not line.startswith("-"):
+            added = True
+        if not added:
+            continue
+        lowered = current.lower()
+        if lowered.endswith((".js", ".mjs", ".ts", ".tsx", ".jsx")):
+            js_added.append(text)
+        elif lowered.endswith((".html", ".htm")) or "templates/" in lowered:
+            html_added.append(text)
+            if any(hint in text for hint in _HANDLER_HINTS):
+                js_added.append(text)
+        if lowered.endswith(".py"):
+            py_added.append(text)
+
+    script = "\n".join(js_added)
+    hits: list[str] = []
+    for line in html_added:
+        for classes in _BUTTON_CLASS_RE.findall(line):
+            for cls in classes.split():
+                name = cls.strip()
+                if not name or name in _GENERIC_BUTTON_CLASSES:
+                    continue
+                if name in script:
+                    continue
+                hits.append(f"button.{name} has no click handler")
+    for line in py_added:
+        match = _APP_ROUTE_RE.search(line)
+        if not match:
+            continue
+        path = match.group(1)
+        segments = [
+            part.strip("{}")
+            for part in path.split("/")
+            if part and not part.startswith("{") and part not in _GENERIC_ROUTE_SEGMENTS
+        ]
+        if not segments:
+            continue
+        token = segments[-1]
+        if token in script or f"/{token}" in script:
+            continue
+        hits.append(f"route {path} is not called from the UI")
     return hits
 
 

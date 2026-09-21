@@ -22,6 +22,7 @@ from agent_loco.tools.git import (
     is_tracked,
     parse_github_remote,
     push_changes,
+    resume_workspace,
     run_git,
     upstream_state,
     with_loco_coauthor,
@@ -362,4 +363,20 @@ def test_upstream_state_detects_unpushed_local_commits(tmp_path: Path) -> None:
     assert state.pushed is False
     assert state.ahead == 1
     assert "not pushed" in state.detail
+
+
+def test_resume_workspace_checks_out_feature_branch(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    start = current_branch(workspace)
+    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    (tmp_path / "app.py").write_text("print('next')\n", encoding="utf-8")
+    run_git(workspace, ["add", "app.py"])
+    run_git(workspace, ["commit", "-m", "wip"])
+    run_git(workspace, ["checkout", start or "master"])
+    assert current_branch(workspace) != "loco/feature"
+    result = resume_workspace(workspace, branch="loco/feature")
+    assert result.ok
+    assert current_branch(workspace) == "loco/feature"
 

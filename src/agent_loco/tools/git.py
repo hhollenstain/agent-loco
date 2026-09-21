@@ -315,6 +315,47 @@ def is_protected_branch(name: str | None) -> bool:
     return name.lower() in PROTECTED_BRANCHES
 
 
+def branch_exists(workspace: Workspace, name: str) -> bool:
+    if not name:
+        return False
+    result = run_git(
+        workspace, ["show-ref", "--verify", "--quiet", f"refs/heads/{name}"]
+    )
+    return result.returncode == 0
+
+
+def resume_workspace(
+    workspace: Workspace,
+    branch: str | None = None,
+    sha: str | None = None,
+) -> ToolResult:
+    """Check out a failed run's feature branch so a rerun can continue that work."""
+    target = (branch or "").strip()
+    if target and is_protected_branch(target):
+        return ToolResult(False, f"refusing to resume on protected branch {target}")
+    if target and target != current_branch(workspace):
+        if not branch_exists(workspace, target):
+            return ToolResult(False, f"branch not found: {target}")
+        checked = run_git(workspace, ["checkout", target])
+        if checked.returncode != 0:
+            return ToolResult(False, _output(checked))
+    current = current_branch(workspace)
+    sha_value = (sha or "").strip()
+    if sha_value:
+        head = current_sha(workspace)
+        if head and head != sha_value:
+            # Keep uncommitted work; only move HEAD when the tree is clean enough.
+            status = run_git(workspace, ["status", "--porcelain"])
+            dirty = bool((status.stdout or "").strip())
+            if not dirty:
+                moved = run_git(workspace, ["checkout", sha_value])
+                if moved.returncode != 0:
+                    return ToolResult(False, _output(moved))
+                if current and not is_protected_branch(current):
+                    run_git(workspace, ["checkout", "-B", current])
+    return ToolResult(True, current_branch(workspace) or target or "")
+
+
 def default_base_branch(workspace: Workspace, configured: str | None = None) -> str:
     if configured and configured.strip():
         return configured.strip()

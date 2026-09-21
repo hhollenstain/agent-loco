@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from agent_loco.agent.prompts import SYSTEM_PROMPT, user_prompt
 from agent_loco.llm.client import AssistantTurn, LLMClient, ToolCall
@@ -15,9 +16,11 @@ log = logging.getLogger("loco")
 
 MUTATING_TOOLS = {"write_file", "str_replace"}
 VERIFY_TOOLS = {"review_ui", "run_tests"}
+UI_SUFFIXES = {".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"}
 MAX_PLAN_NUDGES = 3
 MAX_REQUIRE_CHANGE_NUDGES = 8
 MAX_UNFINISHED_NUDGES = 4
+MAX_VALIDATE_NUDGES = 4
 MAX_INSPECT_ROUNDS = 3
 CONTINUE_NUDGE = (
     "You have not changed any files that implement the goal. Inspection is over. "
@@ -44,6 +47,15 @@ INSPECT_NUDGE = (
     "Use write_file only for a new or small file. "
     "Do not write placeholder, status, or verification files."
 )
+VALIDATE_UI_NUDGE = (
+    "You changed UI files but have not called review_ui since the last edit. "
+    "Call review_ui, click the new control, and fix errors, 404s, or dead buttons. "
+    "A control that is visible but does not fetch or change the page is not done."
+)
+VALIDATE_TESTS_NUDGE = (
+    "You changed code but have not called run_tests since the last edit. "
+    "Run the project tests and fix failures before summarizing."
+)
 _UNFINISHED_RE = re.compile(
     r"(?is)("
     r"\blet me\b|"
@@ -55,7 +67,10 @@ _UNFINISHED_RE = re.compile(
     r"\bleave (?:it|this|the rest) (?:for|to) (?:a )?later\b|"
     r"\bthis enables\b|"
     r"\bgenerated? sample\b|"
-    r"\bmock(?:ed)? data\b"
+    r"\bmock(?:ed)? data\b|"
+    r"\bnot fully wired\b|"
+    r"\bstarting point\b|"
+    r"\bhandler will\b"
     r")"
 )
 
@@ -67,6 +82,17 @@ def looks_unfinished(text: str) -> bool:
     if value.endswith(":") or value.endswith("..."):
         return True
     return bool(_UNFINISHED_RE.search(value))
+
+
+def _is_ui_path(path: str) -> bool:
+    raw = (path or "").replace("\\", "/").lower()
+    suffix = Path(raw).suffix
+    return suffix in UI_SUFFIXES or "/templates/" in raw or raw.endswith(".html")
+
+
+def _tool_path(arguments: dict) -> str:
+    value = arguments.get("path") if isinstance(arguments, dict) else None
+    return str(value or "")
 
 
 @dataclass
@@ -92,7 +118,14 @@ class CodingAgent:
         prompt = (system_prompt or "").strip()
         self.system_prompt = prompt or SYSTEM_PROMPT.strip()
 
-    def run(self, goal: str, context: str = "", *, require_change: bool = False) -> AgentResult:
+    def run(
+        self,
+        goal: str,
+        context: str = "",
+        *,
+        require_change: bool = False,
+        require_tests: bool = False,
+    ) -> AgentResult:
         messages: list[dict] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_prompt(goal, context)},
@@ -101,8 +134,12 @@ class CodingAgent:
         known_names = {tool.name for tool in self.tools}
         tool_calls = 0
         mutated = False
+        mutated_ui = False
+        verified_ui = False
+        verified_tests = False
         plan_nudges = 0
         unfinished_nudges = 0
+        validate_nudges = 0
         inspect_rounds = 0
 
         for iteration in range(1, self.max_iterations + 1):
@@ -124,6 +161,14 @@ class CodingAgent:
                     if call.name in MUTATING_TOOLS and result.ok:
                         mutated = True
                         wrote = True
+                        verified_tests = False
+                        if _is_ui_path(_tool_path(call.arguments)):
+                            mutated_ui = True
+                            verified_ui = False
+                    elif call.name == "review_ui":
+                        verified_ui = bool(result.ok)
+                    elif call.name == "run_tests":
+                        verified_tests = bool(result.ok)
                     elif call.name not in VERIFY_TOOLS:
                         inspected = True
                     messages.append(_tool_result_message(call, result.output, native=native))
@@ -155,6 +200,27 @@ class CodingAgent:
                 record_event(kind="step", message="Agent tried to stop mid-work; continuing.")
                 messages.append({"role": "assistant", "content": turn.text or ""})
                 messages.append({"role": "user", "content": _nudge(UNFINISHED_NUDGE, goal)})
+                continue
+
+            if mutated_ui and not verified_ui and validate_nudges < MAX_VALIDATE_NUDGES:
+                validate_nudges += 1
+                log.info("nudging agent to validate UI changes")
+                record_event(kind="step", message="Agent skipped UI validation; continuing.")
+                messages.append({"role": "assistant", "content": turn.text or ""})
+                messages.append({"role": "user", "content": _nudge(VALIDATE_UI_NUDGE, goal)})
+                continue
+
+            if (
+                require_tests
+                and mutated
+                and not verified_tests
+                and validate_nudges < MAX_VALIDATE_NUDGES
+            ):
+                validate_nudges += 1
+                log.info("nudging agent to run tests after edits")
+                record_event(kind="step", message="Agent skipped tests; continuing.")
+                messages.append({"role": "assistant", "content": turn.text or ""})
+                messages.append({"role": "user", "content": _nudge(VALIDATE_TESTS_NUDGE, goal)})
                 continue
 
             summary = (turn.text or "").strip() or "Agent finished without a summary."

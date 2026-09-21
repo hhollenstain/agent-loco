@@ -60,6 +60,12 @@ class TaskCreate(BaseModel):
     api_key: str | None = None
     auto_commit: bool | None = None
     create_pr: bool | None = None
+    resume_branch: str | None = None
+    resume_sha: str | None = None
+
+
+class RerunPayload(BaseModel):
+    sha: str | None = None
 
 
 class ModelsQuery(BaseModel):
@@ -463,9 +469,6 @@ def create_app(
             return JSONResponse({"error": "task not found or not rerunnable"}, status_code=404)
         return JSONResponse(new_task.to_dict(), status_code=201)
 
-    class RerunPayload(BaseModel):
-        sha: str | None = None
-
     @app.post("/api/tasks")
     def create_task(
         request: Request,
@@ -483,6 +486,8 @@ def create_app(
                 model_name=body.model,
                 model_base_url=body.base_url,
                 model_api_key=body.api_key,
+                resume_branch=body.resume_branch,
+                resume_sha=body.resume_sha,
             )
             ui.remember_server(task.model_base_url, model=task.model_name)
             ui.set_workspace(task.workspace)

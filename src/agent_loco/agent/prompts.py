@@ -56,6 +56,10 @@ Rules:
   layout (zero-size, crushed labels, missing controls), and controls that do
   not change the page. The requested panels must be visible in the capture
   (non-zero size, not display:none). A diff is not done until the rendered page works.
+- Do not add a button, tab, or API endpoint without wiring them together in
+  this change. A visible control that does not fetch or change state is unfinished.
+- After behavior changes, call run_tests when the project has a test command.
+  Do not summarize until that validation has run since the last edit.
 - If review_ui reports 404s for CSS or JS you linked, that is not done. Serve
   those files from the web app (static mount or route) or fix the href so it
   matches a real path. Call review_ui again until the URLs load. Do not stop
@@ -78,7 +82,8 @@ def user_prompt(goal: str, context: str) -> str:
             "Work until THIS goal is fully done or you are blocked. Do not leave a "
             "stub, mock, unused form field, or a follow-up for a later run. "
             "Do not switch to a different task you notice in the repo. Test your "
-            "changes. Do not commit on main/master; the cycle commits after review. "
+            "changes. If you edited UI, call review_ui and click the new control. "
+            "Do not commit on main/master; the cycle commits after review. "
             "A later review will reject a PR if the diff does not fulfill this goal.",
         ]
     )

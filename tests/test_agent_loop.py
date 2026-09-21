@@ -354,9 +354,15 @@ def test_agent_does_not_inspect_nudge_after_review_ui(tmp_path: Path, monkeypatc
     assert not any("without changing files" in content for content in contents)
 
 
-def test_agent_str_replace_counts_as_mutation(tmp_path: Path) -> None:
+def test_agent_str_replace_counts_as_mutation(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "agent_loco.tools.browser.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(ok=True, snapshot="stages"),
+    )
     tools = build_tools(
         workspace,
         test_command=None,
@@ -380,12 +386,18 @@ def test_agent_str_replace_counts_as_mutation(tmp_path: Path) -> None:
                     )
                 ],
             ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(id="ui-1", name="review_ui", arguments={}),
+                ],
+            ),
             AssistantTurn(text="Added stages."),
         ]
     )
     result = CodingAgent(llm, tools, max_iterations=5).run("Add stages")
     assert result.stopped_reason == "completed"
-    assert result.tool_calls == 1
+    assert result.tool_calls == 2
     assert "<main class='stages'></main>" in (tmp_path / "ui.html").read_text(
         encoding="utf-8"
     )
@@ -397,9 +409,15 @@ def test_agent_str_replace_counts_as_mutation(tmp_path: Path) -> None:
     assert not any("have not changed any files" in content for content in contents)
 
 
-def test_agent_accepts_qwen_xml_str_replace(tmp_path: Path) -> None:
+def test_agent_accepts_qwen_xml_str_replace(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "agent_loco.tools.browser.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(ok=True, snapshot="stages"),
+    )
     tools = build_tools(
         workspace,
         test_command=None,
@@ -418,11 +436,17 @@ def test_agent_accepts_qwen_xml_str_replace(tmp_path: Path) -> None:
                     "</function></tool_call>"
                 )
             ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(id="ui-1", name="review_ui", arguments={}),
+                ],
+            ),
             AssistantTurn(text="Patched ui.html"),
         ]
     )
     result = CodingAgent(llm, tools, max_iterations=5).run("Add stages")
-    assert result.tool_calls == 1
+    assert result.tool_calls == 2
     assert "<main class='stages'></main>" in (tmp_path / "ui.html").read_text(
         encoding="utf-8"
     )
@@ -468,3 +492,100 @@ def test_agent_require_change_keeps_going_until_edit(tmp_path: Path) -> None:
         if message.get("role") == "user" and isinstance(message.get("content"), str)
     ]
     assert any("404" in content for content in contents)
+
+
+def test_agent_requires_review_ui_after_html_edit(tmp_path: Path, monkeypatch) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "agent_loco.tools.browser.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Rerun"),
+    )
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="edit-1",
+                        name="str_replace",
+                        arguments={
+                            "path": "ui.html",
+                            "old_string": "<main></main>",
+                            "new_string": "<button class='rerun-btn'>Rerun</button>",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Added a rerun button."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(id="ui-1", name="review_ui", arguments={}),
+                ],
+            ),
+            AssistantTurn(text="Validated the rerun button."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run("Add a rerun button")
+    assert result.summary == "Validated the rerun button."
+    contents = [
+        message["content"]
+        for message in llm.calls[2]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("review_ui" in content for content in contents)
+
+
+def test_agent_requires_run_tests_when_asked(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    tools = build_tools(
+        workspace,
+        test_command="python3 -c 'print(0)'",
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="edit-1",
+                        name="write_file",
+                        arguments={"path": "app.py", "content": "x = 2\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Updated app.py"),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(id="test-1", name="run_tests", arguments={}),
+                ],
+            ),
+            AssistantTurn(text="Tests passed."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run(
+        "Change x",
+        require_tests=True,
+    )
+    assert result.summary == "Tests passed."
+    contents = [
+        message["content"]
+        for message in llm.calls[2]
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("run_tests" in content for content in contents)

@@ -12,7 +12,7 @@ from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient, OpenAICompatClient, list_remote_models, normalize_model_base_url
 from agent_loco.logging import UtcFormatter, utcnow_iso
 from agent_loco.runtime.improve import CycleResult, run_cycle
-from agent_loco.progress import bind_progress, reset_progress
+from agent_loco.progress import bind_progress, record_event, reset_progress
 
 log = logging.getLogger("loco")
 
@@ -56,6 +56,9 @@ class Task:
     pr_url: str | None = None
     error: str | None = None
     sha_before: str | None = None
+    branch: str | None = None
+    resume_branch: str | None = None
+    resume_sha: str | None = None
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -78,6 +81,8 @@ class Task:
             "commit_sha": self.commit_sha,
             "pr_url": self.pr_url,
             "error": self.error,
+            "sha_before": self.sha_before,
+            "branch": self.branch,
             "events": list(self.events),
         }
         if include_logs:
@@ -139,6 +144,8 @@ class TaskManager:
         model_name: str | None = None,
         model_base_url: str | None = None,
         model_api_key: str | None = None,
+        resume_branch: str | None = None,
+        resume_sha: str | None = None,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
@@ -159,6 +166,9 @@ class TaskManager:
             model_name=selected_model,
             model_base_url=selected_url,
             model_api_key=selected_key,
+            resume_branch=(resume_branch or "").strip() or None,
+            resume_sha=(resume_sha or "").strip() or None,
+            branch=(resume_branch or "").strip() or None,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -185,28 +195,26 @@ class TaskManager:
         }
 
     def rerun(self, task_id: str, from_sha: str | None = None) -> Task | None:
-        """Create a new task to rerun a failed or error task from a specific SHA."""
+        """Queue a new cycle for a failed task, resuming its feature branch when possible."""
         with self._lock:
             old_task = self._tasks.get(task_id)
         if not old_task:
             return None
         if old_task.status not in ("failed", "error"):
             return None
-        task = Task(
-            id=uuid4().hex,
-            workspace=old_task.workspace,
-            goal=old_task.goal,
+        resume_branch = old_task.branch
+        resume_sha = (from_sha or old_task.commit_sha or old_task.sha_before or "").strip() or None
+        return self.submit(
+            Path(old_task.workspace),
+            old_task.goal,
             auto_commit=old_task.auto_commit,
             create_pr=old_task.create_pr,
             model_name=old_task.model_name,
             model_base_url=old_task.model_base_url,
             model_api_key=old_task.model_api_key,
-            sha_before=from_sha or old_task.sha_before,
+            resume_branch=resume_branch,
+            resume_sha=resume_sha,
         )
-        with self._lock:
-            self._tasks[task.id] = task
-        self._executor.submit(self._run, task)
-        return task
 
     def list_models(
         self,
@@ -251,6 +259,9 @@ class TaskManager:
             task.published = result.published
             task.commit_sha = result.commit_sha
             task.pr_url = result.pr_url
+            if getattr(result, "branch", None):
+                task.branch = result.branch
+            self._refresh_git_state(task)
         except Exception as exc:
             log.exception("task %s crashed", task.id)
             task.status = "error"
@@ -262,6 +273,7 @@ class TaskManager:
             task.finished_at = _utcnow()
 
     def _execute(self, task: Task) -> CycleResult:
+        self._resume_workspace(task)
         if self._runner is not None:
             return self._runner(task)
         settings = self.settings.model_copy(
@@ -280,3 +292,46 @@ class TaskManager:
             task.goal,
             cli_create_pr=task.create_pr,
         )
+
+    def _resume_workspace(self, task: Task) -> None:
+        from agent_loco.sandbox import SandboxError, Workspace
+        from agent_loco.tools.git import current_branch, current_sha, resume_workspace
+
+        try:
+            workspace = Workspace(Path(task.workspace))
+        except (OSError, SandboxError):
+            return
+        if not task.sha_before:
+            task.sha_before = current_sha(workspace)
+        if not task.branch:
+            task.branch = current_branch(workspace)
+        branch = task.resume_branch
+        sha = task.resume_sha
+        if not branch and not sha:
+            return
+        result = resume_workspace(workspace, branch=branch, sha=sha)
+        if result.ok:
+            task.branch = result.output or branch or task.branch
+            log.info("resumed task on %s", task.branch)
+            record_event(
+                kind="step",
+                message=f"Resuming on branch {task.branch}",
+            )
+        else:
+            log.warning("could not resume %s: %s", branch or sha, result.output)
+            record_event(
+                kind="step",
+                message=f"Could not checkout {branch or sha}; continuing on the current tree",
+            )
+
+    def _refresh_git_state(self, task: Task) -> None:
+        from agent_loco.sandbox import SandboxError, Workspace
+        from agent_loco.tools.git import current_branch, current_sha
+
+        try:
+            workspace = Workspace(Path(task.workspace))
+        except (OSError, SandboxError):
+            return
+        task.branch = current_branch(workspace) or task.branch
+        if not task.commit_sha:
+            task.commit_sha = current_sha(workspace)
