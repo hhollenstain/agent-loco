@@ -918,10 +918,17 @@ def test_web_ui_loads_github_issues_from_workspace_remote(
                     "id": 1,
                     "number": 12,
                     "title": "Add a favicon",
-                    "body": "",
+                    "body": "Put favicon.ico in static files.",
                     "url": "https://github.com/acme/demo/issues/12",
                     "state": "open",
-                    "goal": "#12 Add a favicon",
+                    "label": "#12 Add a favicon",
+                    "goal": (
+                        "#12 Add a favicon\n"
+                        "https://github.com/acme/demo/issues/12\n\n"
+                        "Implement this GitHub issue. Do the work it describes; "
+                        "do not only summarize it.\n\n"
+                        "Put favicon.ico in static files.\n"
+                    ),
                 }
             ],
             "owner": owner,
@@ -946,7 +953,11 @@ def test_web_ui_loads_github_issues_from_workspace_remote(
         body = loaded.json()
         assert body["owner"] == "acme"
         assert body["repo"] == "demo"
-        assert body["issues"][0]["goal"] == "#12 Add a favicon"
+        assert body["issues"][0]["label"] == "#12 Add a favicon"
+        assert body["issues"][0]["goal"].startswith("#12 Add a favicon")
+        assert "Put favicon.ico in static files." in body["issues"][0]["goal"]
+        assert b"issue.label" in home.content
+        assert b"fillGoalFromIssue" in home.content
         filtered = client.get(
             "/api/goals",
             params={"workspace": str(tmp_path), "state": "open"},

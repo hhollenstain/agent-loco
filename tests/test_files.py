@@ -150,3 +150,52 @@ def test_parse_issue_url(tmp_path: Path) -> None:
     assert "123" in result.output
     assert "octocat" in result.output
     assert "Spoon-Knife" in result.output
+
+
+def test_get_issue_returns_body_headings_and_comments(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from tests.support import init_git_repo
+    from agent_loco.tools.git import run_git
+
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    run_git(
+        Workspace(tmp_path),
+        ["remote", "add", "origin", "https://github.com/acme/demo.git"],
+    )
+
+    class FakeResponse:
+        def __init__(self, url: str) -> None:
+            self.url = url
+            self.status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            if self.url.endswith("/comments"):
+                return [{"user": {"login": "alice"}, "body": "## Note\nUse SVG"}]
+            return {
+                "number": 9,
+                "title": "Ship it",
+                "body": "## Why\nDo the thing",
+                "html_url": "https://github.com/acme/demo/issues/9",
+                "state": "open",
+                "comments": 1,
+            }
+
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda url, *args, **kwargs: FakeResponse(url),
+    )
+    result = _issues_tool(Workspace(tmp_path), "get_issue").handler(
+        issue_ref="9",
+        include_comments=True,
+    )
+    assert result.ok
+    assert result.output.startswith("Status: open")
+    assert "#9 Ship it" in result.output
+    assert "## Why\nDo the thing" in result.output
+    assert "@alice:\n## Note\nUse SVG" in result.output
+    assert "Implement this GitHub issue" in result.output

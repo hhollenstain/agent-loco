@@ -10,6 +10,7 @@ from agent_loco.agent.loop import CodingAgent
 from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient
 from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
+from agent_loco.runtime.importer import goal_headline
 from agent_loco.runtime.project import (
     ProjectConfig,
     collect_context,
@@ -167,7 +168,7 @@ def _run_cycle(
         _append_to_history(workspace.root, result)
         return result
 
-    log_progress(f"Selected goal: {selected_goal}")
+    log_progress(f"Selected goal: {goal_headline(selected_goal)}")
     log_progress("Fetching current SHA...")
     sha_before = current_sha(workspace)
     log_progress("Initializing coding agent...")
@@ -944,7 +945,7 @@ def _maybe_test(
 
 
 def _commit_message(goal: str, summary: str) -> str:
-    first_goal_line = goal.strip().splitlines()[0][:72]
+    first_goal_line = goal_headline(goal)[:72]
     first_summary = summary.strip().splitlines()[0][:72] if summary.strip() else first_goal_line
     if first_goal_line.lower().startswith("make the project's test suite pass"):
         return first_summary
