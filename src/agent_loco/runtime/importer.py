@@ -36,6 +36,8 @@ class GitHubIssue(BaseModel):
     body: str
     url: str
     state: str
+    comments: int
+    comments_data: list[dict] | None = None
 
     def as_goal(self) -> str:
         return f"#{self.number} {self.title}".strip()
@@ -94,6 +96,20 @@ def load_goals_from_issues(
         for item in data:
             if not isinstance(item, dict) or item.get("pull_request"):
                 continue
+            
+            # Fetch full issue details including comments for complete context
+            issue_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{item['number']}"
+            issue_response = httpx.get(issue_url, headers=headers, timeout=30)
+            issue_data = issue_response.json() if issue_response.status_code == 200 else item
+            
+            # Fetch comments if issue has comments
+            comments = []
+            if item.get("comments", 0) > 0:
+                comments_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{item['number']}/comments"
+                comments_response = httpx.get(comments_url, headers=headers, timeout=30)
+                if comments_response.status_code == 200:
+                    comments = comments_response.json()
+            
             issue = GitHubIssue(
                 id=item["id"],
                 number=item["number"],
@@ -101,6 +117,8 @@ def load_goals_from_issues(
                 body=_extract_goal_body(item.get("body")),
                 url=item["html_url"],
                 state=item["state"],
+                comments=item.get("comments", 0),
+                comments_data=comments if comments else None,
             )
             payload = issue.model_dump()
             payload["goal"] = issue.as_goal()

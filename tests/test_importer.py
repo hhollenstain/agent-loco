@@ -26,6 +26,8 @@ def test_github_repo_for_workspace_reads_origin(tmp_path: Path) -> None:
 
 def test_load_goals_from_issues_skips_pull_requests(monkeypatch) -> None:
     class FakeResponse:
+        status_code = 200
+        
         def raise_for_status(self) -> None:
             return None
 

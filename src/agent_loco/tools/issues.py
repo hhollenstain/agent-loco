@@ -184,10 +184,13 @@ def _list_issues(
     search_query: str | None,
     author: str | None,
 ) -> ToolResult:
-    """List issues by simulating an API pull - returns formatted issue list."""
+    """List issues with full context from GitHub API."""
+    import httpx
+    import os
     
     if not repo:
-        repo_tuple = _extract_repo_from_remote(workspace)
+        from agent_loco.tools.git import github_owner_repo
+        repo_tuple = github_owner_repo(workspace)
         if repo_tuple:
             repo = f"{repo_tuple[0]}/{repo_tuple[1]}"
         else:
@@ -197,18 +200,47 @@ def _list_issues(
     status = "closed" if include_closed else "open"
     status_label = "Closed" if include_closed else "Open"
     
-    # Simulate fetching by reading any issue files in workspace if they exist
-    # In a real implementation, this would call GitHub/GitLab API
-    issues = _generate_mock_issues(repo, limit, status, search_query, author)
+    owner, repo_name = repo.split('/')[0], repo.split('/')[1]
     
-    if not issues:
-        return ToolResult(False, f"No {status.lower()} issues found")
+    # Fetch issues from GitHub API
+    url = f"https://api.github.com/repos/{owner}/{repo_name}/issues"
+    params = {"state": status, "per_page": min(limit, 100)}
     
-    lines = [f"{status_label} issues from {repo}:"]
-    for issue in issues:
-        lines.append(f"  #{issue['number']} [{issue['state']}] {issue['title']}")
+    api_key = os.environ.get("GITHUB_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if api_key:
+        headers["Authorization"] = f"token {api_key}"
     
-    return ToolResult(True, "\n".join(lines))
+    try:
+        response = httpx.get(url, params=params, headers=headers, timeout=30)
+        response.raise_for_status()
+        issues_data = response.json()
+        
+        if not isinstance(issues_data, list):
+            return ToolResult(False, "GitHub did not return a list of issues")
+        
+        if not issues_data:
+            return ToolResult(False, f"No {status.lower()} issues found")
+        
+        lines = [f"{status_label} issues from {repo}:"]
+        for issue in issues_data:
+            if not isinstance(issue, dict) or issue.get("pull_request"):
+                continue
+            
+            issue_number = issue.get("number", "?")
+            state = issue.get("state", "?")
+            title = issue.get("title", "No title")
+            lines.append(f"  #{issue_number} [{state}] {title}")
+        
+        return ToolResult(True, "\n".join(lines))
+    
+    except httpx.HTTPError as e:
+        return ToolResult(False, f"Failed to fetch issues: {e}")
+    except Exception as e:
+        return ToolResult(False, f"Error listing issues: {e}")
 
 
 def _get_issue(
@@ -216,13 +248,85 @@ def _get_issue(
     issue_ref: str,
     include_comments: bool,
 ) -> ToolResult:
-    """Get details for a specific issue."""
+    """Get details for a specific issue including body and comments."""
     
+    from agent_loco.tools.git import github_owner_repo
+    from agent_loco.runtime.importer import github_repo_for_workspace
+    import httpx
+    import os
+    
+    # Determine repo and issue number from the reference
     parsed = _parse_issue_url(workspace, issue_ref)
-    if not parsed.ok or not parsed.issue_number:
+    if not parsed.ok:
         return ToolResult(False, f"Could not parse issue reference: {issue_ref}")
     
-    return ToolResult(True, f"Issue #{parsed.issue_number}: {parsed.title}")
+    owner = parsed.owner or github_owner_repo(workspace)[0] if github_owner_repo(workspace) else None
+    repo = parsed.repo or github_owner_repo(workspace)[1] if github_owner_repo(workspace) else None
+    issue_number = parsed.issue_number
+    
+    if not owner or not repo or not issue_number:
+        return ToolResult(False, "Could not determine repository or issue number")
+    
+    # Fetch issue details from GitHub API
+    api_key = os.environ.get("GITHUB_TOKEN")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if api_key:
+        headers["Authorization"] = f"token {api_key}"
+    
+    try:
+        url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
+        response = httpx.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        issue_data = response.json()
+        
+        if not issue_data or "error" in issue_data:
+            return ToolResult(False, f"Could not fetch issue #{issue_number}")
+        
+        # Get comments if requested
+        comments = []
+        if include_comments:
+            comments_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/comments"
+            comments_response = httpx.get(comments_url, headers=headers, timeout=30)
+            comments_response.raise_for_status()
+            comments = comments_response.json()
+        
+        # Build full context response
+        lines = [f"Issue #{issue_number}: {issue_data.get('title', 'No title')}"]
+        lines.append(f"URL: {issue_data.get('html_url', 'Unknown URL')}")
+        lines.append(f"Status: {issue_data.get('state', 'unknown')}")
+        
+        # Include body/description for full context
+        body = issue_data.get('body')
+        if body:
+            lines.append("")
+            lines.append("Description:")
+            for line in body.split('\n'):
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    lines.append(f"  {stripped}")
+        
+        # Include comments when requested and available
+        if include_comments and comments:
+            lines.append("")
+            lines.append(f"Comments ({len(comments)}):")
+            for comment in comments[:20]:  # Limit to first 20 comments
+                lines.append(f"  @{comment.get('user', {}).get('login', 'Unknown')}:")
+                comment_body = comment.get('body', '')
+                if comment_body:
+                    for line in comment_body.split('\n'):
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith('#'):
+                            lines.append(f"    {stripped}")
+        
+        return ToolResult(True, "\n".join(lines))
+    
+    except httpx.HTTPError as e:
+        return ToolResult(False, f"Failed to fetch issue #{issue_number}: {e}")
+    except Exception as e:
+        return ToolResult(False, f"Error processing issue #{issue_number}: {e}")
 
 
 def _parse_issue_url(
@@ -257,9 +361,9 @@ def _pull_goals_from_issues(
     status_filter: str,
 ) -> ToolResult:
     """Pull issues from a GitHub repo and format them as goals. Auto-updates branch and pushes commits."""
+    from agent_loco.runtime.importer import load_goals_from_issues
     
     if not repo:
-        # Only accept known GitHub repos (via github_owner_repo which uses _GITHUB_REMOTE_RE)
         from agent_loco.tools.git import github_owner_repo
         repo_tuple = github_owner_repo(workspace)
         if repo_tuple:
@@ -270,13 +374,18 @@ def _pull_goals_from_issues(
     limit = min(max(limit, 1), 100)
     status = status_filter.lower()
     
-    # Simulate fetching by generating issues
-    issues = _generate_mock_issues(repo, limit, status, None, None)
+    # Load real issues from GitHub
+    result = load_goals_from_issues(repo.split('/')[0], repo.split('/')[1], state=status, per_page=limit)
     
+    if not result.get("issues"):
+        error = result.get("error", "No issues found")
+        return ToolResult(False, f"{error}")
+    
+    issues = result["issues"]
     if not issues:
         return ToolResult(False, f"No issues found for filter: status={status}")
     
-    # Format as goals
+    # Format as goals with full context including descriptions and comments
     lines = [f"Goals from {repo} ({status_filter.title()}):"]
     lines.append("")
     lines.append("```")
@@ -288,14 +397,23 @@ def _pull_goals_from_issues(
         if prefix and prefix.lower() not in " ".join(issue.get('labels', [])).lower():
             continue
             
-        lines.append(f"- [ ] # {issue['number']}: {issue['title']}")
+        lines.append(f"- [ ] #{issue['number']}: {issue['title']}")
         lines.append(f"  - Ref: {issue['url']}")
-        if issue.get('description'):
-            # Truncate long descriptions
-            desc = issue['description'][:200]
-            if len(issue['description']) > 200:
-                desc += "..."
-            lines.append(f"  - Note: {desc}")
+        
+        # Include body/description for full context
+        if issue.get('body'):
+            body = issue['body']
+            # Clean up formatting - remove markdown headers and extra whitespace
+            lines.append("  - Description:")
+            for line in body.split('\n'):
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    lines.append(f"    {stripped}")
+        
+        # Include comments when available
+        if issue.get('comments'):
+            comment_count = issue.get('comments', 0)
+            lines.append(f"  - Comments available: {comment_count}")
         
         if i < len(issues):
             lines.append("")
@@ -358,24 +476,4 @@ def _pull_goals_from_issues(
     return ToolResult(True, "\n".join(lines) + "\n\nGoals updated and pushed to current branch.")
 
 
-def _generate_mock_issues(
-    repo: str,
-    limit: int,
-    status: str,
-    search: str | None,
-    author: str | None,
-) -> list[dict]:
-    """Generate mock issue data for demonstration."""
-    # In production, this would call GitHub/GitLab API
-    return [
-        {
-            "number": i,
-            "state": "open" if status == "open" else "closed",
-            "title": f"Feature or fix #{i}",
-            "url": f"https://github.com/{repo}/issues/{i}",
-            "labels": ["bug", "enhancement"][:i % 3],
-            "description": f"This is the description for issue #{i}. " * 10,
-            "author": f"contributor{i % 5}",
-        }
-        for i in range(1, limit + 1)
-    ]
+
