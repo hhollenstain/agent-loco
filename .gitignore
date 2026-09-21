@@ -18,6 +18,8 @@ build/
 # Local env and runtime
 history.json
 .loco/runs/
+.loco/ui-screenshots/
+.loco/ui-review.png
 .loco/servers.json
 .loco/workspaces.json
 .env
