@@ -17,6 +17,8 @@ from agent_loco.tools.git import (
     extract_pr_url,
     has_changes,
     is_runtime_artifact,
+    is_tracked,
+    parse_github_remote,
     push_changes,
     run_git,
     upstream_state,
@@ -38,6 +40,35 @@ def test_extract_pr_url_from_gh_output() -> None:
         extract_pr_url("opened https://gitlab.com/acme/app/-/merge_requests/7.")
         == "https://gitlab.com/acme/app/-/merge_requests/7"
     )
+
+
+def test_parse_github_remote_from_common_urls() -> None:
+    assert parse_github_remote("git@github.com:acme/repo.git") == ("acme", "repo")
+    assert parse_github_remote("https://github.com/acme/repo.git") == ("acme", "repo")
+    assert parse_github_remote("https://github.com/acme/repo") == ("acme", "repo")
+    assert parse_github_remote("ssh://git@github.com/acme/repo.git") == ("acme", "repo")
+    assert parse_github_remote("https://gitlab.com/acme/repo.git") is None
+
+
+def test_commit_changes_force_adds_pr_screenshots(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".loco/ui-screenshots/\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    shot = tmp_path / ".loco" / "ui-screenshots" / "ui-review_goal.png"
+    shot.parent.mkdir(parents=True)
+    shot.write_bytes(b"png")
+    assert not is_tracked(workspace, shot)
+    result = commit_changes(workspace, "update app", extra_paths=[shot])
+    assert result.ok
+    assert is_tracked(workspace, shot)
+    listed = run_git(
+        workspace,
+        ["ls-files", "--", ".loco/ui-screenshots/ui-review_goal.png"],
+    )
+    assert listed.stdout.strip() == ".loco/ui-screenshots/ui-review_goal.png"
 
 
 def test_with_loco_coauthor_adds_github_trailer() -> None:

@@ -65,14 +65,22 @@ PAGE_EVAL = """() => {
     url: location.href,
     text: (document.body && document.body.innerText || "").slice(0, 8000),
     errors: window.__locoErrors || [],
-    tabs: [...document.querySelectorAll("[data-task-pane]")].slice(0, 12).map((el) => {
+    tabs: [...document.querySelectorAll("[data-main-pane].main-tab, [data-task-pane]")].filter((el) => !el.closest("[hidden]")).slice(0, 16).map((el) => {
+      const main = el.getAttribute("data-main-pane") || "";
       const pane = el.getAttribute("data-task-pane") || "";
-      const panel = pane ? document.querySelector('[data-pane="' + pane + '"]') : null;
+      const panel = main
+        ? document.querySelector('.main-pane[data-main-pane="' + main + '"]')
+        : (pane ? document.querySelector('[data-pane="' + pane + '"]') : null);
+      const style = panel ? window.getComputedStyle(panel) : null;
+      const box = panel ? panel.getBoundingClientRect() : null;
+      const hidden = !panel || isHidden(panel) || (style && (style.display === "none" || style.visibility === "hidden"));
       return {
         name: (el.innerText || "").trim().slice(0, 80),
-        pane,
+        pane: main || pane,
         selected: el.getAttribute("aria-selected") === "true",
-        panelHidden: panel ? Boolean(panel.hidden) : null,
+        panelHidden: hidden,
+        panelHeight: box ? Math.round(box.height) : 0,
+        panelText: panel ? (panel.innerText || "").trim().slice(0, 80) : "",
       };
     }),
     elements: nodes.slice(0, 80).map((el) => {
@@ -267,8 +275,7 @@ def collect_ui_evidence(
             target = preview.url
         page: UiEvidence = capture_page(
             target,
-            click=click,
-            clicks=_default_clicks(workspace.root) if not click else None,
+            clicks=_review_clicks(workspace.root, click),
             screenshot=screenshot,
             wait_ms=wait_ms,
         )
@@ -415,6 +422,35 @@ def _launch_playwright(playwright: Any) -> Any:
     raise RuntimeError("; ".join(errors) or "playwright could not launch chromium")
 
 
+PANEL_STATE_EVAL = """({ attr, name }) => {
+  const tab = document.querySelector('[' + attr + '="' + name + '"]');
+  const panel = attr === "data-main-pane"
+    ? document.querySelector('.main-pane[data-main-pane="' + name + '"]')
+    : (document.querySelector('.main-pane:not([hidden]) [data-pane="' + name + '"]')
+       || document.querySelector('[data-pane="' + name + '"]'));
+  if (!panel) {
+    return {
+      selected: tab ? tab.getAttribute("aria-selected") : null,
+      hidden: true,
+      display: "none",
+      height: 0,
+      textLen: 0,
+    };
+  }
+  const style = window.getComputedStyle(panel);
+  const box = panel.getBoundingClientRect();
+  const ancestorHidden = Boolean(panel.closest("[hidden]"));
+  return {
+    selected: tab ? tab.getAttribute("aria-selected") : null,
+    hidden: Boolean(panel.hidden) || ancestorHidden,
+    display: style.display,
+    visibility: style.visibility,
+    height: box.height,
+    textLen: (panel.innerText || "").trim().length,
+  };
+}"""
+
+
 def _playwright_click(page: Any, click: str, wait_ms: int) -> None:
     timeout = min(max(wait_ms, 500), 8000)
     locators = [page.locator(click), page.get_by_role("button", name=click)]
@@ -440,9 +476,17 @@ def _playwright_has(page: Any, click: str) -> bool:
     return False
 
 
+def _tab_target(selector: str) -> tuple[str, str] | None:
+    for attr in ("data-main-pane", "data-task-pane"):
+        match = re.search(rf'{re.escape(attr)}=["\']([^"\']+)', selector)
+        if match:
+            return attr, match.group(1)
+    return None
+
+
 def _pane_from_selector(selector: str) -> str | None:
-    match = re.search(r'data-task-pane=["\']([^"\']+)', selector)
-    return match.group(1) if match else None
+    target = _tab_target(selector)
+    return target[1] if target else None
 
 
 def _playwright_probe(
@@ -456,26 +500,27 @@ def _playwright_probe(
         _playwright_click(page, selector, wait_ms)
         page.wait_for_timeout(400)
         clicked.append(selector)
-        pane = _pane_from_selector(selector)
-        if not pane:
+        target = _tab_target(selector)
+        if not target:
             continue
-        state = page.evaluate(
-            """(name) => {
-              const tab = document.querySelector('[data-task-pane="' + name + '"]');
-              const panel = document.querySelector('[data-pane="' + name + '"]');
-              return {
-                selected: tab ? tab.getAttribute("aria-selected") : null,
-                hidden: panel ? Boolean(panel.hidden) : null,
-              };
-            }""",
-            pane,
-        )
+        attr, pane = target
+        state = page.evaluate(PANEL_STATE_EVAL, {"attr": attr, "name": pane})
         if not isinstance(state, dict):
             continue
-        if state.get("selected") != "true" or state.get("hidden") is True:
+        visible = (
+            state.get("selected") == "true"
+            and state.get("hidden") is not True
+            and str(state.get("display") or "") not in {"none"}
+            and str(state.get("visibility") or "visible") != "hidden"
+            and float(state.get("height") or 0) >= 8
+            and int(state.get("textLen") or 0) > 0
+        )
+        if not visible:
             dead.append(
                 f"{selector} did not show the {pane} pane "
-                f"(aria-selected={state.get('selected')}, hidden={state.get('hidden')})"
+                f"(aria-selected={state.get('selected')}, hidden={state.get('hidden')}, "
+                f"display={state.get('display')}, height={state.get('height')}, "
+                f"textLen={state.get('textLen')})"
             )
     return clicked, dead
 
@@ -593,6 +638,18 @@ def _from_eval(
     errors = [str(item) for item in [*page_errors, *injected] if str(item).strip()]
     text = str(data.get("text") or "")
     dead = list(dead_controls or [])
+    for item in tabs:
+        if not isinstance(item, dict) or not item.get("selected"):
+            continue
+        hidden = bool(item.get("panelHidden"))
+        height = item.get("panelHeight")
+        short = height is not None and int(height or 0) < 8
+        if hidden or short:
+            name = str(item.get("name") or item.get("pane") or "tab").strip()
+            dead.append(
+                f"selected tab {name} did not render its pane "
+                f"(panelHidden={item.get('panelHidden')} height={height})"
+            )
     snapshot = _format_snapshot(text, elements, tabs)
     failures = [item for item in (network_failures or []) if item]
     notes = [item for item in (network_notes or []) if item]
@@ -624,7 +681,9 @@ def _format_snapshot(text: str, elements: list[Any], tabs: list[Any] | None = No
         if not name:
             continue
         lines.append(
-            f"tab: {name} selected={item.get('selected')} panelHidden={item.get('panelHidden')}"
+            f"tab: {name} selected={item.get('selected')} "
+            f"panelHidden={item.get('panelHidden')} "
+            f"panelHeight={item.get('panelHeight')}"
         )
     for item in elements:
         if not isinstance(item, dict):
@@ -660,6 +719,16 @@ def unverified_interactive_ui(goal: str, evidence: UiEvidence) -> str | None:
             return (
                 "Rendered UI never exercised the Screenshots tab; "
                 "the control was not clicked"
+            )
+    if re.search(
+        r"past run|current run|history tab|workspace views|own tabs?",
+        goal or "",
+        re.I,
+    ):
+        if "data-main-pane" not in clicked and "past runs" not in clicked:
+            return (
+                "Rendered UI never clicked the Current/Past runs tabs; "
+                "those controls were not verified"
             )
     return None
 
@@ -745,11 +814,25 @@ def _first_html_file(root: Path) -> Path | None:
 def _default_clicks(root: Path) -> list[str]:
     if _is_loco_project(root):
         return [
+            '[data-main-pane="history"]',
+            "#open-history-picker",
             "#history-list button.task",
             '[data-task-pane="changes"]',
             '[data-task-pane="screenshots"]',
+            '[data-task-pane="progress"]',
+            '[data-main-pane="current"]',
+            "#task-list button.task",
         ]
     return []
+
+
+def _review_clicks(root: Path, click: str | None) -> list[str]:
+    clicks: list[str] = []
+    for item in [*_default_clicks(root), click or ""]:
+        text = str(item or "").strip()
+        if text and text not in clicks:
+            clicks.append(text)
+    return clicks
 
 
 def _free_port() -> int:

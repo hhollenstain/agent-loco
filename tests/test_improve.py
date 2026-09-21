@@ -355,6 +355,73 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert "Goal review confirmed the requested outcome" in str(captured["body"])
 
 
+def test_cycle_pr_hosts_only_the_change_screenshot(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _broken_project(tmp_path)
+    (tmp_path / ".gitignore").write_text(".loco/ui-screenshots/\n", encoding="utf-8")
+    shots = tmp_path / ".loco" / "ui-screenshots"
+    shots.mkdir(exist_ok=True)
+    change = shots / "ui-review_goal_final.png"
+    change.write_bytes(b"png-bytes")
+    (shots / "ui-review_review-ui_dump.png").write_bytes(b"dump")
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["remote", "add", "origin", "git@github.com:acme/repo.git"])
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve._pr_screenshot_names",
+        lambda: ["ui-review_goal_final.png"],
+    )
+    captured: dict[str, str | None] = {}
+
+    def fake_push(ws, remote="origin", branch=None):
+        captured["push_branch"] = branch
+        return ToolResult(True, "pushed")
+
+    def fake_pr(ws, title, body, *, base=None):
+        captured["body"] = body
+        captured["sha"] = current_sha(ws)
+        return ToolResult(True, "https://example.test/pull/2")
+
+    monkeypatch.setattr("agent_loco.runtime.improve.push_changes", fake_push)
+    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add and verified with python3 check.py."),
+            _review_turn(True, "adder returns 5 and tests passed"),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, cli_create_pr=True)
+    assert result.status == "success"
+    assert result.published is True
+    body = str(captured["body"])
+    sha = captured["sha"]
+    assert sha
+    assert (
+        f"![ui-review_goal_final.png](https://github.com/acme/repo/raw/{sha}/"
+        ".loco/ui-screenshots/ui-review_goal_final.png)"
+    ) in body
+    assert "ui-review_review-ui_dump.png" not in body
+    assert "](.loco/ui-screenshots/" not in body
+    tracked = run_git(
+        workspace,
+        ["ls-files", "--", ".loco/ui-screenshots"],
+    ).stdout.splitlines()
+    assert tracked == [".loco/ui-screenshots/ui-review_goal_final.png"]
+
+
 def _write_file_turn(path: str, content: str, call_id: str = "call-1") -> AssistantTurn:
     return AssistantTurn(
         text=None,

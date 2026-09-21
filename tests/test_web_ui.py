@@ -106,6 +106,18 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function fileReviewDiff(" in home.content
         assert b'data-task-pane="changes"' in home.content
         assert b'data-task-pane="screenshots"' in home.content
+        assert b'data-main-pane="current"' in home.content
+        assert b'data-main-pane="history"' in home.content
+        assert b'id="current-run"' in home.content
+        assert b'id="past-runs"' in home.content
+        assert b'id="history-detail"' in home.content
+        assert b'id="history-picker"' in home.content
+        assert b'id="open-history-picker"' in home.content
+        assert b"function setHistoryPickerOpen(" in home.content
+        assert b"function ensureLatestHistorySelection(" in home.content
+        assert home.content.index(b'id="history-detail"') < home.content.index(b'id="history-list"')
+        assert home.content.index(b'id="pagination"') < home.content.index(b'id="history-list"')
+        assert b".task-pane {\n      display: none;" not in home.content
         assert b'id="task-pagination"' in home.content
         assert b"taskPageSize" in home.content
         assert b"function taskPaneFromTab(" in home.content
@@ -114,7 +126,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function focusTimelineStage(" in home.content
         assert b'data-stage="' in home.content
         assert b"pinTimelineStage" in home.content
-        assert b"stage-time" in home.content
+        assert b"function renderProgressStageBar(" in home.content
+        assert b"return progressHtml + renderTaskPanes" in home.content
+        assert b"${taskProgress}" not in home.content
         assert b"Before tests" in home.content
         assert b"label || name" not in home.content
         assert b"\n  10|" not in home.content

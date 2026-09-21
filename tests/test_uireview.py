@@ -4,8 +4,8 @@ from pathlib import Path
 
 from agent_loco.agent.prompts import SYSTEM_PROMPT
 from agent_loco.llm.client import AssistantTurn, ScriptedClient
-from agent_loco.progress import bind_progress, reset_progress
-from agent_loco.runtime.improve import _pr_body, _review_goal
+from agent_loco.progress import bind_progress, record_event, reset_progress
+from agent_loco.runtime.improve import _pr_body, _pr_screenshot_names, _review_goal
 from agent_loco.runtime.project import load_project
 from agent_loco.runtime.review import REVIEW_SYSTEM, review_goal
 from agent_loco.runtime.uireview import (
@@ -102,6 +102,30 @@ def test_from_eval_marks_js_errors_and_zero_size_controls() -> None:
     )
     assert hidden.ok is True
     assert hidden.smashed == []
+    crushed_tab = _from_eval(
+        "http://127.0.0.1:9/",
+        {
+            "title": "loco",
+            "text": "Past runs",
+            "errors": [],
+            "tabs": [
+                {
+                    "name": "Past runs",
+                    "pane": "history",
+                    "selected": True,
+                    "panelHidden": False,
+                    "panelHeight": 0,
+                }
+            ],
+            "elements": [{"tag": "button", "name": "Past runs", "w": 90, "h": 32}],
+        },
+        page_errors=[],
+        console_errors=[],
+        screenshot=None,
+    )
+    assert crushed_tab.ok is False
+    assert crushed_tab.dead_controls
+    assert "Past runs" in crushed_tab.dead_controls[0]
 
 
 def test_classify_network_failure_ignores_favicon_and_screenshots() -> None:
@@ -371,6 +395,7 @@ def test_agent_prompt_requires_review_ui_after_ui_edits() -> None:
     assert "zero-size" in SYSTEM_PROMPT
     assert "Click new tabs" in SYSTEM_PROMPT
     assert "Markup for a Screenshots tab is not enough" in REVIEW_SYSTEM
+    assert "0x0 or display:none" in REVIEW_SYSTEM
 
 
 def test_resolve_ui_screenshot_serves_unique_and_legacy_pngs(tmp_path: Path) -> None:
@@ -413,8 +438,15 @@ def test_playwright_probe_marks_dead_and_working_tabs() -> None:
         def wait_for_timeout(self, _ms: int) -> None:
             return None
 
-        def evaluate(self, _script: str, _name: str) -> dict[str, object]:
-            return {"selected": self.selected, "hidden": self.hidden}
+        def evaluate(self, _script: str, _payload: object = None) -> dict[str, object]:
+            return {
+                "selected": self.selected,
+                "hidden": self.hidden,
+                "display": "none" if self.hidden else "block",
+                "visibility": "hidden" if self.hidden else "visible",
+                "height": 0 if self.hidden else 120,
+                "textLen": 0 if self.hidden else 40,
+            }
 
     clicked, dead = _playwright_probe(
         Page(hidden=True, selected="false"),
@@ -432,8 +464,151 @@ def test_playwright_probe_marks_dead_and_working_tabs() -> None:
     assert clicked
     assert dead == []
 
+    clicked, dead = _playwright_probe(
+        Page(hidden=False, selected="true"),
+        ['[data-main-pane="history"]'],
+        500,
+    )
+    assert clicked == ['[data-main-pane="history"]']
+    assert dead == []
 
-def test_pr_body_embeds_screenshot_markdown() -> None:
+
+def test_playwright_probe_fails_when_pane_is_css_hidden() -> None:
+    class Locator:
+        def __init__(self) -> None:
+            self.first = self
+
+        def count(self) -> int:
+            return 1
+
+        def click(self, timeout: int = 0) -> None:
+            return None
+
+    class Page:
+        def locator(self, _selector: str) -> Locator:
+            return Locator()
+
+        def get_by_role(self, *_args, **_kwargs) -> Locator:
+            return Locator()
+
+        def wait_for_timeout(self, _ms: int) -> None:
+            return None
+
+        def evaluate(self, _script: str, _payload: object = None) -> dict[str, object]:
+            return {
+                "selected": "true",
+                "hidden": False,
+                "display": "none",
+                "visibility": "visible",
+                "height": 0,
+                "textLen": 0,
+            }
+
+    clicked, dead = _playwright_probe(
+        Page(),
+        ['[data-main-pane="history"]'],
+        500,
+    )
+    assert clicked == ['[data-main-pane="history"]']
+    assert dead and "history" in dead[0]
+    assert "display=none" in dead[0]
+
+
+def test_loco_review_clicks_include_main_and_task_tabs(tmp_path: Path) -> None:
+    from agent_loco.runtime.uireview import _review_clicks
+
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").parent.mkdir(parents=True)
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    clicks = _review_clicks(tmp_path, '[data-task-pane="progress"]')
+    assert '[data-main-pane="history"]' in clicks
+    assert '[data-main-pane="current"]' in clicks
+    assert '[data-task-pane="screenshots"]' in clicks
+    assert '[data-task-pane="progress"]' in clicks
+    assert clicks.index('[data-main-pane="history"]') < clicks.index(
+        "#open-history-picker"
+    )
+    assert clicks.index("#open-history-picker") < clicks.index(
+        "#history-list button.task"
+    )
+    assert clicks.index("#history-list button.task") < clicks.index(
+        '[data-task-pane="changes"]'
+    )
+    assert clicks.index('[data-task-pane="screenshots"]') < clicks.index(
+        '[data-main-pane="current"]'
+    )
+
+
+def test_unverified_interactive_ui_requires_main_tab_clicks() -> None:
+    evidence = UiEvidence(
+        ok=True,
+        interactive=True,
+        clicked=['[data-task-pane="changes"]'],
+        snapshot="tab: Past runs selected=false panelHidden=True",
+    )
+    reason = unverified_interactive_ui(
+        "Move current tasks and past runs onto their own tabs",
+        evidence,
+    )
+    assert reason and "Current/Past runs" in reason
+
+
+def test_pr_screenshot_names_keeps_final_successful_change() -> None:
+    token = bind_progress()
+    try:
+        record_event(
+            kind="ui",
+            ok=True,
+            screenshot_filename="ui-review_review-ui_20260920_1.png",
+        )
+        record_event(
+            kind="ui",
+            ok=False,
+            screenshot_filename="ui-review_goal_fail.png",
+        )
+        record_event(
+            kind="ui",
+            ok=True,
+            screenshot_filename="ui-review_goal_a.png",
+        )
+        record_event(
+            kind="ui",
+            ok=True,
+            screenshot_filename="ui-review_goal_b.png",
+        )
+        record_event(
+            kind="ui",
+            ok=True,
+            screenshot_filename="ui-review_review-ui_20260920_2.png",
+        )
+        assert _pr_screenshot_names() == ["ui-review_goal_b.png"]
+    finally:
+        reset_progress(token)
+
+
+def test_pr_screenshot_names_falls_back_to_last_successful_review() -> None:
+    token = bind_progress()
+    try:
+        record_event(
+            kind="ui",
+            ok=True,
+            screenshot_filename="ui-review_review-ui_one.png",
+        )
+        record_event(
+            kind="ui",
+            ok=False,
+            screenshot_filename="ui-review_review-ui_bad.png",
+        )
+        record_event(
+            kind="ui",
+            ok=True,
+            screenshot_filename="ui-review_review-ui_two.png",
+        )
+        assert _pr_screenshot_names() == ["ui-review_review-ui_two.png"]
+    finally:
+        reset_progress(token)
+
+
+def test_pr_body_embeds_hosted_screenshot_urls() -> None:
     body = _pr_body(
         "Show screenshots",
         "added tab",
@@ -441,9 +616,30 @@ def test_pr_body_embeds_screenshot_markdown() -> None:
         commit_sha="abc",
         branch="loco/x",
         screenshots=["ui-review_goal.png", "ui-review.png"],
+        image_base="https://github.com/acme/repo/raw/abc",
     )
-    assert "![ui-review_goal.png](.loco/ui-screenshots/ui-review_goal.png)" in body
-    assert "![ui-review.png](.loco/ui-review.png)" in body
+    assert (
+        "![ui-review_goal.png](https://github.com/acme/repo/raw/abc/"
+        ".loco/ui-screenshots/ui-review_goal.png)"
+    ) in body
+    assert (
+        "![ui-review.png](https://github.com/acme/repo/raw/abc/.loco/ui-review.png)"
+        in body
+    )
+    assert "](.loco/ui-screenshots/" not in body
+
+
+def test_pr_body_omits_unhosted_screenshots() -> None:
+    body = _pr_body(
+        "Show screenshots",
+        "added tab",
+        tests_passed=True,
+        commit_sha="abc",
+        branch="loco/x",
+        screenshots=["ui-review_goal.png"],
+    )
+    assert "## Screenshots" not in body
+    assert ".loco/ui-screenshots" not in body
 
 
 def test_load_project_reads_preview_command(tmp_path: Path) -> None:

@@ -24,7 +24,8 @@ Rules:
   Controls with 0x0 or tiny sizes are unmet. A template diff is not enough if the
   rendered page is blank, crushed, or throws.
 - Dead controls (a tab or button that does not reveal its panel when clicked) are
-  unmet. Markup for a Screenshots tab is not enough.
+  unmet. Markup for a Screenshots tab is not enough. A Current/Past runs tab that
+  leaves Progress, Changes, or Screenshots at 0x0 or display:none is unmet.
 - If capture could not click (static dump-dom) and the goal adds tabs, screenshots,
   or other interactive controls, the goal is unmet.
 - A summary that claims the work is done does not count unless the diff shows it.

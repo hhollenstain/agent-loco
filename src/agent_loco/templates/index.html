@@ -20,6 +20,10 @@
       --queued: #8eb4d4;
     }
     * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
     body {
       margin: 0;
       background: var(--bg);
@@ -34,6 +38,7 @@
       grid-template-columns: minmax(20rem, 24rem) minmax(0, 1fr);
       flex: 1;
       min-height: 0;
+      overflow: hidden;
     }
     main.collapsed {
       grid-template-columns: 2.75rem minmax(0, 1fr);
@@ -82,7 +87,11 @@
       padding: 1.25rem 1.5rem;
     }
     .tasks {
-      padding-right: 3.5rem;
+      padding: 0.75rem 3.5rem 1.25rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
     }
     #task-form {
       overflow-y: auto;
@@ -676,9 +685,6 @@
       flex-direction: column;
       gap: 0.35rem;
     }
-    .task-card > .task-progress {
-      margin: 0.65rem 0.15rem 0.15rem;
-    }
     .progress-bar {
       display: flex;
       flex-wrap: wrap;
@@ -1015,6 +1021,157 @@
     .task-toolbar {
       padding: 0 0 0.5rem;
     }
+    .main-tabs {
+      display: flex;
+      gap: 0.15rem;
+      margin: 0 0 0.85rem;
+      padding: 0;
+      border-bottom: 1px solid var(--line);
+      flex: 0 0 auto;
+    }
+    .main-tab {
+      background: transparent;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--muted);
+      padding: 0.6rem 1rem 0.5rem;
+      min-width: 0;
+      font: inherit;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .main-tab:hover, .main-tab:focus { color: var(--ink); }
+    .main-tab[aria-selected="true"] {
+      color: var(--ink);
+      border-bottom-color: var(--accent);
+    }
+    .main-panels {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .main-pane {
+      height: 100%;
+      min-height: 0;
+      overflow: auto;
+    }
+    .main-pane[hidden] { display: none; }
+    #past-runs:not([hidden]) {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    .history-toolbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.7rem;
+    }
+    .history-heading {
+      min-width: 0;
+    }
+    .history-heading .meta { margin-top: 0.15rem; }
+    .history-center {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+    }
+    .history-center:empty::before {
+      content: "Select a past run.";
+      display: block;
+      color: var(--muted);
+      padding: 1rem 0;
+    }
+    .history-scrim {
+      position: absolute;
+      inset: 0;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      background: rgba(8, 10, 7, 0.45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+      z-index: 4;
+    }
+    #past-runs.picker-open .history-scrim {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .history-picker {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(22rem, 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      padding: 0.85rem 0.9rem 1rem;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
+      box-shadow: -18px 0 40px rgba(0, 0, 0, 0.38);
+      transform: translateX(100%);
+      transition: transform 0.2s ease;
+      z-index: 5;
+    }
+    #past-runs.picker-open .history-picker {
+      transform: translateX(0);
+    }
+    .history-picker-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+    }
+    .history-picker-head h2 {
+      margin: 0;
+      font-size: 0.92rem;
+      font-weight: 650;
+    }
+    .history-picker .search-row {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.35rem;
+      margin: 0;
+    }
+    .history-picker .search-row input[type="text"] {
+      max-width: none;
+    }
+    .history-picker .pagination {
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    .history-picker .task-list {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    .history-picker .task {
+      padding: 0.55rem 0.65rem;
+    }
+    .history-picker .goal {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 0.88rem;
+    }
+    .history-picker .task > .meta {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
     .tasks-toolbar {
       display: flex;
       flex-direction: column;
@@ -1110,35 +1267,54 @@
     </form>
     </aside>
     <section class="tasks">
-      <div class="tasks-toolbar">
-        <div class="row">
-          <label style="margin:0">Tasks</label>
-          <span class="meta" id="counts"></span>
-        </div>
-        <div class="server-filter">
-          <label for="server-filter">Server</label>
-          <select id="server-filter" aria-label="Filter tasks by server">
-            <option value="">All servers</option>
-          </select>
-        </div>
+      <div class="main-tabs" role="tablist" aria-label="Workspace views">
+        <button type="button" class="main-tab" role="tab" id="tab-current" data-main-pane="current" aria-selected="true" aria-controls="current-run">Current</button>
+        <button type="button" class="main-tab" role="tab" id="tab-history" data-main-pane="history" aria-selected="false" aria-controls="past-runs">Past runs</button>
       </div>
-      <div class="task-toolbar">
-        <div id="task-pagination" class="pagination" aria-label="Task pagination"></div>
-      </div>
-      <div id="task-list" class="task-list"></div>
-      <div id="detail"></div>
-      <div class="history">
-        <div class="row">
-          <label style="margin:0">Past runs</label>
-          <span class="meta" id="history-counts"></span>
+      <div class="main-panels">
+        <div class="main-pane" role="tabpanel" id="current-run" data-main-pane="current" aria-labelledby="tab-current">
+          <div class="tasks-toolbar">
+            <div class="row">
+              <label style="margin:0">Tasks</label>
+              <span class="meta" id="counts"></span>
+            </div>
+            <div class="server-filter">
+              <label for="server-filter">Server</label>
+              <select id="server-filter" aria-label="Filter tasks by server">
+                <option value="">All servers</option>
+              </select>
+            </div>
+          </div>
+          <div class="task-toolbar">
+            <div id="task-pagination" class="pagination" aria-label="Task pagination"></div>
+          </div>
+          <div id="task-list" class="task-list"></div>
+          <div id="detail"></div>
         </div>
-        <div class="search-row">
-          <label for="history-search" style="margin:0">Search:</label>
-          <input id="history-search" type="text" placeholder="filter by goal, status, summary, id">
-          <button type="button" class="secondary" id="clear-search">Clear</button>
+        <div class="main-pane" role="tabpanel" id="past-runs" data-main-pane="history" aria-labelledby="tab-history" hidden>
+          <div class="history-toolbar">
+            <div class="history-heading">
+              <label style="margin:0">Past run</label>
+              <span class="meta" id="history-counts"></span>
+            </div>
+            <button type="button" class="secondary" id="open-history-picker" aria-expanded="false" aria-controls="history-picker">Browse runs</button>
+          </div>
+          <div id="history-detail" class="history-center"></div>
+          <button type="button" class="history-scrim" id="history-scrim" tabindex="-1" aria-label="Close past runs picker"></button>
+          <aside class="history-picker" id="history-picker" role="dialog" aria-modal="true" aria-labelledby="history-picker-title" aria-hidden="true" inert>
+            <div class="history-picker-head">
+              <h2 id="history-picker-title">Past runs</h2>
+              <button type="button" class="secondary" id="close-history-picker">Close</button>
+            </div>
+            <div class="search-row">
+              <label for="history-search" style="margin:0">Filter</label>
+              <input id="history-search" type="text" placeholder="goal, status, summary, id">
+              <button type="button" class="secondary" id="clear-search">Clear</button>
+            </div>
+            <div id="pagination" class="pagination" aria-label="Past run pages"></div>
+            <div id="history-list" class="task-list"></div>
+          </aside>
         </div>
-        <div id="history-list" class="task-list"></div>
-        <div id="pagination" class="pagination"></div>
       </div>
     </section>
   </main>
@@ -1245,12 +1421,21 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], taskPage: 1, taskPageSize: 10, taskTotalPages: 1, selected: null, selectedHistoryKey: "", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], historyPage: 1, history: [], taskPage: 1, taskPageSize: 10, taskTotalPages: 1, selected: null, selectedHistoryKey: "", mainPane: "current", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("task-list");
-    const detailEl = document.getElementById("detail");
+    const currentDetailEl = document.getElementById("detail");
+    const historyDetailEl = document.getElementById("history-detail");
+    function activeDetailEl() {
+      return state.selectedHistoryKey ? historyDetailEl : currentDetailEl;
+    }
     const countsEl = document.getElementById("counts");
     const historyEl = document.getElementById("history-list");
     const historyCountsEl = document.getElementById("history-counts");
+    const pastRunsEl = document.getElementById("past-runs");
+    const historyPickerEl = document.getElementById("history-picker");
+    const historyScrimEl = document.getElementById("history-scrim");
+    const openHistoryPickerBtn = document.getElementById("open-history-picker");
+    const closeHistoryPickerBtn = document.getElementById("close-history-picker");
     const errorEl = document.getElementById("form-error");
     const submitEl = document.getElementById("submit");
     const searchInput = document.getElementById("history-search");
@@ -1944,6 +2129,32 @@
       return String(item.id || item.created_at || "") + ":" + String(index);
     }
 
+    function ensureLatestHistorySelection() {
+      const items = historyItems();
+      if (!items.length) {
+        state.selectedHistoryKey = "";
+        return;
+      }
+      const keys = items.map((entry, index) => historyKey(entry, index));
+      if (!keys.includes(state.selectedHistoryKey)) {
+        state.selectedHistoryKey = keys[0];
+        state.pinnedStage = "";
+        state.taskPane = "progress";
+        state.closedChanges = new Set();
+      }
+    }
+
+    function setHistoryPickerOpen(open) {
+      const next = Boolean(open) && state.mainPane === "history";
+      pastRunsEl.classList.toggle("picker-open", next);
+      openHistoryPickerBtn.setAttribute("aria-expanded", next ? "true" : "false");
+      historyPickerEl.setAttribute("aria-hidden", next ? "false" : "true");
+      historyPickerEl.inert = !next;
+      if (next) {
+        window.requestAnimationFrame(() => searchInput.focus());
+      }
+    }
+
     const GITHUB_MARK = `<svg class="pr-logo" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.65 7.65 0 0 1 8 4.77c.68.003 1.36.092 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>`;
     const PR_URL_RE = /https:\/\/(?:www\.)?(?:github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+|[^\s<>"']+\/(?:pull|merge_requests)\/\d+)/i;
 
@@ -2518,7 +2729,7 @@
       if (state.taskPane === "changes") {
         return document.getElementById("file-changes");
       }
-      return document.getElementById("progress-timeline") || detailEl.querySelector("#log");
+      return document.getElementById("progress-timeline") || activeDetailEl().querySelector("#log");
     }
 
     function captureProgressScroll() {
@@ -2621,13 +2832,8 @@
         listEl.innerHTML = filteredTasks.map(task => {
           const duration = taskDurationLabel(task);
           const selected = task.id === state.selected ? " selected" : "";
-          const taskProgress = renderProgressStageBar(task.events, {
-            status: task.status || "",
-            running: task.status === "running",
-          });
           return `
           <div class="task-card${selected}">
-            ${taskProgress}
             <button type="button" class="task${selected}" data-id="${escapeHtml(task.id)}">
               <div class="row">
                 <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
@@ -2640,6 +2846,9 @@
           </div>
         `}).join("");
       }
+
+      const onHistory = state.mainPane === "history";
+      if (onHistory) ensureLatestHistorySelection();
 
       if (state.history.total === undefined) {
         // Legacy format (unpaginated)
@@ -2662,8 +2871,12 @@
         renderPagination(page, total_pages);
       }
 
-      const selectedHistory = historyItems().find((entry, index) => historyKey(entry, index) === state.selectedHistoryKey);
-      const selected = selectedHistory ? null : (state.tasks.find(t => t.id === state.selected) || (!state.selectedHistoryKey && state.tasks[0]) || null);
+      const selectedHistory = onHistory
+        ? historyItems().find((entry, index) => historyKey(entry, index) === state.selectedHistoryKey)
+        : null;
+      const selected = onHistory
+        ? null
+        : (state.tasks.find(t => t.id === state.selected) || state.tasks[0] || null);
       const live = Boolean(selected && selected.status === "running");
       if (selected) state.selected = selected.id;
       const itemKey = selected
@@ -2688,10 +2901,16 @@
           ? [goalText(selectedHistory), taskDurationLabel(selectedHistory), timestampLabel(selectedHistory)].filter(Boolean).join(" · ")
           : "";
       const prHtml = prLinkHtml(prUrl(selected || selectedHistory));
-      const root = detailEl.querySelector("[data-progress-root]");
+      const target = selectedHistory ? historyDetailEl : currentDetailEl;
+      const other = selectedHistory ? currentDetailEl : historyDetailEl;
+      other.innerHTML = "";
+      const root = target.querySelector("[data-progress-root]");
       const sameItem = Boolean(root && itemKey && root.dataset.itemKey === itemKey);
       if (!itemKey) {
-        detailEl.innerHTML = "";
+        currentDetailEl.innerHTML = "";
+        historyDetailEl.innerHTML = onHistory
+          ? `<p class="empty">${state.search ? "No matches found." : "No past runs yet."}</p>`
+          : "";
       } else if (sameItem) {
         const metaEl = root.querySelector("[data-progress-meta]");
         if (metaEl) metaEl.textContent = metaText;
@@ -2702,7 +2921,7 @@
           body.innerHTML = progressHtml;
         }
       } else {
-        detailEl.innerHTML = `
+        target.innerHTML = `
           <div data-progress-root data-item-key="${escapeHtml(itemKey)}">
             <label>Progress</label>
             <p class="meta" data-progress-meta>${escapeHtml(metaText)}</p>
@@ -2791,20 +3010,6 @@
 
     listEl.addEventListener("click", (event) => {
       if (event.target.closest("a.pr-link")) return;
-      const stage = event.target.closest(".progress-stage[data-stage]");
-      const card = event.target.closest(".task-card");
-      if (stage && card) {
-        const taskBtn = card.querySelector("[data-id]");
-        if (taskBtn) {
-          state.selected = taskBtn.dataset.id;
-          state.selectedHistoryKey = "";
-          state.pinnedStage = stage.dataset.stage || "";
-          state.taskPane = "progress";
-          state.closedChanges = new Set();
-          render();
-        }
-        return;
-      }
       const button = event.target.closest("[data-id]");
       if (!button) return;
       state.selected = button.dataset.id;
@@ -2812,7 +3017,7 @@
       state.pinnedStage = "";
       state.taskPane = "progress";
       state.closedChanges = new Set();
-      render();
+      showMainPane("current");
     });
 
     historyEl.addEventListener("click", (event) => {
@@ -2820,40 +3025,43 @@
       const button = event.target.closest("[data-history-key]");
       if (!button) return;
       state.selectedHistoryKey = button.dataset.historyKey;
-      state.selected = null;
       state.pinnedStage = "";
       state.taskPane = "progress";
       state.closedChanges = new Set();
-      render();
+      showMainPane("history");
+      setHistoryPickerOpen(false);
     });
 
-    detailEl.addEventListener("click", (event) => {
-      const paneTab = event.target.closest("[data-task-pane]");
-      if (paneTab && detailEl.contains(paneTab)) {
-        const pane = taskPaneFromTab(paneTab.dataset.taskPane);
-        if (state.taskPane === pane) return;
-        state.taskPane = pane;
-        render();
-        return;
-      }
-      const stage = event.target.closest(".progress-stage[data-stage]");
-      if (!stage || !detailEl.contains(stage)) return;
-      event.preventDefault();
-      pinTimelineStage(stage.dataset.stage);
-    });
-
-    detailEl.addEventListener("toggle", (event) => {
-      const details = event.target;
-      if (!(details instanceof HTMLDetailsElement) || !details.dataset.eventKey) return;
-      const key = details.dataset.eventKey;
-      if (key.startsWith("changes:")) {
-        if (details.open) state.closedChanges.delete(key);
-        else state.closedChanges.add(key);
-        return;
-      }
-      if (details.open) state.openDiffs.add(key);
-      else state.openDiffs.delete(key);
-    }, true);
+    function bindDetailEvents(el) {
+      el.addEventListener("click", (event) => {
+        const paneTab = event.target.closest("[data-task-pane]");
+        if (paneTab && el.contains(paneTab)) {
+          const pane = taskPaneFromTab(paneTab.dataset.taskPane);
+          if (state.taskPane === pane) return;
+          state.taskPane = pane;
+          render();
+          return;
+        }
+        const stage = event.target.closest(".progress-stage[data-stage]");
+        if (!stage || !el.contains(stage)) return;
+        event.preventDefault();
+        pinTimelineStage(stage.dataset.stage);
+      });
+      el.addEventListener("toggle", (event) => {
+        const details = event.target;
+        if (!(details instanceof HTMLDetailsElement) || !details.dataset.eventKey) return;
+        const key = details.dataset.eventKey;
+        if (key.startsWith("changes:")) {
+          if (details.open) state.closedChanges.delete(key);
+          else state.closedChanges.add(key);
+          return;
+        }
+        if (details.open) state.openDiffs.add(key);
+        else state.openDiffs.delete(key);
+      }, true);
+    }
+    bindDetailEvents(currentDetailEl);
+    bindDetailEvents(historyDetailEl);
 
     paginationEl.addEventListener("click", (event) => {
       const button = event.target.closest("button");
@@ -2861,9 +3069,6 @@
       const page = parseInt(button.dataset.page, 10);
       if (page && !isNaN(page) && page !== state.historyPage) {
         state.historyPage = page;
-        // Clear search when changing pages to reset filter
-        state.search = "";
-        searchInput.value = "";
         refresh();
       }
     });
@@ -2879,6 +3084,32 @@
       state.historyPage = 1;
       searchInput.value = "";
       refresh();
+    });
+
+    function showMainPane(name) {
+      state.mainPane = name === "history" ? "history" : "current";
+      document.querySelectorAll(".main-tab").forEach((tab) => {
+        tab.setAttribute("aria-selected", tab.dataset.mainPane === state.mainPane ? "true" : "false");
+      });
+      document.querySelectorAll(".main-pane").forEach((pane) => {
+        pane.hidden = pane.dataset.mainPane !== state.mainPane;
+      });
+      if (state.mainPane === "history") ensureLatestHistorySelection();
+      else setHistoryPickerOpen(false);
+      render();
+    }
+    document.querySelectorAll(".main-tab").forEach((tab) => {
+      tab.addEventListener("click", () => showMainPane(tab.dataset.mainPane));
+    });
+    openHistoryPickerBtn.addEventListener("click", () => setHistoryPickerOpen(true));
+    closeHistoryPickerBtn.addEventListener("click", () => setHistoryPickerOpen(false));
+    historyScrimEl.addEventListener("click", () => setHistoryPickerOpen(false));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && pastRunsEl.classList.contains("picker-open")) {
+        event.preventDefault();
+        setHistoryPickerOpen(false);
+        openHistoryPickerBtn.focus();
+      }
     });
 
     serverFilterEl.addEventListener("change", (event) => {
