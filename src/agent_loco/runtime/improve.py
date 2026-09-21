@@ -26,6 +26,7 @@ from agent_loco.runtime.review import (
     is_open_pr_goal,
     review_goal,
     review_reason,
+    unwired_ui_markers,
 )
 from agent_loco.runtime.uireview import (
     UiEvidence,
@@ -36,7 +37,7 @@ from agent_loco.runtime.uireview import (
     unverified_interactive_ui,
 )
 from agent_loco.runtime.workdiff import collect_current_evidence, collect_work_diff
-from agent_loco.sandbox import Workspace
+from agent_loco.sandbox import SandboxError, Workspace
 from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
     CO_AUTHORED_BY,
@@ -77,6 +78,7 @@ class CycleResult:
     commit_sha: str | None
     reason: str | None
     pr_url: str | None = None
+    branch: str | None = None
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -726,6 +728,16 @@ def _review_goal(
         )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
+    unwired = unwired_ui_markers(diff)
+    if verdict.met and unwired and not existing:
+        overridden = GoalReview(
+            False,
+            f"diff adds a control or API that is not wired: {unwired[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
     if ui_errors and verdict.ui_errors != ui_errors:
         return GoalReview(
             met=verdict.met,
@@ -1071,12 +1083,24 @@ def _git_env(settings: Settings) -> dict[str, str]:
     return env
 
 
+def _stamp_git(root: Path, result: CycleResult) -> None:
+    try:
+        workspace = Workspace(root)
+    except (OSError, SandboxError):
+        return
+    if not result.branch:
+        result.branch = current_branch(workspace)
+    if not result.commit_sha:
+        result.commit_sha = current_sha(workspace)
+
+
 def _attach_events(result: CycleResult) -> None:
     if not result.events:
         result.events = current_events()
 
 
 def _write_run_log(root: Path, result: CycleResult) -> None:
+    _stamp_git(root, result)
     _attach_events(result)
     ensure_run_gitignore(root)
     runs = root / ".loco" / "runs"
@@ -1105,6 +1129,7 @@ def _append_to_history(root: Path, result: CycleResult) -> None:
     
     # Add the new result to the beginning of the list 
     # (most recent at the beginning) and keep only the last 100 entries
+    _stamp_git(root, result)
     _attach_events(result)
     history.insert(0, asdict(result))
     

@@ -143,3 +143,39 @@ def test_review_goal_existing_tree_uses_workspace_evidence() -> None:
     assert "no file changes" in user.lower()
     assert "Current workspace:" in user
     assert "not pushed" in user
+
+
+def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
+    from agent_loco.runtime.review import unwired_ui_markers
+
+    stub = (
+        "diff --git a/src/agent_loco/templates/index.html b/src/agent_loco/templates/index.html\n"
+        "--- a/src/agent_loco/templates/index.html\n"
+        "+++ b/src/agent_loco/templates/index.html\n"
+        "+            ? `<button type=\"button\" class=\"rerun-btn\" data-id=\"${task.id}\">↻ Rerun</button>`\n"
+        "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
+        "--- a/src/agent_loco/web_ui.py\n"
+        "+++ b/src/agent_loco/web_ui.py\n"
+        '+    @app.post("/api/tasks/{task_id}/rerun")\n'
+        "+    def rerun_task(task_id: str) -> Any:\n"
+        "+        return {}\n"
+    )
+    markers = unwired_ui_markers(stub)
+    assert any("rerun-btn" in item for item in markers)
+    assert any("/rerun" in item for item in markers)
+
+    wired = (
+        "diff --git a/src/agent_loco/templates/index.html b/src/agent_loco/templates/index.html\n"
+        "--- a/src/agent_loco/templates/index.html\n"
+        "+++ b/src/agent_loco/templates/index.html\n"
+        "+            ? `<button type=\"button\" class=\"rerun-btn\" data-rerun-id=\"${task.id}\">↻ Rerun</button>`\n"
+        "+      const rerun = event.target.closest(\".rerun-btn\");\n"
+        "+        const res = await fetch(`/api/tasks/${taskId}/rerun`, { method: \"POST\" });\n"
+        "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
+        "--- a/src/agent_loco/web_ui.py\n"
+        "+++ b/src/agent_loco/web_ui.py\n"
+        '+    @app.post("/api/tasks/{task_id}/rerun")\n'
+        "+    def rerun_task(task_id: str) -> Any:\n"
+        "+        return {}\n"
+    )
+    assert unwired_ui_markers(wired) == []

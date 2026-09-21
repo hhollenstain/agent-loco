@@ -792,7 +792,8 @@
       position: relative;
     }
     .task-card .task { width: 100%; }
-    .task-card:has(> .pr-link) .task { padding-bottom: 2.15rem; }
+    .task-card:has(> .pr-link) .task,
+    .task-card:has(> .rerun-btn) .task { padding-bottom: 2.15rem; }
     .task {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -916,6 +917,31 @@
     .task-card > .pr-link {
       position: absolute;
       right: 0.65rem;
+      bottom: 0.55rem;
+      z-index: 1;
+    }
+    .rerun-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+      color: var(--ink);
+      font: inherit;
+      font-size: 0.75rem;
+      font-weight: 650;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 999px;
+      padding: 0.2rem 0.65rem;
+      line-height: 1.1;
+      cursor: pointer;
+    }
+    .rerun-btn:hover, .rerun-btn:focus {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .task-card > .rerun-btn {
+      position: absolute;
+      left: 0.65rem;
       bottom: 0.55rem;
       z-index: 1;
     }
@@ -2324,6 +2350,10 @@
 
     function historyCardHtml(entry, index) {
       const selected = historyKey(entry, index) === state.selectedHistoryKey ? " selected" : "";
+      const canRerun = entry.status === "failed" || entry.status === "error";
+      const rerunBtn = canRerun
+        ? `<button type="button" class="rerun-btn" data-history-rerun="${escapeHtml(historyKey(entry, index))}" title="Rerun this failed run">↻ Rerun</button>`
+        : "";
       return `
         <div class="task-card${selected}">
           <button type="button" class="task${selected}" data-history-key="${escapeHtml(historyKey(entry, index))}">
@@ -2334,6 +2364,7 @@
             <p class="goal">${escapeHtml(goalText(entry))}</p>
             <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
           </button>
+          ${rerunBtn}
           ${prLinkHtml(prUrl(entry))}
         </div>
       `;
@@ -2971,6 +3002,10 @@
         listEl.innerHTML = filteredTasks.map(task => {
           const duration = taskDurationLabel(task);
           const selected = task.id === state.selected ? " selected" : "";
+          const canRerun = task.status === "failed" || task.status === "error";
+          const rerunBtn = canRerun
+            ? `<button type="button" class="rerun-btn" data-rerun-id="${escapeHtml(task.id)}" title="Rerun this task">↻ Rerun</button>`
+            : "";
           return `
           <div class="task-card${selected}">
             <button type="button" class="task${selected}" data-id="${escapeHtml(task.id)}">
@@ -2981,6 +3016,7 @@
               <p class="goal">${escapeHtml(goalText(task))}</p>
               <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}${duration ? " · " + escapeHtml(formatTimestamp(task.started_at || task.created_at)) : ""}</p>
             </button>
+            ${rerunBtn}
             ${prLinkHtml(prUrl(task))}
           </div>
         `}).join("");
@@ -3148,6 +3184,13 @@
     });
 
     listEl.addEventListener("click", (event) => {
+      const rerun = event.target.closest("[data-rerun-id]");
+      if (rerun) {
+        event.preventDefault();
+        event.stopPropagation();
+        rerunFailedTask(rerun.dataset.rerunId);
+        return;
+      }
       if (event.target.closest("a.pr-link")) return;
       const button = event.target.closest("[data-id]");
       if (!button) return;
@@ -3160,6 +3203,15 @@
     });
 
     historyEl.addEventListener("click", (event) => {
+      const historyRerun = event.target.closest("[data-history-rerun]");
+      if (historyRerun) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = historyRerun.dataset.historyRerun;
+        const entry = historyItems().find((item, index) => historyKey(item, index) === key);
+        if (entry) rerunHistoryEntry(entry);
+        return;
+      }
       if (event.target.closest("a.pr-link")) return;
       const button = event.target.closest("[data-history-key]");
       if (!button) return;
@@ -3276,29 +3328,76 @@
       applySidebar(false);
     }
 
+    async function queueTask(payload, notice) {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to queue task");
+      state.selected = body.id;
+      state.taskStatus[body.id] = body.status || "queued";
+      notify("queued", goalText(body), { title: notice || "Task queued" });
+      showMainPane("current");
+      await refresh();
+      return body;
+    }
+
+    async function rerunFailedTask(taskId) {
+      try {
+        const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/rerun`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Could not rerun task");
+        state.selected = body.id;
+        state.taskStatus[body.id] = body.status || "queued";
+        notify("queued", goalText(body), { title: "Rerun queued" });
+        showMainPane("current");
+        await refresh();
+      } catch (err) {
+        showNotice(errorEl, "error", err.message);
+        notify("error", err.message, { title: "Could not rerun task" });
+      }
+    }
+
+    async function rerunHistoryEntry(entry) {
+      try {
+        await queueTask(
+          {
+            workspace: document.getElementById("workspace").value,
+            goal: entry.goal || "",
+            base_url: document.getElementById("base-url").value,
+            model: document.getElementById("model").value,
+            auto_commit: document.getElementById("auto-commit").checked,
+            create_pr: document.getElementById("create-pr").checked,
+            resume_branch: entry.branch || undefined,
+            resume_sha: entry.commit_sha || undefined,
+          },
+          "Rerun queued",
+        );
+      } catch (err) {
+        showNotice(errorEl, "error", err.message);
+        notify("error", err.message, { title: "Could not rerun task" });
+      }
+    }
+
     document.getElementById("task-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       clearNotice(errorEl);
       submitEl.disabled = true;
       try {
-        const res = await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            workspace: document.getElementById("workspace").value,
-            goal: document.getElementById("goal").value,
-            base_url: document.getElementById("base-url").value,
-            model: document.getElementById("model").value,
-            auto_commit: document.getElementById("auto-commit").checked,
-            create_pr: document.getElementById("create-pr").checked,
-          }),
+        await queueTask({
+          workspace: document.getElementById("workspace").value,
+          goal: document.getElementById("goal").value,
+          base_url: document.getElementById("base-url").value,
+          model: document.getElementById("model").value,
+          auto_commit: document.getElementById("auto-commit").checked,
+          create_pr: document.getElementById("create-pr").checked,
         });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "failed to queue task");
-        state.selected = body.id;
-        state.taskStatus[body.id] = body.status || "queued";
-        notify("queued", goalText(body), { title: "Task queued" });
-        await refresh();
       } catch (err) {
         showNotice(errorEl, "error", err.message);
         notify("error", err.message, { title: "Could not queue task" });

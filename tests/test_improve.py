@@ -8,9 +8,19 @@ from agent_loco.config import Settings
 from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
 from agent_loco.runtime.improve import resolve_create_pr, run_cycle
 from agent_loco.runtime.project import load_project
+from agent_loco.runtime.uireview import UiEvidence
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult
 from agent_loco.tools.git import CO_AUTHORED_BY, current_branch, current_sha, run_git
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _fake_agent_review_ui(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "agent_loco.tools.browser.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Queue task"),
+    )
 
 
 def _broken_project(root: Path) -> None:
@@ -185,6 +195,7 @@ def test_cycle_retries_when_agent_inspects_but_goal_is_unmet(
             AssistantTurn(text="Done looking at the current UI."),
             _review_turn(False, "no progress bar was added"),
             _write_file_turn("ui.html", "<div class='task-stages'>progress</div>\n"),
+            _review_ui_turn(),
             AssistantTurn(text="Added a task stage progress bar."),
             _review_turn(True, "progress bar with stages is present"),
         ]
@@ -233,6 +244,7 @@ def test_cycle_repairs_tests_broken_by_empty_diff_retry(
                 "ui.html",
                 '<div id="settings-panel"><textarea id="rules"></textarea></div>\n',
             ),
+            _review_ui_turn(),
             AssistantTurn(text="Moved guidelines into settings."),
             _write_file_turn(
                 "check.py",
@@ -445,6 +457,13 @@ def _write_file_turn(path: str, content: str, call_id: str = "call-1") -> Assist
                 arguments={"path": path, "content": content},
             )
         ],
+    )
+
+
+def _review_ui_turn(call_id: str = "ui-1") -> AssistantTurn:
+    return AssistantTurn(
+        text=None,
+        tool_calls=[ToolCall(id=call_id, name="review_ui", arguments={})],
     )
 
 
@@ -678,6 +697,7 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
     llm = ScriptedClient(
         [
             _write_file_turn("ui.html", "<header>loco</header>\n"),
+            _review_ui_turn("ui-header"),
             AssistantTurn(text="Added a header."),
             _review_turn(False, "the header is still there"),
             _write_file_turn(
@@ -685,6 +705,7 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
                 "<aside id='sidebar'><button id='toggle-sidebar'>collapse</button></aside>\n",
                 call_id="call-2",
             ),
+            _review_ui_turn("ui-toggle"),
             AssistantTurn(text="Removed the header and added a collapse control."),
             _review_turn(True, "header gone and sidebar toggle is present"),
         ]
@@ -732,6 +753,7 @@ def test_cycle_retries_unparsed_review(
                 "<aside id='sidebar'><button id='toggle-sidebar'>collapse</button></aside>\n",
                 call_id="call-2",
             ),
+            _review_ui_turn("ui-toggle"),
             AssistantTurn(text="Removed the header and added a collapse control."),
             _review_turn(True, "sidebar toggle is present"),
         ]
