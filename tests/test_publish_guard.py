@@ -31,6 +31,17 @@ def test_git_push_available_when_publish_enabled(tmp_path: Path) -> None:
     assert "git_push" in {tool.name for tool in tools}
 
 
+def test_run_command_refuses_pr_create_when_publish_disabled(tmp_path: Path) -> None:
+    result = run_command(
+        Workspace(tmp_path),
+        "gh pr create --title demo",
+        timeout_seconds=5,
+        allow_publish=False,
+    )
+    assert result.ok is False
+    assert "publish is disabled" in result.output
+
+
 def test_run_command_refuses_push_when_publish_disabled(tmp_path: Path) -> None:
     result = run_command(
         Workspace(tmp_path),

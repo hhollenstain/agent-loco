@@ -19,7 +19,7 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
 )
-from agent_loco.runtime.review import GoalReview, review_goal, review_reason
+from agent_loco.runtime.review import GoalReview, is_open_pr_goal, review_goal, review_reason
 from agent_loco.runtime.uireview import (
     UiEvidence,
     collect_ui_evidence,
@@ -34,11 +34,13 @@ from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
     CO_AUTHORED_BY,
     commit_changes,
+    commits_ahead_of_base,
     create_pull_request,
     current_branch,
     current_sha,
     default_base_branch,
     ensure_pr_branch,
+    existing_pull_request,
     extract_pr_url,
     github_owner_repo,
     has_changes,
@@ -137,7 +139,7 @@ def _run_cycle(
         command_timeout_seconds=settings.command_timeout_seconds,
         git_author_name=settings.git_author_name,
         git_author_email=settings.git_author_email,
-        allow_publish=allow_create_pr,
+        allow_publish=False,
     )
 
     log_progress("Running before tests...")
@@ -328,84 +330,19 @@ def _run_cycle(
         sha = current_sha(workspace)
         log_progress(f"Committed SHA: {sha}")
 
-    if committed and allow_create_pr:
-        branch = current_branch(workspace)
-        if is_protected_branch(branch):
-            log_progress(f"Refusing to publish {branch} directly.")
-            result = CycleResult(
-                status="failed",
-                goal=selected_goal,
-                summary=agent_result.summary,
-                tests_passed=tests_passed,
-                committed=committed,
-                published=False,
-                commit_sha=sha,
-                reason=f"refusing to push commits on {branch}",
-            )
-            _write_run_log(workspace.root, result)
-            _append_to_history(workspace.root, result)
-            return result
-        log_progress(f"Pushing branch {branch}...")
-        pushed = push_changes(workspace, project.publish_remote, branch)
-        if not pushed.ok:
-            log_progress(f"Push failed: {pushed.output}")
-            result = CycleResult(
-                status="failed",
-                goal=selected_goal,
-                summary=agent_result.summary,
-                tests_passed=tests_passed,
-                committed=committed,
-                published=False,
-                commit_sha=sha,
-                reason=f"push failed: {pushed.output}",
-            )
-            _write_run_log(workspace.root, result)
-            _append_to_history(workspace.root, result)
-            return result
-        base = default_base_branch(workspace, project.publish_branch)
-        log_progress("Opening pull request...")
-        pr = create_pull_request(
+    if allow_create_pr:
+        published, pr_url, failed = _publish_pull_request(
             workspace,
-            _commit_message(selected_goal, agent_result.summary),
-            _pr_body(
-                selected_goal,
-                agent_result.summary,
-                tests_passed=tests_passed,
-                commit_sha=sha,
-                branch=branch or "",
-                screenshots=[
-                    path.name
-                    for path in screenshot_files
-                    if is_tracked(workspace, path)
-                ],
-                image_base=_pr_image_base(
-                    workspace,
-                    sha,
-                    project.publish_remote,
-                ),
-            ),
-            base=base,
+            project,
+            selected_goal,
+            agent_result.summary,
+            tests_passed=tests_passed,
+            sha=sha,
+            committed=committed,
+            screenshot_files=screenshot_files,
         )
-        published = pr.ok
-        pr_url = extract_pr_url(pr.output) if pr.ok else None
-        if not pr.ok:
-            log_progress(f"PR creation failed: {pr.output}")
-            result = CycleResult(
-                status="failed",
-                goal=selected_goal,
-                summary=agent_result.summary,
-                tests_passed=tests_passed,
-                committed=committed,
-                published=False,
-                commit_sha=sha,
-                reason=f"PR failed: {pr.output}",
-            )
-            _write_run_log(workspace.root, result)
-            _append_to_history(workspace.root, result)
-            return result
-        log_progress(pr.output)
-        if pr_url:
-            record_event(kind="pr", url=pr_url, message=pr.output)
+        if failed is not None:
+            return failed
 
     if committed and mark_checkbox:
         log_progress("Marking goal as done...")
@@ -426,6 +363,110 @@ def _run_cycle(
     _write_run_log(workspace.root, result)
     _append_to_history(workspace.root, result)
     return result
+
+
+def _publish_pull_request(
+    workspace: Workspace,
+    project: ProjectConfig,
+    goal: str,
+    summary: str,
+    *,
+    tests_passed: bool | None,
+    sha: str | None,
+    committed: bool,
+    screenshot_files: list[Path],
+) -> tuple[bool, str | None, CycleResult | None]:
+    """Push the current feature branch and open a PR if this branch does not already have one."""
+    branch = current_branch(workspace)
+    if is_protected_branch(branch):
+        if committed:
+            log_progress(f"Refusing to publish {branch} directly.")
+            result = CycleResult(
+                status="failed",
+                goal=goal,
+                summary=summary,
+                tests_passed=tests_passed,
+                committed=committed,
+                published=False,
+                commit_sha=sha,
+                reason=f"refusing to push commits on {branch}",
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return False, None, result
+        return False, None, None
+    existing = existing_pull_request(workspace)
+    base = default_base_branch(workspace, project.publish_branch)
+    if not committed and commits_ahead_of_base(workspace, base) <= 0:
+        if existing:
+            log_progress(f"Branch already has pull request {existing}")
+            record_event(kind="pr", url=existing, message="existing pull request")
+            return True, existing, None
+        return False, None, None
+    log_progress(f"Pushing branch {branch}...")
+    pushed = push_changes(workspace, project.publish_remote, branch)
+    if not pushed.ok:
+        log_progress(f"Push failed: {pushed.output}")
+        result = CycleResult(
+            status="failed",
+            goal=goal,
+            summary=summary,
+            tests_passed=tests_passed,
+            committed=committed,
+            published=False,
+            commit_sha=sha,
+            reason=f"push failed: {pushed.output}",
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return False, None, result
+    if existing:
+        log_progress(f"Branch already has pull request {existing}")
+        record_event(kind="pr", url=existing, message="existing pull request")
+        return True, existing, None
+    log_progress("Opening pull request...")
+    pr = create_pull_request(
+        workspace,
+        _commit_message(goal, summary),
+        _pr_body(
+            goal,
+            summary,
+            tests_passed=tests_passed,
+            commit_sha=sha,
+            branch=branch or "",
+            screenshots=[
+                path.name
+                for path in screenshot_files
+                if is_tracked(workspace, path)
+            ],
+            image_base=_pr_image_base(
+                workspace,
+                sha,
+                project.publish_remote,
+            ),
+        ),
+        base=base,
+    )
+    pr_url = extract_pr_url(pr.output)
+    if not pr.ok:
+        log_progress(f"PR creation failed: {pr.output}")
+        result = CycleResult(
+            status="failed",
+            goal=goal,
+            summary=summary,
+            tests_passed=tests_passed,
+            committed=committed,
+            published=False,
+            commit_sha=sha,
+            reason=f"PR failed: {pr.output}",
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return False, None, result
+    log_progress(pr.output)
+    if pr_url:
+        record_event(kind="pr", url=pr_url, message=pr.output)
+    return True, pr_url, None
 
 
 def _handle_empty_diff(
@@ -459,24 +500,52 @@ def _handle_empty_diff(
         upstream=upstream.detail,
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
-    if verdict.met:
-        log_progress(f"No work needed: {verdict.reason}")
-        if mark_checkbox:
-            log_progress("Marking goal as done...")
-            mark_goal_done(workspace.root, project.goals_file, goal)
-        result = CycleResult(
-            status="success",
-            goal=goal,
-            summary=_no_work_summary(summary, verdict, upstream.detail),
-            tests_passed=tests_passed,
-            committed=False,
-            published=False,
-            commit_sha=sha,
-            reason=f"no changes needed: {verdict.reason} {upstream.detail}",
-        )
-        _write_run_log(workspace.root, result)
-        _append_to_history(workspace.root, result)
-        return _EmptyDiffOutcome(result=result, summary=summary, tests_passed=tests_passed)
+    if verdict.met or is_open_pr_goal(goal):
+        published = False
+        pr_url = None
+        if allow_create_pr:
+            published, pr_url, failed = _publish_pull_request(
+                workspace,
+                project,
+                goal,
+                summary,
+                tests_passed=tests_passed,
+                sha=sha,
+                committed=False,
+                screenshot_files=[],
+            )
+            if failed is not None:
+                return _EmptyDiffOutcome(
+                    result=failed, summary=summary, tests_passed=tests_passed
+                )
+        if verdict.met or published:
+            log_progress(f"No work needed: {review_reason(verdict)}")
+            if mark_checkbox:
+                log_progress("Marking goal as done...")
+                mark_goal_done(workspace.root, project.goals_file, goal)
+            if published and pr_url:
+                reason = f"opened pull request without new files: {pr_url}"
+                cycle_summary = (
+                    f"Opened pull request {pr_url} from the current branch "
+                    "without new file changes."
+                )
+            else:
+                reason = f"no changes needed: {review_reason(verdict)} {upstream.detail}"
+                cycle_summary = _no_work_summary(summary, verdict, upstream.detail)
+            result = CycleResult(
+                status="success",
+                goal=goal,
+                summary=cycle_summary,
+                tests_passed=tests_passed,
+                committed=False,
+                published=published,
+                commit_sha=sha,
+                reason=reason,
+                pr_url=pr_url,
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return _EmptyDiffOutcome(result=result, summary=summary, tests_passed=tests_passed)
 
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     for attempt in range(project.max_repair_attempts):

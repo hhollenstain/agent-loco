@@ -10,10 +10,12 @@ from agent_loco.tools.git import (
     CO_AUTHORED_BY,
     agent_commit,
     commit_changes,
+    commits_ahead_of_base,
     create_pull_request,
     current_branch,
     current_sha,
     ensure_pr_branch,
+    existing_pull_request,
     extract_pr_url,
     has_changes,
     is_runtime_artifact,
@@ -76,6 +78,79 @@ def test_with_loco_coauthor_adds_github_trailer() -> None:
     assert with_loco_coauthor("  fix the thing  ") == f"fix the thing\n\n{CO_AUTHORED_BY}"
     already = f"fix the thing\n\n{CO_AUTHORED_BY}"
     assert with_loco_coauthor(already) == already
+
+
+def test_commits_ahead_of_base_counts_feature_commits(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("one\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    assert commits_ahead_of_base(workspace) == 0
+    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    (tmp_path / "app.py").write_text("two\n", encoding="utf-8")
+    committed = commit_changes(workspace, "two")
+    assert committed.ok
+    assert commits_ahead_of_base(workspace) == 1
+
+
+def test_existing_pull_request_reads_gh_json(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    real_run = subprocess.run
+
+    def fake_run(args, **kwargs):
+        if args and args[0] == "gh" and "view" in args:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout='{"url":"https://github.com/acme/repo/pull/4"}\n',
+                stderr="",
+            )
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    assert existing_pull_request(workspace) == "https://github.com/acme/repo/pull/4"
+
+
+def test_existing_pull_request_missing_gh_is_none(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+
+    def fake_run(args, **kwargs):
+        if args and args[0] == "gh":
+            raise FileNotFoundError("gh")
+        raise AssertionError(args)
+
+    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    assert existing_pull_request(Workspace(tmp_path)) is None
+
+
+def test_create_pull_request_treats_already_exists_as_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    real_run = subprocess.run
+
+    def fake_run(args, **kwargs):
+        if args and args[0] == "gh":
+            return subprocess.CompletedProcess(
+                args,
+                1,
+                stdout="",
+                stderr=(
+                    'a pull request for branch "loco/feature" already exists:\n'
+                    "https://github.com/acme/repo/pull/9\n"
+                ),
+            )
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    result = create_pull_request(workspace, "Add feature", "details", base="main")
+    assert result.ok
+    assert extract_pr_url(result.output) == "https://github.com/acme/repo/pull/9"
 
 
 def test_create_pull_request_does_not_pass_unknown_coauthor_flag(
