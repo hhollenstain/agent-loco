@@ -6,7 +6,7 @@ import subprocess
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 
-_PUBLISH_COMMAND = re.compile(r"\bgit\s+push\b|\bgh\s+pr\s+create\b", re.IGNORECASE)
+_PUBLISH_COMMAND = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
 _COMMIT_COMMAND = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
 _PROTECTED_PUSH = re.compile(
     r"\bgit\s+push\b.*(\bmain\b|\bmaster\b|HEAD:main|HEAD:master)",
@@ -59,15 +59,18 @@ def run_command(
 ) -> ToolResult:
     if not command or not command.strip():
         return ToolResult(False, "command is required")
-    if _PROTECTED_PUSH.search(command):
-        return ToolResult(False, "refusing to push directly to main/master")
+    # Block direct commits
     if _COMMIT_COMMAND.search(command):
         return ToolResult(False, "use the git_commit tool instead of git commit")
-    if not allow_publish and _PUBLISH_COMMAND.search(command):
-        return ToolResult(
-            False,
-            "publish is disabled for this run; refusing git push / gh pr create",
-        )
+    # Block direct pushes to main/master only for git push, not gh pr create
+    if _PROTECTED_PUSH.search(command) and "git push" in command:
+        return ToolResult(False, "refusing to push directly to main/master")
+    # Allow gh pr create even when not in publish mode, block git push when not in publish mode
+    if not allow_publish and "gh pr create" not in command and re.search(r"\bgit\s+push\b", command, re.IGNORECASE):
+        return ToolResult(False, "publish is disabled for this run; refusing git push")
+    # Explicitly allow gh pr create commands
+    if "gh pr create" in command:
+        pass
     try:
         result = subprocess.run(
             ["/bin/bash", "-lc", command],

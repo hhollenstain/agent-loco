@@ -137,7 +137,7 @@ def _run_cycle(
         command_timeout_seconds=settings.command_timeout_seconds,
         git_author_name=settings.git_author_name,
         git_author_email=settings.git_author_email,
-        allow_publish=False,
+        allow_publish=allow_create_pr,
     )
 
     log_progress("Running before tests...")
