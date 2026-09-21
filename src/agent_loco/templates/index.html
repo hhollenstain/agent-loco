@@ -793,7 +793,8 @@
     }
     .task-card .task { width: 100%; }
     .task-card:has(> .pr-link) .task,
-    .task-card:has(> .rerun-btn) .task { padding-bottom: 2.15rem; }
+    .task-card:has(> .rerun-btn) .task,
+    .task-card:has(> .history-line-stats) .task { padding-bottom: 2.15rem; }
     .task {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -945,6 +946,20 @@
       bottom: 0.55rem;
       z-index: 1;
     }
+    .task-card .history-line-stats {
+      position: absolute;
+      left: 0.65rem;
+      bottom: 0.55rem;
+      display: flex;
+      align-items: center;
+      gap: 0.28rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--muted);
+      z-index: 1;
+    }
+    .task-card .history-line-stats .diff-add { color: var(--ok); }
+    .task-card .history-line-stats .diff-del { color: var(--bad); }
     .progress-pr {
       min-height: 0;
       margin-top: 0.45rem;
@@ -2354,6 +2369,17 @@
       const rerunBtn = canRerun
         ? `<button type="button" class="rerun-btn" data-history-rerun="${escapeHtml(historyKey(entry, index))}" title="Rerun this failed run">↻ Rerun</button>`
         : "";
+      const events = entry.events || [];
+      const groups = groupedFileChanges(events);
+      const lineStats = groups.reduce((totals, group) => {
+        const stats = diffStats(fileReviewDiff(group).diff);
+        totals.added += stats.added;
+        totals.removed += stats.removed;
+        return totals;
+      }, { added: 0, removed: 0 });
+      const linesHtml = lineStats.added || lineStats.removed
+        ? `<span class="history-line-stats"><span class="diff-add">+${lineStats.added}</span> <span class="diff-del">−${lineStats.removed}</span></span>`
+        : "";
       return `
         <div class="task-card${selected}">
           <button type="button" class="task${selected}" data-history-key="${escapeHtml(historyKey(entry, index))}">
@@ -2366,6 +2392,7 @@
           </button>
           ${rerunBtn}
           ${prLinkHtml(prUrl(entry))}
+          ${linesHtml}
         </div>
       `;
     }
