@@ -418,6 +418,21 @@
       background: var(--panel);
     }
     .sidebar-overlay[hidden] { display: none; }
+    #skills-panel .sidebar-overlay-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      overflow: hidden;
+    }
+    #skills-panel .settings-skills-search {
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    #skills-panel .settings-skills-list {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: auto;
+    }
     .sidebar-overlay-head {
       display: flex;
       align-items: center;
@@ -618,8 +633,28 @@
       display: flex;
       flex-direction: column;
       gap: 0.3rem;
-      max-height: 16rem;
+      min-height: 0;
       overflow: auto;
+    }
+    .settings-skills-search {
+      margin: 0.45rem 0 0.6rem 0;
+    }
+    .settings-skills-search input[type="search"] {
+      width: 100%;
+      background: var(--panel);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.55rem 0.7rem;
+      font: inherit;
+    }
+    .settings-skills-search input[type="search"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(109, 187, 70, 0.25);
+    }
+    .skill-row.hidden {
+      display: none;
     }
     .skill-row {
       display: grid;
@@ -1817,6 +1852,9 @@
         </div>
         <div class="sidebar-overlay-body">
           <p class="hint">Enable bundled skills or clone a skill repo into this workspace.</p>
+          <div class="settings-skills-search">
+            <input type="search" id="skills-search" aria-label="Search skills" placeholder="Search skills…" autocomplete="off">
+          </div>
           <div class="settings-skills-list" id="workspace-skills"></div>
           <p class="hint" id="skills-status">Loading skills…</p>
           <div class="settings-skill-sources" id="skill-sources"></div>
@@ -2614,6 +2652,42 @@
         if (skillsStatusEl) skillsStatusEl.textContent = err.message;
       }
     }
+    let skillsSearchTimeout = null;
+    let skillsIdleStatus = "";
+    function debounce(fn, delay) {
+      return function(...args) {
+        clearTimeout(skillsSearchTimeout);
+        skillsSearchTimeout = setTimeout(() => fn(...args), delay);
+      };
+    }
+    function filterSkills(query) {
+      const term = (query || "").toLowerCase().trim();
+      const rows = workspaceSkillsEl.querySelectorAll(".skill-row");
+      let visibleCount = 0;
+      rows.forEach(row => {
+        const title = row.querySelector("strong");
+        const desc = row.querySelector("p");
+        const text = [title?.textContent, desc?.textContent].join(" ").toLowerCase();
+        if (text.includes(term)) {
+          row.classList.remove("hidden");
+          visibleCount++;
+        } else {
+          row.classList.add("hidden");
+        }
+      });
+      if (!skillsStatusEl) return;
+      skillsStatusEl.textContent = term
+        ? (visibleCount
+          ? `Showing ${visibleCount} skill${visibleCount === 1 ? "" : "s"}`
+          : "No skills match.")
+        : skillsIdleStatus;
+    }
+    const skillsSearchEl = document.getElementById("skills-search");
+    if (skillsSearchEl) {
+      skillsSearchEl.addEventListener("input", debounce((event) => {
+        filterSkills(event.target.value);
+      }, 200));
+    }
     function closeSkillInfo() {
       if (!skillInfoPopEl) return;
       skillInfoPopEl.hidden = true;
@@ -2681,14 +2755,15 @@
       closeSkillInfo();
       workspaceSkillsEl.replaceChildren();
       if (!skills.length) {
-        if (skillsStatusEl) skillsStatusEl.textContent = "No skills available yet.";
+        skillsIdleStatus = "No skills available yet.";
       } else {
-        if (skillsStatusEl) {
-          const on = skills.filter((skill) => skill.enabled).map((skill) => skill.name);
-          skillsStatusEl.textContent = on.length
-            ? `Enabled: ${on.join(", ")}`
-            : "No skills enabled for this workspace.";
-        }
+        const on = skills.filter((skill) => skill.enabled).map((skill) => skill.name);
+        skillsIdleStatus = on.length
+          ? `Enabled: ${on.join(", ")}`
+          : "No skills enabled for this workspace.";
+      }
+      if (skillsStatusEl && !(skillsSearchEl?.value || "").trim()) {
+        skillsStatusEl.textContent = skillsIdleStatus;
       }
       for (const skill of skills) {
         const row = document.createElement("div");
@@ -2718,6 +2793,8 @@
         row.append(box, copy, info);
         workspaceSkillsEl.append(row);
       }
+      // Apply current filter to all skill rows
+      filterSkills(skillsSearchEl?.value);
       skillSourcesEl.replaceChildren();
       for (const source of sources) {
         const row = document.createElement("div");
@@ -2878,13 +2955,20 @@
     });
     document.addEventListener("click", (event) => {
       if (settingsOpen() && !settingsDockEl.contains(event.target)) setSettingsOpen(false);
+      if (
+        overlayOpen(skillsPanelEl)
+        && !skillsPanelEl.contains(event.target)
+        && !(openSkillsBtn && openSkillsBtn.contains(event.target))
+      ) {
+        setOverlayOpen(skillsPanelEl, openSkillsBtn, false);
+      }
       const sidebarEl = document.getElementById("sidebar");
       if (
-        (overlayOpen(skillsPanelEl) || overlayOpen(guidelinesPanelEl))
+        overlayOpen(guidelinesPanelEl)
         && sidebarEl
         && !sidebarEl.contains(event.target)
       ) {
-        closeSidebarOverlays();
+        setOverlayOpen(guidelinesPanelEl, openGuidelinesBtn, false);
       }
       if (!notifyPanelOpen()) return;
       if (notifyDockEl.contains(event.target)) return;

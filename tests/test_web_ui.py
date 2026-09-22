@@ -578,6 +578,7 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert home.content.count(b'id="workspace-skills"') == 1
         assert b'id="open-skills"' in home.content
         assert b'id="skills-panel"' in home.content
+        assert b'id="skills-search"' in home.content
         assert b'id="open-guidelines"' in home.content
         assert b'id="guidelines-panel"' in home.content
         assert b'id="skills-popup"' not in home.content
