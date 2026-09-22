@@ -97,6 +97,7 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
     assert "servers.json" in gitignore.read_text(encoding="utf-8")
     assert "workspaces.json" in gitignore.read_text(encoding="utf-8")
     assert "/ui-review.png" in gitignore.read_text(encoding="utf-8")
+    assert "skills/sources/" in gitignore.read_text(encoding="utf-8")
     guidelines = tmp_path / ".loco" / "guidelines.md"
     assert guidelines in created
     assert "You are loco" in guidelines.read_text(encoding="utf-8")

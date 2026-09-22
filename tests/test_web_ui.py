@@ -573,6 +573,10 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert b'id="load-goals"' not in home.content
         assert b'id="settings-kind-label"' in home.content
         assert b'id="save-guidelines"' in home.content
+        assert b'id="workspace-skills"' in home.content
+        assert b'id="clone-skill-source"' in home.content
+        assert b'id="skill-info-pop"' in home.content
+        assert b"skill-markdown" in home.content
         assert b'id="workspace" name="workspace" type="hidden"' in home.content
         assert b"Clone a repository" in home.content
 
@@ -772,6 +776,67 @@ def test_web_ui_clones_repository_into_local_workspace(
             json={"url": str(source), "parent": str(tmp_path / "projects"), "name": "checkout"},
         )
         assert again.status_code == 400
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_lists_enables_and_clones_workspace_skills(
+    settings: Settings, tmp_path: Path
+) -> None:
+    from tests.support import init_git_repo
+
+    remote = tmp_path / "skill-origin"
+    skill = remote / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: code-review\ndescription: Review diffs.\n---\n\nRead the diff.\n",
+        encoding="utf-8",
+    )
+    init_git_repo(remote)
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        listed = client.get("/api/workspaces/skills", params={"path": str(tmp_path)})
+        assert listed.status_code == 200
+        names = [item["name"] for item in listed.json()["skills"]]
+        assert "tdd" in names
+        assert listed.json()["enabled"] == []
+        tdd = next(item for item in listed.json()["skills"] if item["name"] == "tdd")
+        assert tdd["summary"] == "Test-driven development."
+        assert "body" not in tdd
+        detail = client.get(
+            "/api/workspaces/skills/detail",
+            params={"path": str(tmp_path), "name": "tdd"},
+        )
+        assert detail.status_code == 200
+        payload = detail.json()
+        assert "red" in payload["body"].lower()
+        assert "<h1>" in payload["html"]
+        assert "<h2>" in payload["html"]
+        assert "<li>" in payload["html"]
+        enabled = client.put(
+            "/api/workspaces/skills",
+            json={"path": str(tmp_path), "enabled": ["tdd"]},
+        )
+        assert enabled.status_code == 200
+        assert "tdd" in enabled.json()["enabled"]
+        cloned = client.post(
+            "/api/workspaces/skills/sources",
+            json={"path": str(tmp_path), "url": str(remote)},
+        )
+        assert cloned.status_code == 200
+        cloned_names = [item["name"] for item in cloned.json()["skills"]]
+        assert "code-review" in cloned_names
+        assert cloned.json()["sources"]
+        pulled = client.post(
+            "/api/workspaces/skills/sources/sync",
+            json={
+                "path": str(tmp_path),
+                "slug": cloned.json()["added"]["slug"],
+            },
+        )
+        assert pulled.status_code == 200
     finally:
         manager.shutdown(wait=False)
 

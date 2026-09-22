@@ -16,7 +16,6 @@ from agent_loco.runtime.project import (
     collect_context,
     ensure_run_gitignore,
     load_goals,
-    load_guidelines,
     load_project,
     mark_goal_done,
 )
@@ -28,8 +27,10 @@ from agent_loco.runtime.review import (
     is_open_pr_goal,
     review_goal,
     review_reason,
+    unused_new_symbols,
     unwired_ui_markers,
 )
+from agent_loco.runtime.skills import compose_system_prompt
 from agent_loco.runtime.uireview import (
     UiEvidence,
     collect_ui_evidence,
@@ -180,7 +181,7 @@ def _run_cycle(
         llm,
         tools,
         max_iterations=settings.max_iterations,
-        system_prompt=load_guidelines(workspace.root),
+        system_prompt=compose_system_prompt(workspace.root),
     )
     log_progress("Running coding agent...")
     agent_result = agent.run(
@@ -752,6 +753,16 @@ def _review_goal(
         )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
+    unused = unused_new_symbols(diff)
+    if verdict.met and unused and not existing:
+        overridden = GoalReview(
+            False,
+            f"diff adds a helper that nothing calls: {unused[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
     incomplete = incomplete_agent_run(summary, stopped_reason)
     ui_verified = bool(
         ui_evidence is not None
@@ -920,6 +931,7 @@ def _goal_retry_prompt(
         "If this is a UI change, call review_ui after editing, click new tabs, "
         "and fix render errors, 404s, or dead controls. Do not stop while the "
         "page fails to load CSS or JS you added. "
+        "Follow enabled workspace skills. Do not add a helper that nothing calls. "
         "If you edited docs or compose files, the commands must actually exist "
         "(loco clone, docker compose, git clone — never docker clone). Run tests. "
         "Do not bind-mount this app's .loco over the mounted workspace.\n\n"

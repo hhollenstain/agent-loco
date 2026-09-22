@@ -220,3 +220,53 @@ def test_incomplete_agent_run_detects_iteration_limit() -> None:
     assert incomplete_agent_run("done", "completed") is None
     assert incomplete_agent_run("Stopped after reaching the iteration limit.")
     assert incomplete_agent_run("finishing up", "max_iterations")
+
+
+def test_unused_new_symbols_catch_helpers_nothing_calls() -> None:
+    from agent_loco.runtime.review import unused_new_symbols
+
+    helper_only = (
+        "diff --git a/src/agent_loco/runtime/tasks.py "
+        "b/src/agent_loco/runtime/tasks.py\n"
+        "--- a/src/agent_loco/runtime/tasks.py\n"
+        "+++ b/src/agent_loco/runtime/tasks.py\n"
+        "     def list(self) -> list[Task]:\n"
+        "         return list(self._tasks.values())\n"
+        "+\n"
+        "+    def list_for_workspace(self, workspace_id: str) -> list[Task]:\n"
+        "+        wanted = str(Path(workspace_id).expanduser())\n"
+        "+        return [task for task in self._tasks.values()]\n"
+    )
+    assert any("list_for_workspace" in item for item in unused_new_symbols(helper_only))
+
+    cluster = (
+        helper_only
+        + "+\n"
+        "+    def has_running_task(self, workspace_id: str) -> bool:\n"
+        "+        return any(task.status == \"running\" for task in self.list_for_workspace(workspace_id))\n"
+    )
+    markers = unused_new_symbols(cluster)
+    assert any("has_running_task" in item for item in markers)
+
+    wired = (
+        helper_only
+        + "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
+        "--- a/src/agent_loco/web_ui.py\n"
+        "+++ b/src/agent_loco/web_ui.py\n"
+        '+    @app.get("/api/tasks")\n'
+        "+    def list_tasks(workspace_id: str | None = None) -> list[dict]:\n"
+        "+        tasks = ui.manager.list_for_workspace(workspace_id)\n"
+        "+        return [task.to_dict() for task in tasks]\n"
+    )
+    assert unused_new_symbols(wired) == []
+
+    rewrite = (
+        "diff --git a/app.py b/app.py\n"
+        "--- a/app.py\n"
+        "+++ b/app.py\n"
+        "-def add(left, right):\n"
+        "-    raise NotImplementedError\n"
+        "+def add(left, right):\n"
+        "+    return left + right\n"
+    )
+    assert unused_new_symbols(rewrite) == []

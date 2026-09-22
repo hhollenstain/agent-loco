@@ -439,7 +439,7 @@
       display: none;
       width: min(28rem, calc(100vw - 1.7rem));
       max-height: min(36rem, calc(100vh - 5rem));
-      overflow: auto;
+      overflow: hidden;
       position: absolute;
       top: 3.2rem;
       right: 0;
@@ -469,7 +469,12 @@
       padding: 0.35rem 0.65rem;
       font-size: 0.78rem;
     }
-    .settings-panel-content { padding: 0.65rem 0.7rem 0.8rem; }
+    .settings-panel-content {
+      padding: 0.65rem 0.7rem 0.8rem;
+      overflow: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
     .settings-location {
       display: flex;
       align-items: flex-start;
@@ -513,6 +518,254 @@
       font: inherit;
       font-family: ui-monospace, "SF Mono", Menlo, monospace;
       min-height: 8rem;
+    }
+    .settings-skills {
+      margin-top: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .settings-skills-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      max-height: 16rem;
+      overflow: auto;
+    }
+    .skill-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 0.45rem;
+      align-items: center;
+      padding: 0.35rem 0.4rem 0.35rem 0.45rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+    }
+    .skill-row input {
+      margin: 0;
+    }
+    .skill-row-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.08rem;
+      cursor: pointer;
+    }
+    .skill-row-copy strong {
+      display: block;
+      font-size: 0.82rem;
+      line-height: 1.2;
+    }
+    .skill-row-copy p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .skill-info {
+      width: 1.7rem;
+      min-width: 1.7rem;
+      height: 1.7rem;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+    }
+    .skill-info svg {
+      width: 0.95rem;
+      height: 0.95rem;
+    }
+    .skill-info:hover, .skill-info:focus, .skill-info[aria-expanded="true"] {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .skill-info-pop {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border-radius: 10px;
+    }
+    .skill-info-pop[hidden] { display: none; }
+    .skill-info-pop-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      padding: 0.7rem 0.8rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .skill-info-pop-head h3 {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 650;
+    }
+    .skill-info-pop-head button {
+      width: auto;
+      min-width: 0;
+      height: auto;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.78rem;
+    }
+    .skill-info-pop-body {
+      padding: 0.7rem 0.8rem 0.9rem;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .skill-info-pop-body .hint {
+      margin: 0;
+    }
+    .skill-info-pop-body > p,
+    .skill-info-lead {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .skill-info-lead {
+      color: var(--muted);
+    }
+    .skill-markdown {
+      color: var(--ink);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    .skill-markdown > :first-child {
+      margin-top: 0;
+    }
+    .skill-markdown > :last-child {
+      margin-bottom: 0;
+    }
+    .skill-markdown h1,
+    .skill-markdown h2,
+    .skill-markdown h3,
+    .skill-markdown h4 {
+      margin: 0.95rem 0 0.35rem;
+      font-weight: 650;
+      line-height: 1.25;
+    }
+    .skill-markdown h1 { font-size: 1.05rem; }
+    .skill-markdown h2 { font-size: 0.92rem; }
+    .skill-markdown h3,
+    .skill-markdown h4 { font-size: 0.84rem; }
+    .skill-markdown p,
+    .skill-markdown ul,
+    .skill-markdown ol,
+    .skill-markdown blockquote,
+    .skill-markdown pre,
+    .skill-markdown table {
+      margin: 0 0 0.7rem;
+    }
+    .skill-markdown ul,
+    .skill-markdown ol {
+      padding-left: 1.25rem;
+    }
+    .skill-markdown li {
+      margin: 0.18rem 0;
+    }
+    .skill-markdown li > p {
+      margin: 0.18rem 0;
+    }
+    .skill-markdown a {
+      color: var(--accent);
+    }
+    .skill-markdown strong {
+      font-weight: 650;
+    }
+    .skill-markdown blockquote {
+      margin-left: 0;
+      padding: 0.15rem 0 0.15rem 0.7rem;
+      border-left: 2px solid var(--line);
+      color: var(--muted);
+    }
+    .skill-markdown hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 0.8rem 0;
+    }
+    .skill-markdown code {
+      font: 0.78rem/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+      background: var(--panel-2);
+      border-radius: 4px;
+      padding: 0.08rem 0.28rem;
+    }
+    .skill-markdown pre {
+      max-height: 14rem;
+      padding: 0.65rem 0.7rem;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .skill-markdown pre code {
+      background: transparent;
+      padding: 0;
+      font-size: 0.75rem;
+    }
+    .skill-markdown table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+    .skill-markdown th,
+    .skill-markdown td {
+      border: 1px solid var(--line);
+      padding: 0.28rem 0.45rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    .skill-markdown th {
+      background: var(--panel-2);
+      font-weight: 650;
+    }
+    .settings-skill-source {
+      display: flex;
+      gap: 0.4rem;
+      align-items: stretch;
+    }
+    .settings-skill-source input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .settings-skill-source button,
+    .skill-sync {
+      flex: 0 0 auto;
+      width: auto;
+      min-width: 0;
+      height: auto;
+      padding: 0.45rem 0.65rem;
+    }
+    .settings-skill-sources {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .skill-source-row {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .skill-source-row span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.75rem;
+      color: var(--muted);
     }
     .settings-actions {
       display: flex;
@@ -1558,6 +1811,13 @@
         <h2>Workspace settings</h2>
         <button type="button" class="secondary" id="close-settings">Close</button>
       </div>
+      <div class="skill-info-pop" id="skill-info-pop" hidden>
+        <div class="skill-info-pop-head">
+          <h3 id="skill-info-title">Skill</h3>
+          <button type="button" class="secondary" id="close-skill-info">Close</button>
+        </div>
+        <div class="skill-info-pop-body" id="skill-info-body"></div>
+      </div>
       <div class="settings-panel-content">
         <label>Location</label>
         <div class="settings-location" id="workspace-location">
@@ -1570,6 +1830,17 @@
             <p class="settings-kind-label" id="settings-kind-label">{{ ws_kind_label }}</p>
             <p class="settings-remote" id="settings-remote"{% if not workspace_git_remote %} hidden{% endif %}>{{ workspace_git_remote }}</p>
             <p class="settings-path" id="settings-path">{{ default_workspace }}</p>
+          </div>
+        </div>
+        <div class="settings-skills">
+          <label>Skills</label>
+          <p class="hint">Enable bundled skills or clone a skill repo into this workspace.</p>
+          <div class="settings-skills-list" id="workspace-skills"></div>
+          <p class="hint" id="skills-status">Loading skills…</p>
+          <div class="settings-skill-sources" id="skill-sources"></div>
+          <div class="settings-skill-source">
+            <input id="skill-source-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
+            <button type="button" class="secondary" id="clone-skill-source">Clone</button>
           </div>
         </div>
         <div class="settings-guidelines">
@@ -1644,6 +1915,14 @@
     const settingsPanelEl = document.getElementById("settings-panel");
     const guidelinesEl = document.getElementById("guidelines");
     const guidelinesStatusEl = document.getElementById("guidelines-status");
+    const workspaceSkillsEl = document.getElementById("workspace-skills");
+    const skillsStatusEl = document.getElementById("skills-status");
+    const skillSourcesEl = document.getElementById("skill-sources");
+    const skillSourceUrlEl = document.getElementById("skill-source-url");
+    const skillInfoPopEl = document.getElementById("skill-info-pop");
+    const skillInfoTitleEl = document.getElementById("skill-info-title");
+    const skillInfoBodyEl = document.getElementById("skill-info-body");
+    const SKILL_INFO_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M9.6 9.4a2.5 2.5 0 1 1 3.5 2.28c-.72.36-1.1.86-1.1 1.72V14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><circle cx="12" cy="17" r="1.05" fill="currentColor"></circle></svg>`;
     const workspaceTabListEl = document.getElementById("workspace-tab-list");
     const pickerGuidelinesEl = document.getElementById("picker-guidelines");
     const cloneUrlEl = document.getElementById("clone-url");
@@ -1874,6 +2153,7 @@
       settingsDockEl.classList.toggle("open", open);
       settingsPanelEl.hidden = !open;
       settingsToggleEl.setAttribute("aria-expanded", open ? "true" : "false");
+      if (!open) closeSkillInfo();
     }
 
     const WORKSPACE_KIND_LABELS = {
@@ -1930,6 +2210,7 @@
         renderFolderButtons(recentEl, body.workspaces || [], "No recent workspaces yet.", (item) => selectWorkspace(item.path, { seed: true }));
       }
       setGuidelinesEditor(body.guidelines, body.custom_guidelines);
+      loadWorkspaceSkills();
     }
 
     function renderWorkspaceTabs(workspaces, current) {
@@ -2150,9 +2431,199 @@
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to reset guidelines");
         applyWorkspacePayload(body);
-        notify("info", "Restored default rules for this workspace.", { title: "Guidelines reset" });
+        notify("success", "Using default rules.", { title: "Guidelines reset" });
       } catch (err) {
         notify("error", err.message, { title: "Could not reset guidelines" });
+      }
+    });
+    async function loadWorkspaceSkills() {
+      if (!workspaceSkillsEl) return;
+      const path = workspaceEl.value;
+      try {
+        const res = await fetch(`/api/workspaces/skills?path=${encodeURIComponent(path)}`);
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to load skills");
+        renderWorkspaceSkills(body);
+      } catch (err) {
+        if (skillsStatusEl) skillsStatusEl.textContent = err.message;
+      }
+    }
+    function closeSkillInfo() {
+      if (!skillInfoPopEl) return;
+      skillInfoPopEl.hidden = true;
+      workspaceSkillsEl.querySelectorAll(".skill-info").forEach((button) => {
+        button.setAttribute("aria-expanded", "false");
+      });
+    }
+    function skillOriginLabel(skill) {
+      if (skill.origin === "bundled") return "Bundled with loco";
+      if (skill.origin === "local") return "Local workspace skill";
+      return skill.source_url || "Cloned skill repo";
+    }
+    async function openSkillInfo(name) {
+      if (!skillInfoPopEl) return;
+      workspaceSkillsEl.querySelectorAll(".skill-info").forEach((button) => {
+        button.setAttribute("aria-expanded", button.dataset.skill === name ? "true" : "false");
+      });
+      skillInfoTitleEl.textContent = name;
+      skillInfoBodyEl.replaceChildren();
+      const loading = document.createElement("p");
+      loading.className = "hint";
+      loading.textContent = "Loading skill…";
+      skillInfoBodyEl.append(loading);
+      skillInfoPopEl.hidden = false;
+      try {
+        const res = await fetch(
+          `/api/workspaces/skills/detail?path=${encodeURIComponent(workspaceEl.value)}&name=${encodeURIComponent(name)}`
+        );
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to load skill");
+        skillInfoBodyEl.replaceChildren();
+        const origin = document.createElement("p");
+        origin.className = "hint";
+        origin.textContent = skillOriginLabel(body);
+        skillInfoBodyEl.append(origin);
+        if (body.description) {
+          const desc = document.createElement("p");
+          desc.className = "skill-info-lead";
+          desc.textContent = body.description;
+          skillInfoBodyEl.append(desc);
+        }
+        if (body.html) {
+          const article = document.createElement("article");
+          article.className = "skill-markdown";
+          article.innerHTML = body.html;
+          skillInfoBodyEl.append(article);
+        } else if (body.body) {
+          const details = document.createElement("pre");
+          details.textContent = body.body;
+          skillInfoBodyEl.append(details);
+        }
+      } catch (err) {
+        skillInfoBodyEl.replaceChildren();
+        const fail = document.createElement("p");
+        fail.className = "hint";
+        fail.textContent = err.message;
+        skillInfoBodyEl.append(fail);
+      }
+    }
+    function renderWorkspaceSkills(body) {
+      const skills = body.skills || [];
+      const sources = body.sources || [];
+      closeSkillInfo();
+      workspaceSkillsEl.replaceChildren();
+      if (!skills.length) {
+        if (skillsStatusEl) skillsStatusEl.textContent = "No skills available yet.";
+      } else {
+        if (skillsStatusEl) {
+          const on = skills.filter((skill) => skill.enabled).map((skill) => skill.name);
+          skillsStatusEl.textContent = on.length
+            ? `Enabled: ${on.join(", ")}`
+            : "No skills enabled for this workspace.";
+        }
+      }
+      for (const skill of skills) {
+        const row = document.createElement("div");
+        row.className = "skill-row";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.id = `skill-enable-${skill.name}`;
+        box.checked = Boolean(skill.enabled);
+        box.dataset.skill = skill.name;
+        const copy = document.createElement("label");
+        copy.className = "skill-row-copy";
+        copy.htmlFor = box.id;
+        const title = document.createElement("strong");
+        title.textContent = skill.name;
+        const desc = document.createElement("p");
+        desc.textContent = skill.summary || skill.description || "No description.";
+        desc.title = skill.description || skill.summary || "";
+        copy.append(title, desc);
+        const info = document.createElement("button");
+        info.type = "button";
+        info.className = "skill-info";
+        info.dataset.skill = skill.name;
+        info.setAttribute("aria-label", `About ${skill.name}`);
+        info.setAttribute("aria-expanded", "false");
+        info.setAttribute("aria-controls", "skill-info-pop");
+        info.innerHTML = SKILL_INFO_ICON;
+        row.append(box, copy, info);
+        workspaceSkillsEl.append(row);
+      }
+      skillSourcesEl.replaceChildren();
+      for (const source of sources) {
+        const row = document.createElement("div");
+        row.className = "skill-source-row";
+        const label = document.createElement("span");
+        label.textContent = source.url;
+        label.title = source.path || source.url;
+        const sync = document.createElement("button");
+        sync.type = "button";
+        sync.className = "secondary skill-sync";
+        sync.dataset.slug = source.slug;
+        sync.textContent = "Pull";
+        row.append(label, sync);
+        skillSourcesEl.append(row);
+      }
+    }
+    async function saveEnabledSkills() {
+      const enabled = [...workspaceSkillsEl.querySelectorAll("input[data-skill]:checked")]
+        .map((input) => input.dataset.skill)
+        .filter(Boolean);
+      const res = await fetch("/api/workspaces/skills", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: workspaceEl.value, enabled }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to update skills");
+      renderWorkspaceSkills(body);
+      return body;
+    }
+    workspaceSkillsEl.addEventListener("change", (event) => {
+      if (!event.target.closest("input[data-skill]")) return;
+      saveEnabledSkills().catch((err) => notify("error", err.message, { title: "Could not update skills" }));
+    });
+    workspaceSkillsEl.addEventListener("click", (event) => {
+      const info = event.target.closest(".skill-info");
+      if (!info) return;
+      event.preventDefault();
+      openSkillInfo(info.dataset.skill).catch((err) => notify("error", err.message, { title: "Could not load skill" }));
+    });
+    document.getElementById("close-skill-info").addEventListener("click", closeSkillInfo);
+    document.getElementById("clone-skill-source").addEventListener("click", async () => {
+      const url = (skillSourceUrlEl.value || "").trim();
+      if (!url) return;
+      try {
+        const res = await fetch("/api/workspaces/skills/sources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: workspaceEl.value, url }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to clone skills");
+        skillSourceUrlEl.value = "";
+        renderWorkspaceSkills(body);
+        notify("success", "Cloned skill repository into this workspace.", { title: "Skills cloned" });
+      } catch (err) {
+        notify("error", err.message, { title: "Could not clone skills" });
+      }
+    });
+    skillSourcesEl.addEventListener("click", async (event) => {
+      const sync = event.target.closest(".skill-sync");
+      if (!sync) return;
+      try {
+        const res = await fetch("/api/workspaces/skills/sources/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: workspaceEl.value, slug: sync.dataset.slug }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to pull skills");
+        renderWorkspaceSkills(body);
+        notify("success", "Pulled the latest skills.", { title: "Skills updated" });
+      } catch (err) {
+        notify("error", err.message, { title: "Could not pull skills" });
       }
     });
 

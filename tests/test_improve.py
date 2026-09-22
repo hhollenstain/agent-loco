@@ -296,6 +296,7 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     assert "unrelated" in retry.lower()
     assert "stub" in retry.lower()
     assert "update those tests" in retry
+    assert "enabled workspace skills" in retry.lower()
     broken = _goal_retry_prompt(
         "Extract CSS into files",
         "CSS files are returning 404",
@@ -499,6 +500,36 @@ def test_cycle_rejects_mock_implementation_even_if_reviewer_says_met(
     assert result.committed is False
     assert "unfinished work" in (result.reason or "")
     assert "generate_mock_issues" in (result.reason or "")
+
+
+def test_cycle_rejects_unused_helper_even_if_reviewer_says_met(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "app.py",
+                "def add(left, right):\n"
+                "    return left + right\n"
+                "\n"
+                "def list_for_workspace(workspace_id):\n"
+                "    return []\n",
+            ),
+            AssistantTurn(text="Scoped task listing to the current workspace."),
+            _review_turn(True, "workspace tasks are filtered"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="The current task shouldn't show tasks from other workspaces",
+    )
+    assert result.status == "failed"
+    assert result.committed is False
+    assert "list_for_workspace" in (result.reason or "")
+    assert "nothing calls" in (result.reason or "")
 
 
 def test_cycle_rejects_invented_readme_commands_even_if_reviewer_says_met(

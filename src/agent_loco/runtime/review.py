@@ -46,6 +46,8 @@ Rules:
   clone into it, are unmet.
 - Bind-mounting the agent app's `.loco` over `/workspaces/.loco` is unmet. The
   mounted project volume must keep its own `.loco` (config and run history).
+- An unused helper is unmet. A new function, class, or method that nothing in
+  the change calls (no route, CLI, UI, or test) is not the requested behavior.
 - An agent that stopped at the iteration limit has not finished, unless a
   Rendered UI section is present and the requested controls are visible
   without JS errors, missing CSS/JS, dead buttons, or overlapping controls.
@@ -395,6 +397,100 @@ def invalid_doc_commands(diff: str | None) -> list[str]:
             command = match.group(1).lower()
             if command not in _LOCO_SUBCOMMANDS:
                 hits.append(f"docs invent `loco {command}`")
+    return list(dict.fromkeys(hits))
+
+
+_PY_DEF_RE = re.compile(r"^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+_PY_CLASS_RE = re.compile(r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:(]")
+_JS_FN_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("
+)
+_JS_CONST_FN_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+    r"(?:async\s+)?(?:function\b|\()"
+)
+_ROUTE_DECORATOR_RE = re.compile(
+    r"^\s*@(?:app|router|api_router|blueprint)\.",
+    re.IGNORECASE,
+)
+_SKIP_SYMBOL_NAMES = frozenset({"main", "setup", "teardown"})
+
+
+def _is_test_path(path: str) -> bool:
+    raw = (path or "").replace("\\", "/").lower()
+    name = raw.rsplit("/", 1)[-1]
+    return (
+        "/tests/" in f"/{raw}"
+        or "/test/" in f"/{raw}"
+        or name.startswith("test_")
+        or name.endswith(("_test.py", "_test.ts", "_test.js", "_spec.py", "_spec.ts"))
+        or ".spec." in name
+        or ".test." in name
+    )
+
+
+def _def_name(text: str) -> str | None:
+    for regex in (_PY_DEF_RE, _PY_CLASS_RE, _JS_FN_RE, _JS_CONST_FN_RE):
+        match = regex.match(text or "")
+        if match:
+            return match.group(1)
+    return None
+
+
+def _removed_def_names(diff: str | None) -> set[str]:
+    names: set[str] = set()
+    for line in (diff or "").splitlines():
+        if line.startswith("-") and not line.startswith("---"):
+            name = _def_name(line[1:])
+            if name:
+                names.add(name)
+    return names
+
+
+def _symbol_used(
+    name: str,
+    added: list[tuple[str, str]],
+    origin_path: str,
+    origin_line: str,
+) -> bool:
+    call = re.compile(rf"\b{re.escape(name)}\s*\(")
+    attr = re.compile(rf"\.{re.escape(name)}\b")
+    word = re.compile(rf"\b{re.escape(name)}\b")
+    for path, text in added:
+        if path == origin_path and text == origin_line:
+            continue
+        if _def_name(text) == name:
+            continue
+        if call.search(text) or attr.search(text):
+            return True
+        if path != origin_path and word.search(text):
+            return True
+    return False
+
+
+def unused_new_symbols(diff: str | None) -> list[str]:
+    """New public functions/classes in the diff that nothing else calls."""
+    added = _added_diff_lines(diff)
+    removed_names = _removed_def_names(diff)
+    last_line: dict[str, str] = {}
+    hits: list[str] = []
+    for path, text in added:
+        prev = last_line.get(path, "")
+        last_line[path] = text
+        if _is_test_path(path):
+            continue
+        name = _def_name(text)
+        if not name:
+            continue
+        if name.startswith("_") or name.startswith("test") or name in _SKIP_SYMBOL_NAMES:
+            continue
+        if name in removed_names:
+            continue
+        if _ROUTE_DECORATOR_RE.match(prev):
+            continue
+        if _symbol_used(name, added, path, text):
+            continue
+        hits.append(f"{name} is added but nothing calls it")
     return list(dict.fromkeys(hits))
 
 

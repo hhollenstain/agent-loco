@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from agent_loco.agent.prompts import SYSTEM_PROMPT
+from agent_loco.runtime.skills import enabled_skill_names
 from agent_loco.tools.files import SKIP_DIR_NAMES
 
 GUIDELINES_FILE = "guidelines.md"
@@ -162,6 +163,9 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "  remote: origin\n"
                 "  create_pr: false\n"
                 "goals_file: goals.md\n"
+                "skills:\n"
+                "  enabled:\n"
+                "    - tdd\n"
             ),
             encoding="utf-8",
         )
@@ -186,7 +190,13 @@ def write_default_project_files(root: Path) -> list[Path]:
 
 def ensure_run_gitignore(root: Path) -> Path | None:
     """Keep local loco runtime files out of git. Returns the path only when created."""
-    markers = ("runs/", "servers.json", "workspaces.json", "/ui-review.png")
+    markers = (
+        "runs/",
+        "servers.json",
+        "workspaces.json",
+        "/ui-review.png",
+        "skills/sources/",
+    )
     loco = root / ".loco"
     loco.mkdir(parents=True, exist_ok=True)
     path = loco / ".gitignore"
@@ -270,6 +280,9 @@ def collect_context(
     if goals:
         parts.append("Open goals:")
         parts.extend(f"- {goal}" for goal in goals[:8])
+    enabled = enabled_skill_names(root)
+    if enabled:
+        parts.append("Enabled skills: " + ", ".join(enabled))
     tree = render_tree(root)
     if tree:
         parts.append("Workspace files:")
