@@ -309,7 +309,14 @@ def _discover_repo_skills(root: Path) -> list[Skill]:
     repo_root = _find_git_repo_root(workspace)
     if repo_root is None or not repo_root.is_dir():
         return []
-    return list(_discover(repo_root, origin="repo", skip_paths={".loco"}))
+    bundled = bundled_skills_root().resolve()
+    found: list[Skill] = []
+    for skill in _discover(repo_root, origin="repo", skip_paths={".loco"}):
+        path = Path(skill.path).resolve()
+        if path == bundled or bundled in path.parents:
+            continue
+        found.append(skill)
+    return found
 
 
 def _find_git_repo_root(start: Path) -> Path | None:
