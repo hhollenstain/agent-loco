@@ -152,7 +152,8 @@ def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
         "diff --git a/src/agent_loco/templates/index.html b/src/agent_loco/templates/index.html\n"
         "--- a/src/agent_loco/templates/index.html\n"
         "+++ b/src/agent_loco/templates/index.html\n"
-        "+            ? `<button type=\"button\" class=\"rerun-btn\" data-id=\"${task.id}\">↻ Rerun</button>`\n"
+        "+            ? `<button type=\"button\" class=\"rerun-btn\" "
+        "data-id=\"${task.id}\">↻ Rerun</button>`\n"
         "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
         "--- a/src/agent_loco/web_ui.py\n"
         "+++ b/src/agent_loco/web_ui.py\n"
@@ -168,7 +169,8 @@ def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
         "diff --git a/src/agent_loco/templates/index.html b/src/agent_loco/templates/index.html\n"
         "--- a/src/agent_loco/templates/index.html\n"
         "+++ b/src/agent_loco/templates/index.html\n"
-        "+            ? `<button type=\"button\" class=\"rerun-btn\" data-rerun-id=\"${task.id}\">↻ Rerun</button>`\n"
+        "+            ? `<button type=\"button\" class=\"rerun-btn\" "
+        "data-rerun-id=\"${task.id}\">↻ Rerun</button>`\n"
         "+      const rerun = event.target.closest(\".rerun-btn\");\n"
         "+        const res = await fetch(`/api/tasks/${taskId}/rerun`, { method: \"POST\" });\n"
         "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
@@ -243,7 +245,10 @@ def test_unused_new_symbols_catch_helpers_nothing_calls() -> None:
         helper_only
         + "+\n"
         "+    def has_running_task(self, workspace_id: str) -> bool:\n"
-        "+        return any(task.status == \"running\" for task in self.list_for_workspace(workspace_id))\n"
+        "+        return any(\n"
+        "+            task.status == \"running\"\n"
+        "+            for task in self.list_for_workspace(workspace_id)\n"
+        "+        )\n"
     )
     markers = unused_new_symbols(cluster)
     assert any("has_running_task" in item for item in markers)

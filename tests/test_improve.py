@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from tests.support import init_git_repo
 
 from agent_loco.config import Settings
@@ -12,7 +13,6 @@ from agent_loco.runtime.uireview import UiEvidence
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult
 from agent_loco.tools.git import CO_AUTHORED_BY, current_branch, current_sha, run_git
-import pytest
 
 
 @pytest.fixture(autouse=True)

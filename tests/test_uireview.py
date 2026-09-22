@@ -825,8 +825,8 @@ def test_load_project_reads_preview_command(tmp_path: Path) -> None:
 
 
 def test_loco_template_paths_use_the_running_app(tmp_path: Path, monkeypatch) -> None:
-    from agent_loco.runtime.uireview import _is_loco_template_path, start_preview
     from agent_loco.runtime.project import load_project
+    from agent_loco.runtime.uireview import _is_loco_template_path, start_preview
 
     (tmp_path / "src" / "agent_loco" / "templates").mkdir(parents=True)
     (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")

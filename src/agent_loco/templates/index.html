@@ -2654,17 +2654,11 @@
     }
     let skillsSearchTimeout = null;
     let skillsIdleStatus = "";
-    function debounce(fn, delay) {
-      return function(...args) {
-        clearTimeout(skillsSearchTimeout);
-        skillsSearchTimeout = setTimeout(() => fn(...args), delay);
-      };
-    }
     function filterSkills(query) {
       const term = (query || "").toLowerCase().trim();
       const rows = workspaceSkillsEl.querySelectorAll(".skill-row");
       let visibleCount = 0;
-      rows.forEach(row => {
+      for (const row of rows) {
         const title = row.querySelector("strong");
         const desc = row.querySelector("p");
         const text = [title?.textContent, desc?.textContent].join(" ").toLowerCase();
@@ -2674,7 +2668,7 @@
         } else {
           row.classList.add("hidden");
         }
-      });
+      }
       if (!skillsStatusEl) return;
       skillsStatusEl.textContent = term
         ? (visibleCount
@@ -2684,9 +2678,11 @@
     }
     const skillsSearchEl = document.getElementById("skills-search");
     if (skillsSearchEl) {
-      skillsSearchEl.addEventListener("input", debounce((event) => {
-        filterSkills(event.target.value);
-      }, 200));
+      skillsSearchEl.addEventListener("input", (event) => {
+        clearTimeout(skillsSearchTimeout);
+        const value = event.target.value;
+        skillsSearchTimeout = setTimeout(() => filterSkills(value), 200);
+      });
     }
     function closeSkillInfo() {
       if (!skillInfoPopEl) return;
@@ -2793,7 +2789,6 @@
         row.append(box, copy, info);
         workspaceSkillsEl.append(row);
       }
-      // Apply current filter to all skill rows
       filterSkills(skillsSearchEl?.value);
       skillSourcesEl.replaceChildren();
       for (const source of sources) {
@@ -3887,10 +3882,10 @@
       const prevDisabled = page <= 1;
       const nextDisabled = page >= totalPages;
       
-      let html = '';
-      html += `<button type="button" class="secondary" ${prevDisabled ? 'disabled' : ''} data-page="${Math.max(1, page - 1)}">←</button>`;
+      let html = "";
+      html += `<button type="button" class="secondary" ${prevDisabled ? "disabled" : ""} data-page="${Math.max(1, page - 1)}">←</button>`;
       html += `<button type="button" class="current">${page}</button>`;
-      html += `<button type="button" class="secondary" ${nextDisabled ? 'disabled' : ''} data-page="${Math.min(totalPages, page + 1)}">→</button>`;
+      html += `<button type="button" class="secondary" ${nextDisabled ? "disabled" : ""} data-page="${Math.min(totalPages, page + 1)}">→</button>`;
       
       element.innerHTML = html;
     }
@@ -4231,7 +4226,7 @@
       const seen = new Set();
       for (const server of servers || []) {
         // Handle both dict format {url, alias} and string URL
-        const url = (typeof server === 'object' && server !== null) ? server.url : server;
+        const url = (typeof server === "object" && server !== null) ? server.url : server;
         if (!url || seen.has(url)) continue;
         seen.add(url);
         const option = document.createElement("option");

@@ -244,7 +244,7 @@ class UiState:
         """Load cycle logs from `.loco/runs/` and history.json, newest first."""
         runs_dir = Path(workspace_root) / ".loco" / "runs"
         results: list[dict[str, Any]] = []
-        
+
         # Load from .loco/runs/ directory (current runs)
         if runs_dir.exists():
             for path in sorted(runs_dir.glob("*.json"), reverse=True):
@@ -260,12 +260,12 @@ class UiState:
                     if parsed:
                         data["created_at"] = parsed
                 results.append(data)
-        
+
         # Load from history.json (persisted history)
         history_file = Path(workspace_root) / "history.json"
         try:
             if history_file.exists():
-                with open(history_file, "r", encoding="utf-8") as f:
+                with open(history_file, encoding="utf-8") as f:
                     history = json.load(f)
                 if isinstance(history, list):
                     # Add all historical items (the file has them newest first)
@@ -295,7 +295,7 @@ class UiState:
     ) -> dict[str, Any]:
         """Load and paginate history with optional search filter."""
         all_items = self.load_history(workspace_root)
-        
+
         # Apply search filter if provided
         if search:
             search_lower = search.lower()
@@ -326,15 +326,15 @@ class UiState:
                     ]
                 )
             ]
-        
+
         total = len(all_items)
         total_pages = max(1, (total + page_size - 1) // page_size)
         page = max(1, min(page, total_pages))
-        
+
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
         items = all_items[start_idx:end_idx]
-        
+
         return {
             "items": items,
             "page": page,
@@ -576,12 +576,12 @@ def create_app(
     ) -> dict[str, Any]:
         """Create a new server with optional alias."""
         from agent_loco.runtime.servers import create_or_update_server
-        
+
         ui: UiState = request.app.state.ui
         body = payload or UrlCreate(url="", alias=None)
         if not body.url or not body.url.strip():
             return JSONResponse({"error": "url is required"}, status_code=400)
-        
+
         servers = create_or_update_server(
             Path(ui.default_workspace),
             body.url,

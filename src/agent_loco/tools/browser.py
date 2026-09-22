@@ -29,7 +29,9 @@ def browser_tools(workspace: Workspace, goal: str = "") -> list[ToolSpec]:
                     },
                     "click": {
                         "type": "string",
-                        "description": "Extra CSS selector or button name to click last, before capturing.",
+                        "description": (
+                            "Extra CSS selector or button name to click last, before capturing."
+                        ),
                     },
                     "wait_ms": {
                         "type": "integer",

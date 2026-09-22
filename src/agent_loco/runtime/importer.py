@@ -244,10 +244,10 @@ def load_goals_from_issues(
             "state": status,
         }
 
-    except httpx.HTTPError as e:
-        return {"issues": [], "error": str(e), "owner": owner, "repo": repo, "state": status}
-    except Exception as e:
-        return {"issues": [], "error": str(e), "owner": owner, "repo": repo, "state": status}
+    except httpx.HTTPError as exc:
+        return {"issues": [], "error": str(exc), "owner": owner, "repo": repo, "state": status}
+    except Exception as exc:
+        return {"issues": [], "error": str(exc), "owner": owner, "repo": repo, "state": status}
 
 
 def load_goals_from_workspace(

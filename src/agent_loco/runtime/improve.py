@@ -1084,11 +1084,14 @@ def _pr_body(
         tests_line = "- [ ] Project tests failed locally — do not merge until green"
     else:
         tests_line = "- [ ] No project test command; verify manually"
-    
+
     # Extract changes and reason from summary
     changes_section = _extract_changes_from_summary(summary)
     testing_steps = _extract_testing_steps_from_summary(summary)
-    
+
+    reason = _extract_reason_from_summary(summary)
+    if not reason:
+        reason = f"To address the stated goal: {goal.strip()}"
     lines = [
         "## What Changed",
         "",
@@ -1096,7 +1099,7 @@ def _pr_body(
         "",
         "## Why This Update",
         "",
-        _extract_reason_from_summary(summary) if _extract_reason_from_summary(summary) else ("To address the stated goal: " + goal.strip()),
+        reason,
         "",
         "## Goal",
         "",
@@ -1108,7 +1111,7 @@ def _pr_body(
         "- [x] Goal review confirmed the requested outcome",
         "- [ ] Review this feature branch; do not merge unreviewed commits to main",
     ]
-    
+
     # Add testing steps if available
     if testing_steps:
         lines.extend(["", "## Steps to Test"])
@@ -1116,7 +1119,7 @@ def _pr_body(
         for i, step in enumerate(testing_steps, 1):
             lines.append(f"{i}. {step}")
         lines.append("")
-    
+
     shots = [Path(name).name for name in (screenshots or []) if str(name).strip()]
     hosted = (image_base or "").rstrip("/")
     if shots and hosted:
@@ -1135,53 +1138,65 @@ def _extract_changes_from_summary(summary: str | None) -> str:
     """Extract what changed from the summary, focusing on file changes and modifications."""
     if not summary:
         return "No changes described."
-    
+
     summary_lines = [line.strip() for line in summary.split("\n") if line.strip()]
-    
+
     # Look for sections in the summary like "Files changed:", "Changes:", etc.
     change_sections = []
     current_section = []
-    
+
     for line in summary_lines:
         lower = line.lower()
-        if any(trigger in lower for trigger in 
-                ["files changed", "changes:", "this commit", "modified ", "added ", "removed "]):
+        if any(
+            trigger in lower
+            for trigger in (
+                "files changed",
+                "changes:",
+                "this commit",
+                "modified ",
+                "added ",
+                "removed ",
+            )
+        ):
             if current_section:
                 change_sections.append("\n".join(current_section))
             current_section = [line]
         elif current_section:
             current_section.append(line)
-    
+
     if current_section:
         change_sections.append("\n".join(current_section))
-    
+
     # If we found explicit change sections, use them
     if change_sections:
         return change_sections[0] if len(change_sections) == 1 else "\n\n".join(change_sections)
-    
+
     # Otherwise, use the first non-goal line from the summary
-    for line in summary_lines:
-        if not line.lower().startswith("goal:") and not line.lower().startswith("why:"):
-            return line + ("\n" + "\n".join(summary_lines[summary_lines.index(line)+1:50]) if summary_lines.index(line) < len(summary_lines)-1 else "")
-    
-    return detail
+    for index, line in enumerate(summary_lines):
+        lowered = line.lower()
+        if lowered.startswith("goal:") or lowered.startswith("why:"):
+            continue
+        rest = summary_lines[index + 1 : index + 50]
+        if rest:
+            return line + "\n" + "\n".join(rest)
+        return line
+    return ""
 
 
 def _extract_reason_from_summary(summary: str | None) -> str:
     """Extract why the update was made from the summary."""
     if not summary:
         return ""
-    
+
     summary_lower = summary.lower()
-    
-    # Look for explicit reason sections
-    if "why" in summary_lower or "rationale" in summary_lower or "motivation" in summary_lower or "justification" in summary_lower:
+
+    reason_words = ("why", "rationale", "motivation", "justification")
+    if any(word in summary_lower for word in reason_words):
         lines = [line.strip() for line in summary.split("\n") if line.strip()]
-        for i, line in enumerate(lines):
-            if any(trigger in line.lower() for trigger in ["why", "rationale", "motivation", "justification", "because"]):
-                # Return this line and the next few lines
-                return " ".join(lines[i:min(i+4, len(lines))])
-    
+        for index, line in enumerate(lines):
+            if any(trigger in line.lower() for trigger in (*reason_words, "because")):
+                return " ".join(lines[index : min(index + 4, len(lines))])
+
     # Look for "to address" or "to implement" patterns
     to_patterns = ["to address", "to implement", "to fix", "to add", "to update", "to resolve"]
     for pattern in to_patterns:
@@ -1190,7 +1205,7 @@ def _extract_reason_from_summary(summary: str | None) -> str:
             # Get the rest of the line after the pattern
             after = summary[idx:].split("\n")[0]
             return after.strip()
-    
+
     return ""
 
 
@@ -1198,32 +1213,45 @@ def _extract_testing_steps_from_summary(summary: str | None) -> list[str]:
     """Extract testing steps from the summary."""
     if not summary:
         return []
-    
+
     lines = [line.strip() for line in summary.split("\n") if line.strip()]
     testing_steps = []
-    
+
     # Look for testing-related sections
     for i, line in enumerate(lines):
         lower = line.lower()
-        if any(trigger in lower for trigger in ["test", "verify", "check", "validate", "steps", "how to test", "testing"]):
+        if any(
+            trigger in lower
+            for trigger in (
+                "test",
+                "verify",
+                "check",
+                "validate",
+                "steps",
+                "how to test",
+                "testing",
+            )
+        ):
             # Collect testing-related content
             for j in range(i, min(i + 6, len(lines))):
                 test_line = lines[j]
-                if test_line.lower().strip() in ["testing notes:", "testing:", "tests:", "verify:", "check:"]:
+                headers = ("testing notes:", "testing:", "tests:", "verify:", "check:")
+                if test_line.lower().strip() in headers:
                     # Skip headers, start from the next line
                     continue
-                if (test_line.startswith("1.") or test_line.startswith("2.") or 
-                    test_line.startswith("3.") or test_line.startswith("4.") or
-                    test_line.startswith("5.") or test_line.startswith("-")):
-                    # Extract just the content after the marker
-                    test_line = test_line.split(".", 1)[-1].strip() if not test_line.startswith("-") else test_line.lstrip("-").strip()
+                numbered = test_line[:2] in {"1.", "2.", "3.", "4.", "5."}
+                if numbered or test_line.startswith("-"):
+                    if numbered:
+                        test_line = test_line.split(".", 1)[-1].strip()
+                    else:
+                        test_line = test_line.lstrip("-").strip()
                     if test_line:
                         testing_steps.append(test_line)
                 elif test_line.startswith("##") and "testing" not in lower:
                     break
                 elif test_line:
                     testing_steps.append(test_line)
-    
+
     return testing_steps
 
 
@@ -1281,17 +1309,17 @@ def _append_to_history(root: Path, result: CycleResult) -> None:
     except (OSError, json.JSONDecodeError):
         # If we can't read the file for any reason, start fresh
         history = []
-    
-    # Add the new result to the beginning of the list 
+
+    # Add the new result to the beginning of the list
     # (most recent at the beginning) and keep only the last 100 entries
     _stamp_git(root, result)
     _attach_events(result)
     history.insert(0, asdict(result))
-    
+
     # Limit history size to avoid file becoming too large
     if len(history) > 100:
         history = history[:100]
-    
+
     try:
         with open(history_file, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2)

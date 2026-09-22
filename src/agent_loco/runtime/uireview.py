@@ -67,7 +67,10 @@ PAGE_EVAL = """() => {
     url: location.href,
     text: (document.body && document.body.innerText || "").slice(0, 8000),
     errors: window.__locoErrors || [],
-    tabs: [...document.querySelectorAll("[data-main-pane].main-tab, [data-task-pane]")].filter((el) => !el.closest("[hidden]")).slice(0, 16).map((el) => {
+    tabs: [...document.querySelectorAll("[data-main-pane].main-tab, [data-task-pane]")]
+      .filter((el) => !el.closest("[hidden]"))
+      .slice(0, 16)
+      .map((el) => {
       const main = el.getAttribute("data-main-pane") || "";
       const pane = el.getAttribute("data-task-pane") || "";
       const panel = main
@@ -75,7 +78,9 @@ PAGE_EVAL = """() => {
         : (pane ? document.querySelector('[data-pane="' + pane + '"]') : null);
       const style = panel ? window.getComputedStyle(panel) : null;
       const box = panel ? panel.getBoundingClientRect() : null;
-      const hidden = !panel || isHidden(panel) || (style && (style.display === "none" || style.visibility === "hidden"));
+      const hidden = !panel || isHidden(panel) || (
+        style && (style.display === "none" || style.visibility === "hidden")
+      );
       return {
         name: (el.innerText || "").trim().slice(0, 80),
         pane: main || pane,
@@ -85,7 +90,9 @@ PAGE_EVAL = """() => {
         panelText: panel ? (panel.innerText || "").trim().slice(0, 80) : "",
       };
     }),
-    overlays: [...document.querySelectorAll(".sidebar-overlay, .settings-panel")].slice(0, 8).map((el) => {
+    overlays: [...document.querySelectorAll(".sidebar-overlay, .settings-panel")]
+      .slice(0, 8)
+      .map((el) => {
       const style = window.getComputedStyle(el);
       const box = el.getBoundingClientRect();
       const hidden = isHidden(el) || style.display === "none" || style.visibility === "hidden";

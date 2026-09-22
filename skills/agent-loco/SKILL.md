@@ -8,7 +8,8 @@ description: >-
 # agent-loco
 
 This workspace is loco itself. Finish the stated goal in this run. A later
-cycle is not a substitute for missing wiring, data, or UI.
+cycle is not a substitute for missing wiring, data, or UI. Repo-wide practices
+are in `AGENTS.md` at the git root.
 
 ## Layout
 

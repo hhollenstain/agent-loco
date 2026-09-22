@@ -9,10 +9,15 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent_loco.config import Settings
-from agent_loco.llm.client import LLMClient, OpenAICompatClient, list_remote_models, normalize_model_base_url
+from agent_loco.llm.client import (
+    LLMClient,
+    OpenAICompatClient,
+    list_remote_models,
+    normalize_model_base_url,
+)
 from agent_loco.logging import UtcFormatter, utcnow_iso
-from agent_loco.runtime.improve import CycleResult, run_cycle
 from agent_loco.progress import bind_progress, record_event, reset_progress
+from agent_loco.runtime.improve import CycleResult, run_cycle
 
 log = logging.getLogger("loco")
 
@@ -189,7 +194,11 @@ class TaskManager:
         """Return tasks for a specific workspace, sorted newest first."""
         workspace = workspace.expanduser().resolve() if workspace else ""
         with self._lock:
-            tasks = [t for t in self._tasks.values() if Path(t.workspace).resolve() == Path(workspace).resolve()]
+            tasks = [
+                task
+                for task in self._tasks.values()
+                if Path(task.workspace).resolve() == Path(workspace).resolve()
+            ]
         tasks.sort(key=lambda item: item.created_at, reverse=True)
         return tasks
 

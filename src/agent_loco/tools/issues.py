@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import re
-import urllib.parse
-from pathlib import Path
-from typing import Any
 
-from agent_loco.progress import record_file_change
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 
@@ -22,6 +18,28 @@ _GITLAB_ISSUE_RE = re.compile(
 
 
 def issues_tools(workspace: Workspace) -> list[ToolSpec]:
+    def list_issues(
+        repo=None,
+        limit=20,
+        include_closed=False,
+        search_query=None,
+        author=None,
+    ):
+        return _list_issues(
+            workspace, repo, limit, include_closed, search_query, author
+        )
+
+    def pull_goals(
+        repo=None,
+        limit=20,
+        include_closed=False,
+        prefix=None,
+        status_filter="open",
+    ):
+        return _pull_goals_from_issues(
+            workspace, repo, limit, include_closed, prefix, status_filter
+        )
+
     return [
         ToolSpec(
             name="list_issues",
@@ -62,9 +80,7 @@ def issues_tools(workspace: Workspace) -> list[ToolSpec]:
                 },
                 [],  # No required parameters - repo can be auto-detected
             ),
-            handler=lambda repo=None, limit=20, include_closed=False, search_query=None, author=None: _list_issues(
-                workspace, repo, limit, include_closed, search_query, author
-            ),
+            handler=list_issues,
         ),
         ToolSpec(
             name="get_issue",
@@ -137,7 +153,9 @@ def issues_tools(workspace: Workspace) -> list[ToolSpec]:
                     },
                     "prefix": {
                         "type": "string",
-                        "description": "Optional label prefix to filter issues (e.g., 'goal-', 'feature').",
+                        "description": (
+                            "Optional label prefix to filter issues (e.g., 'goal-', 'feature')."
+                        ),
                     },
                     "status_filter": {
                         "type": "string",
@@ -147,32 +165,33 @@ def issues_tools(workspace: Workspace) -> list[ToolSpec]:
                 },
                 [],
             ),
-            handler=lambda repo=None, limit=20, include_closed=False, prefix=None, status_filter="open": _pull_goals_from_issues(
-                workspace, repo, limit, include_closed, prefix, status_filter
-            ),
+            handler=pull_goals,
         ),
     ]
 
 
-def _extract_repo_from_remote(workspace: Workspace, remote: str = "origin") -> tuple[str, str] | None:
+def _extract_repo_from_remote(
+    workspace: Workspace,
+    remote: str = "origin",
+) -> tuple[str, str] | None:
     """Extract (owner, repo) from git remote URL using pattern matching."""
     from agent_loco.tools.git import _GITHUB_REMOTE_RE, run_git
 
     result = run_git(workspace, ["remote", "get-url", remote])
     if result.returncode != 0:
         return None
-    
+
     match = _GITHUB_REMOTE_RE.search(result.stdout.strip())
     if not match:
         return None
-    
+
     owner = match.group("owner")
     repo = match.group("repo").rstrip("/")
     if repo.endswith(".git"):
         repo = repo[:-4]
     if not owner or not repo:
         return None
-    
+
     return (owner, repo)
 
 
@@ -185,9 +204,10 @@ def _list_issues(
     author: str | None,
 ) -> ToolResult:
     """List issues with full context from GitHub API."""
-    import httpx
     import os
-    
+
+    import httpx
+
     if not repo:
         from agent_loco.tools.git import github_owner_repo
         repo_tuple = github_owner_repo(workspace)
@@ -195,17 +215,17 @@ def _list_issues(
             repo = f"{repo_tuple[0]}/{repo_tuple[1]}"
         else:
             return ToolResult(False, "No repository specified and no remote found")
-    
+
     limit = min(max(limit, 1), 100)
     status = "closed" if include_closed else "open"
     status_label = "Closed" if include_closed else "Open"
-    
-    owner, repo_name = repo.split('/')[0], repo.split('/')[1]
-    
+
+    owner, repo_name = repo.split("/", 1)
+
     # Fetch issues from GitHub API
     url = f"https://api.github.com/repos/{owner}/{repo_name}/issues"
     params = {"state": status, "per_page": min(limit, 100)}
-    
+
     api_key = os.environ.get("GITHUB_TOKEN")
     headers = {
         "Accept": "application/vnd.github+json",
@@ -213,34 +233,34 @@ def _list_issues(
     }
     if api_key:
         headers["Authorization"] = f"token {api_key}"
-    
+
     try:
         response = httpx.get(url, params=params, headers=headers, timeout=30)
         response.raise_for_status()
         issues_data = response.json()
-        
+
         if not isinstance(issues_data, list):
             return ToolResult(False, "GitHub did not return a list of issues")
-        
+
         if not issues_data:
             return ToolResult(False, f"No {status.lower()} issues found")
-        
+
         lines = [f"{status_label} issues from {repo}:"]
         for issue in issues_data:
             if not isinstance(issue, dict) or issue.get("pull_request"):
                 continue
-            
+
             issue_number = issue.get("number", "?")
             state = issue.get("state", "?")
             title = issue.get("title", "No title")
             lines.append(f"  #{issue_number} [{state}] {title}")
-        
+
         return ToolResult(True, "\n".join(lines))
-    
-    except httpx.HTTPError as e:
-        return ToolResult(False, f"Failed to fetch issues: {e}")
-    except Exception as e:
-        return ToolResult(False, f"Error listing issues: {e}")
+
+    except httpx.HTTPError as exc:
+        return ToolResult(False, f"Failed to fetch issues: {exc}")
+    except Exception as exc:
+        return ToolResult(False, f"Error listing issues: {exc}")
 
 
 def _get_issue(
@@ -249,10 +269,12 @@ def _get_issue(
     include_comments: bool,
 ) -> ToolResult:
     """Get details for a specific issue including body and comments."""
+    import os
+
+    import httpx
+
     from agent_loco.runtime.importer import format_issue_goal, parse_issue_ref
     from agent_loco.tools.git import github_owner_repo
-    import httpx
-    import os
 
     parsed = parse_issue_ref(issue_ref)
     if parsed is None:
@@ -305,10 +327,10 @@ def _get_issue(
         status = issue_data.get("state") or "unknown"
         return ToolResult(True, f"Status: {status}\n\n{goal}".strip())
 
-    except httpx.HTTPError as e:
-        return ToolResult(False, f"Failed to fetch issue #{issue_number}: {e}")
-    except Exception as e:
-        return ToolResult(False, f"Error processing issue #{issue_number}: {e}")
+    except httpx.HTTPError as exc:
+        return ToolResult(False, f"Failed to fetch issue #{issue_number}: {exc}")
+    except Exception as exc:
+        return ToolResult(False, f"Error processing issue #{issue_number}: {exc}")
 
 
 def _parse_issue_url(
@@ -316,11 +338,11 @@ def _parse_issue_url(
     url: str,
 ) -> ToolResult:
     """Parse a GitHub/GitLab issue/PR URL."""
-    
+
     gh_match = _GITHUB_ISSUE_RE.search(url)
     gl_mr_match = _GITLAB_MR_RE.search(url)
     gl_issue_match = _GITLAB_ISSUE_RE.search(url)
-    
+
     if gh_match:
         return ToolResult(True, f"GitHub Issue #{gh_match.group('num')} "
                    f"in {gh_match.group('owner')}/{gh_match.group('repo')}")
@@ -330,7 +352,7 @@ def _parse_issue_url(
     elif gl_issue_match:
         return ToolResult(True, f"GitLab Issue #{gl_issue_match.group('num')} "
                    f"in {gl_issue_match.group('owner')}/{gl_issue_match.group('repo')}")
-    
+
     return ToolResult(False, "Not a valid GitHub/GitLab issue or MR URL")
 
 
@@ -342,9 +364,9 @@ def _pull_goals_from_issues(
     prefix: str | None,
     status_filter: str,
 ) -> ToolResult:
-    """Pull issues from a GitHub repo and format them as goals. Auto-updates branch and pushes commits."""
+    """Pull GitHub issues, format them as goals, and push the update."""
     from agent_loco.runtime.importer import load_goals_from_issues
-    
+
     if not repo:
         from agent_loco.tools.git import github_owner_repo
         repo_tuple = github_owner_repo(workspace)
@@ -352,17 +374,23 @@ def _pull_goals_from_issues(
             repo = f"{repo_tuple[0]}/{repo_tuple[1]}"
         else:
             return ToolResult(False, "No repository specified and no known GitHub remote found")
-    
+
     limit = min(max(limit, 1), 100)
     status = status_filter.lower()
-    
+
     # Load real issues from GitHub
-    result = load_goals_from_issues(repo.split('/')[0], repo.split('/')[1], state=status, per_page=limit)
-    
+    owner, repo_name = repo.split("/", 1)
+    result = load_goals_from_issues(
+        owner,
+        repo_name,
+        state=status,
+        per_page=limit,
+    )
+
     if not result.get("issues"):
         error = result.get("error", "No issues found")
         return ToolResult(False, f"{error}")
-    
+
     issues = result["issues"]
     if not issues:
         return ToolResult(False, f"No issues found for filter: status={status}")
@@ -386,11 +414,11 @@ def _pull_goals_from_issues(
             lines.append(f"  {extra}" if extra.strip() else "")
         if i < len(issues):
             lines.append("")
-    
+
     # Auto-populate goals.md with the pulled issues
     goals_file = workspace.root / ".loco" / "goals.md"
     goals_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Append new goals to existing file
     existing_content = goals_file.read_text(encoding="utf-8") if goals_file.exists() else ""
     new_goals_content = "\n".join(lines)
@@ -400,15 +428,15 @@ def _pull_goals_from_issues(
     else:
         final_content = f"{new_goals_content}\n"
         goals_file.write_text(final_content, encoding="utf-8")
-    
+
     # Auto-commit and push the changes
     from agent_loco.tools.git import (
+        _output,
         current_branch,
         is_protected_branch,
-        _output,
         run_git,
     )
-    
+
     # Check if we're on a protected branch
     branch = current_branch(workspace)
     if is_protected_branch(branch):
@@ -420,12 +448,12 @@ def _pull_goals_from_issues(
         if create_branch.returncode != 0:
             return ToolResult(False, f"Failed to create branch: {_output(create_branch)}")
         branch = new_branch
-    
+
     # Stage and commit the goals.md file
     stage = run_git(workspace, ["add", str(goals_file.relative_to(workspace.root))])
     if stage.returncode != 0:
         return ToolResult(False, f"Failed to stage goals.md: {_output(stage)}")
-    
+
     commit = run_git(workspace, [
         "commit",
         "-m", f"Updated goals.md with issues from {repo}: {status_filter} issues",
@@ -433,13 +461,13 @@ def _pull_goals_from_issues(
     ])
     if commit.returncode != 0:
         return ToolResult(False, f"Failed to commit: {_output(commit)}")
-    
+
     # Push the changes (if on a feature branch and not on protected branch)
     if not is_protected_branch(current_branch(workspace)):
         push = run_git(workspace, ["push", "origin", current_branch(workspace)])
         if push.returncode != 0:
             return ToolResult(False, f"Failed to push: {_output(push)}")
-    
+
     return ToolResult(True, "\n".join(lines) + "\n\nGoals updated and pushed to current branch.")
 
 
