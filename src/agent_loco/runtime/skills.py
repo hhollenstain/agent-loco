@@ -170,8 +170,11 @@ def list_skills(root: Path) -> list[Skill]:
             by_name[skill.name] = skill
     local = local_skills_root(root)
     if local.is_dir():
-        for skill in _discover(local, origin="local"):
+        for skill in _discover(local, origin="local", skip_paths={}):
             by_name[skill.name] = skill
+    repo_skills = _discover_repo_skills(root)
+    for skill in repo_skills:
+        by_name[skill.name] = skill
     return [
         replace(skill, enabled=skill.name in enabled)
         for skill in sorted(by_name.values(), key=lambda item: item.name)
@@ -258,17 +261,24 @@ def skills_catalog(root: Path) -> dict[str, object]:
     }
 
 
-def _discover(root: Path, *, origin: str, source_url: str = "") -> list[Skill]:
+def _discover(
+    root: Path,
+    *,
+    origin: str,
+    source_url: str = "",
+    skip_paths: set[str] | None = None,
+) -> list[Skill]:
     if not root.is_dir():
         return []
     found: list[Skill] = []
     seen: set[Path] = set()
+    skip = SKIP_WALK | (skip_paths or set())
     for filename in SKILL_FILENAMES:
         for path in root.rglob(filename):
             resolved = path.resolve()
             if resolved in seen:
                 continue
-            if any(part in SKIP_WALK for part in path.parts):
+            if any(part in skip for part in path.parts):
                 continue
             seen.add(resolved)
             try:
@@ -291,6 +301,25 @@ def _discover(root: Path, *, origin: str, source_url: str = "") -> list[Skill]:
                 )
             )
     return found
+
+
+def _discover_repo_skills(root: Path) -> list[Skill]:
+    """Discover skills that exist in the git repository root (outside .loco)."""
+    workspace = Path(root).expanduser().resolve()
+    repo_root = _find_git_repo_root(workspace)
+    if repo_root is None or not repo_root.is_dir():
+        return []
+    return list(_discover(repo_root, origin="repo", skip_paths={".loco"}))
+
+
+def _find_git_repo_root(start: Path) -> Path | None:
+    """Find the root of the git repository containing start."""
+    current = start.resolve()
+    while current != current.parent:
+        if (current / ".git").is_dir():
+            return current
+        current = current.parent
+    return None
 
 
 def _clean_name(value: str) -> str:
