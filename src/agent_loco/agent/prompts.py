@@ -58,6 +58,8 @@ Rules:
   (non-zero size, not display:none). A diff is not done until the rendered page works.
 - Do not add a button, tab, or API endpoint without wiring them together in
   this change. A visible control that does not fetch or change state is unfinished.
+- Follow enabled workspace skills injected after these rules. They are the
+  process for this run. Do not skip an enabled skill.
 - After behavior changes, call run_tests when the project has a test command.
   Do not summarize until that validation has run since the last edit.
 - After Docker, compose, or README edits, call run_tests. Documented commands
@@ -68,7 +70,8 @@ Rules:
   those files from the web app (static mount or route) or fix the href so it
   matches a real path. Call review_ui again until the URLs load. Do not stop
   while the page is missing styles or scripts you added.
-- Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
+- Never commit, stage, or push `.loco/` files. That directory is local workspace
+  state (config, skills, run logs, screenshots), not project source.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """
 
@@ -84,10 +87,11 @@ def user_prompt(goal: str, context: str) -> str:
         [
             "",
             "Work until THIS goal is fully done or you are blocked. Do not leave a "
-            "stub, mock, unused form field, or a follow-up for a later run. "
-            "Do not switch to a different task you notice in the repo. Test your "
-            "changes. If you edited UI, call review_ui and click the new control. "
-            "If you edited Docker or docs, call run_tests; documented commands must run. "
+            "stub, mock, unused form field, unused helper, or a follow-up for a "
+            "later run. Follow enabled workspace skills. Do not switch to a "
+            "different task you notice in the repo. Test your changes. If you "
+            "edited UI, call review_ui and click the new control. If you edited "
+            "Docker or docs, call run_tests; documented commands must run. "
             "Do not commit on main/master; the cycle commits after review. "
             "A later review will reject a PR if the diff does not fulfill this goal.",
         ]

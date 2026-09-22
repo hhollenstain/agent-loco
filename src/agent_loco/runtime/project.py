@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from agent_loco.agent.prompts import SYSTEM_PROMPT
+from agent_loco.runtime.skills import enabled_skill_names
 from agent_loco.tools.files import SKIP_DIR_NAMES
 
 GUIDELINES_FILE = "guidelines.md"
@@ -162,6 +163,9 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "  remote: origin\n"
                 "  create_pr: false\n"
                 "goals_file: goals.md\n"
+                "skills:\n"
+                "  enabled:\n"
+                "    - tdd\n"
             ),
             encoding="utf-8",
         )
@@ -185,22 +189,44 @@ def write_default_project_files(root: Path) -> list[Path]:
 
 
 def ensure_run_gitignore(root: Path) -> Path | None:
-    """Keep local loco runtime files out of git. Returns the path only when created."""
-    markers = ("runs/", "servers.json", "workspaces.json", "/ui-review.png")
+    """Keep the whole `.loco/` directory out of git. Returns a path only when created."""
+    created = _ensure_root_loco_ignore(root)
     loco = root / ".loco"
     loco.mkdir(parents=True, exist_ok=True)
     path = loco / ".gitignore"
     if path.exists():
         existing = path.read_text(encoding="utf-8")
         lines = {line.strip() for line in existing.splitlines()}
-        missing = [marker for marker in markers if marker not in lines]
-        if not missing:
+        if "*" not in lines:
+            suffix = "" if existing.endswith("\n") or not existing else "\n"
+            path.write_text(f"{existing}{suffix}*\n", encoding="utf-8")
+        return created
+    path.write_text("*\n", encoding="utf-8")
+    return created or path
+
+
+def _ensure_root_loco_ignore(root: Path) -> Path | None:
+    path = Path(root) / ".gitignore"
+    marker = ".loco/"
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        if _ignores_loco_dir(existing):
             return None
         suffix = "" if existing.endswith("\n") or not existing else "\n"
-        path.write_text(f"{existing}{suffix}" + "".join(f"{m}\n" for m in missing), encoding="utf-8")
+        path.write_text(f"{existing}{suffix}{marker}\n", encoding="utf-8")
         return None
-    path.write_text("".join(f"{marker}\n" for marker in markers), encoding="utf-8")
+    path.write_text(f"{marker}\n", encoding="utf-8")
     return path
+
+
+def _ignores_loco_dir(text: str) -> bool:
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line in {".loco", ".loco/", "/.loco", "/.loco/", ".loco/**"}:
+            return True
+    return False
 
 
 def guidelines_path(root: Path) -> Path:
@@ -270,6 +296,9 @@ def collect_context(
     if goals:
         parts.append("Open goals:")
         parts.extend(f"- {goal}" for goal in goals[:8])
+    enabled = enabled_skill_names(root)
+    if enabled:
+        parts.append("Enabled skills: " + ", ".join(enabled))
     tree = render_tree(root)
     if tree:
         parts.append("Workspace files:")

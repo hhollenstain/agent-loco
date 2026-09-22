@@ -27,6 +27,13 @@ from agent_loco.runtime.servers import (
     remember_server,
     update_server_alias,
 )
+from agent_loco.runtime.skills import (
+    add_skill_source,
+    get_skill,
+    save_enabled_skills,
+    skills_catalog,
+    sync_skill_source,
+)
 from agent_loco.runtime.tasks import TaskManager
 from agent_loco.runtime.uireview import resolve_ui_screenshot
 from agent_loco.runtime.workspaces import (
@@ -98,6 +105,23 @@ class WorkspaceSelect(BaseModel):
 class WorkspaceGuidelines(BaseModel):
     path: str | None = None
     guidelines: str | None = None
+
+
+class WorkspaceSkillsUpdate(BaseModel):
+    path: str | None = None
+    enabled: list[str] | None = None
+
+
+class WorkspaceSkillSource(BaseModel):
+    path: str | None = None
+    url: str
+    ref: str | None = None
+
+
+class WorkspaceSkillSync(BaseModel):
+    path: str | None = None
+    slug: str
+    ref: str | None = None
 
 
 class WorkspaceClone(BaseModel):
@@ -652,6 +676,79 @@ def create_app(
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return _workspace_payload(ui)
+
+    def _workspace_root(ui: UiState, path: str | None) -> Path:
+        return Path(path or ui.default_workspace).expanduser().resolve()
+
+    @app.get("/api/workspaces/skills")
+    def list_workspace_skills(request: Request, path: str | None = None) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            root = _workspace_root(ui, path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            return skills_catalog(root)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.get("/api/workspaces/skills/detail")
+    def workspace_skill_detail(
+        request: Request, name: str, path: str | None = None
+    ) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            root = _workspace_root(ui, path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            skill = get_skill(root, name)
+            if skill is None:
+                return JSONResponse({"error": f"unknown skill: {name}"}, status_code=404)
+            return skill.public_dict(include_body=True)
+        except ValueError as extra:
+            return JSONResponse({"error": str(extra)}, status_code=400)
+
+    @app.put("/api/workspaces/skills")
+    def update_workspace_skills(
+        request: Request, payload: WorkspaceSkillsUpdate | None = None
+    ) -> Any:
+        ui: UiState = request.app.state.ui
+        body = payload or WorkspaceSkillsUpdate()
+        try:
+            root = _workspace_root(ui, body.path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            save_enabled_skills(root, body.enabled or [])
+            return skills_catalog(root)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.post("/api/workspaces/skills/sources")
+    def add_workspace_skill_source(
+        request: Request, payload: WorkspaceSkillSource
+    ) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            root = _workspace_root(ui, payload.path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            source = add_skill_source(root, payload.url, ref=payload.ref)
+            return {**skills_catalog(root), "added": source.public_dict()}
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.post("/api/workspaces/skills/sources/sync")
+    def sync_workspace_skill_source(
+        request: Request, payload: WorkspaceSkillSync
+    ) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            root = _workspace_root(ui, payload.path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            source = sync_skill_source(root, payload.slug, ref=payload.ref)
+            return {**skills_catalog(root), "synced": source.public_dict()}
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
 
     @app.post("/api/workspaces/archive")
     def archive_workspace_tab(request: Request, payload: WorkspaceSelect) -> Any:

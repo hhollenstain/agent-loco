@@ -185,6 +185,27 @@ class TaskManager:
         tasks.sort(key=lambda item: item.created_at, reverse=True)
         return tasks
 
+    def list_for_workspace(self, workspace: str) -> list[Task]:
+        """Return tasks for a specific workspace, sorted newest first."""
+        workspace = workspace.expanduser().resolve() if workspace else ""
+        with self._lock:
+            tasks = [t for t in self._tasks.values() if Path(t.workspace).resolve() == Path(workspace).resolve()]
+        tasks.sort(key=lambda item: item.created_at, reverse=True)
+        return tasks
+
+    def has_running_task(self, workspace: str, model_name: str, model_base_url: str) -> bool:
+        """Check if there's already a running task for the same LLM server on this workspace."""
+        workspace_path = workspace.expanduser().resolve() if workspace else ""
+        with self._lock:
+            for task in self._tasks.values():
+                if Path(task.workspace).resolve() != Path(workspace_path).resolve():
+                    continue
+                if task.status != "running":
+                    continue
+                if task.model_name == model_name and task.model_base_url == model_base_url:
+                    return True
+        return False
+
     def counts(self) -> dict[str, int]:
         with self._lock:
             statuses = [task.status for task in self._tasks.values()]

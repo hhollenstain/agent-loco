@@ -43,6 +43,7 @@ def _broken_project(root: Path) -> None:
         encoding="utf-8",
     )
     (loco / "goals.md").write_text("- [ ] Make the adder work\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".loco/\n", encoding="utf-8")
     init_git_repo(root)
 
 
@@ -148,6 +149,7 @@ def _green_project(root: Path) -> None:
         encoding="utf-8",
     )
     (loco / "goals.md").write_text("- [ ] Improve the UI\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".loco/\n", encoding="utf-8")
     init_git_repo(root)
     runs = loco / "runs"
     runs.mkdir()
@@ -296,6 +298,7 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     assert "unrelated" in retry.lower()
     assert "stub" in retry.lower()
     assert "update those tests" in retry
+    assert "enabled workspace skills" in retry.lower()
     broken = _goal_retry_prompt(
         "Extract CSS into files",
         "CSS files are returning 404",
@@ -385,7 +388,6 @@ def test_cycle_pr_hosts_only_the_change_screenshot(
     tmp_path: Path, settings: Settings, monkeypatch
 ) -> None:
     _broken_project(tmp_path)
-    (tmp_path / ".gitignore").write_text(".loco/ui-screenshots/\n", encoding="utf-8")
     shots = tmp_path / ".loco" / "ui-screenshots"
     shots.mkdir(exist_ok=True)
     change = shots / "ui-review_goal_final.png"
@@ -435,17 +437,14 @@ def test_cycle_pr_hosts_only_the_change_screenshot(
     body = str(captured["body"])
     sha = captured["sha"]
     assert sha
-    assert (
-        f"![ui-review_goal_final.png](https://github.com/acme/repo/raw/{sha}/"
-        ".loco/ui-screenshots/ui-review_goal_final.png)"
-    ) in body
+    assert ".loco/ui-screenshots" not in body
+    assert "ui-review_goal_final.png" not in body
     assert "ui-review_review-ui_dump.png" not in body
-    assert "](.loco/ui-screenshots/" not in body
     tracked = run_git(
         workspace,
-        ["ls-files", "--", ".loco/ui-screenshots"],
+        ["ls-files", "--", ".loco"],
     ).stdout.splitlines()
-    assert tracked == [".loco/ui-screenshots/ui-review_goal_final.png"]
+    assert tracked == []
 
 
 def _write_file_turn(path: str, content: str, call_id: str = "call-1") -> AssistantTurn:
@@ -499,6 +498,36 @@ def test_cycle_rejects_mock_implementation_even_if_reviewer_says_met(
     assert result.committed is False
     assert "unfinished work" in (result.reason or "")
     assert "generate_mock_issues" in (result.reason or "")
+
+
+def test_cycle_rejects_unused_helper_even_if_reviewer_says_met(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "app.py",
+                "def add(left, right):\n"
+                "    return left + right\n"
+                "\n"
+                "def list_for_workspace(workspace_id):\n"
+                "    return []\n",
+            ),
+            AssistantTurn(text="Scoped task listing to the current workspace."),
+            _review_turn(True, "workspace tasks are filtered"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="The current task shouldn't show tasks from other workspaces",
+    )
+    assert result.status == "failed"
+    assert result.committed is False
+    assert "list_for_workspace" in (result.reason or "")
+    assert "nothing calls" in (result.reason or "")
 
 
 def test_cycle_rejects_invented_readme_commands_even_if_reviewer_says_met(
