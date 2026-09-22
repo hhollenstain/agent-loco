@@ -15,7 +15,6 @@ SECRET_REFUSAL = "refusing to commit likely secrets: {paths}"
 PROTECTED_COMMIT_REFUSAL = (
     "refusing to commit on {branch}; the cycle commits after review passes"
 )
-RUN_LOG_PREFIX = ".loco/runs"
 PROTECTED_BRANCHES = frozenset({"main", "master", "trunk"})
 LOCO_COAUTHOR_NAME = "agent-loco"
 LOCO_COAUTHOR_EMAIL = "agent-loco@users.noreply.github.com"
@@ -276,11 +275,11 @@ def _git_log(workspace: Workspace, limit: int) -> ToolResult:
 
 
 def is_runtime_artifact(path: Path | str) -> bool:
-    """Cycle logs and local UI state are telemetry, not project work."""
+    """Local loco state and cycle logs are telemetry, not project work."""
     posix = _posix_rel(path)
-    if posix == RUN_LOG_PREFIX or posix.startswith(f"{RUN_LOG_PREFIX}/"):
+    if posix == "history.json":
         return True
-    return posix in {".loco/servers.json", ".loco/workspaces.json", "history.json"}
+    return posix == ".loco" or posix.startswith(".loco/")
 
 
 def has_changes(workspace: Workspace) -> bool:
@@ -295,10 +294,7 @@ def _posix_rel(path: Path | str) -> str:
 
 
 def _is_project_change(path: Path | str) -> bool:
-    posix = _posix_rel(path)
-    if posix == ".loco/.gitignore":
-        return False
-    return not is_runtime_artifact(posix)
+    return not is_runtime_artifact(path)
 
 
 def current_branch(workspace: Workspace) -> str | None:
@@ -640,6 +636,8 @@ def _force_add_paths(workspace: Workspace, extra_paths: list[Path | str] | None)
         except (OSError, ValueError):
             continue
         if not path.is_file():
+            continue
+        if is_runtime_artifact(rel):
             continue
         run_git(workspace, ["add", "-f", "--", rel.as_posix()])
 

@@ -1,4 +1,4 @@
-.loco/runs/
+.loco/
 .venv/
 __pycache__/
 .pytest_cache/

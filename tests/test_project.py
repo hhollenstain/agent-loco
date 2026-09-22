@@ -91,13 +91,13 @@ def test_load_project_preserves_zero_repair_attempts(tmp_path: Path) -> None:
 
 def test_init_ignores_run_logs(tmp_path: Path) -> None:
     created = write_default_project_files(tmp_path)
-    gitignore = tmp_path / ".loco" / ".gitignore"
-    assert gitignore in created
-    assert "runs/" in gitignore.read_text(encoding="utf-8")
-    assert "servers.json" in gitignore.read_text(encoding="utf-8")
-    assert "workspaces.json" in gitignore.read_text(encoding="utf-8")
-    assert "/ui-review.png" in gitignore.read_text(encoding="utf-8")
-    assert "skills/sources/" in gitignore.read_text(encoding="utf-8")
+    nested = tmp_path / ".loco" / ".gitignore"
+    root_ignore = tmp_path / ".gitignore"
+    assert nested.exists()
+    assert "*" in nested.read_text(encoding="utf-8")
+    assert root_ignore.exists()
+    assert ".loco/" in root_ignore.read_text(encoding="utf-8")
+    assert root_ignore in created or nested in created
     guidelines = tmp_path / ".loco" / "guidelines.md"
     assert guidelines in created
     assert "You are loco" in guidelines.read_text(encoding="utf-8")

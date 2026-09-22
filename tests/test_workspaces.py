@@ -62,7 +62,8 @@ def test_remember_and_restore_workspaces(tmp_path: Path) -> None:
     payload = json.loads((tmp_path / ".loco" / "workspaces.json").read_text(encoding="utf-8"))
     assert payload["last"] == str(first.resolve())
     gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
-    assert "workspaces.json" in gitignore
+    assert "*" in gitignore
+    assert ".loco/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert last_workspace(tmp_path) == str(first.resolve())
     gone = tmp_path / "gone"
     (tmp_path / ".loco" / "workspaces.json").write_text(

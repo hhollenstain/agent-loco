@@ -289,12 +289,7 @@ def _run_cycle(
     screenshot_files = (
         _pr_screenshot_files(workspace) if allow_create_pr else []
     )
-    unpublished_shots = [
-        path for path in screenshot_files if not is_tracked(workspace, path)
-    ]
-    will_commit = settings.auto_commit and (
-        has_changes(workspace) or bool(unpublished_shots)
-    )
+    will_commit = settings.auto_commit and has_changes(workspace)
     if allow_create_pr and (committed or will_commit):
         log_progress("Moving work onto a pull-request branch...")
         branched = ensure_pr_branch(workspace, selected_goal, sha_before)
@@ -322,7 +317,6 @@ def _run_cycle(
             workspace,
             message,
             env=_git_env(settings),
-            extra_paths=unpublished_shots,
         )
         if not commit.ok:
             log_progress("Commit failed.")

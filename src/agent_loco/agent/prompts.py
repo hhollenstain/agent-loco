@@ -70,7 +70,8 @@ Rules:
   those files from the web app (static mount or route) or fix the href so it
   matches a real path. Call review_ui again until the URLs load. Do not stop
   while the page is missing styles or scripts you added.
-- Never commit, stage, or push `.loco/runs/` files. Those are local cycle logs.
+- Never commit, stage, or push `.loco/` files. That directory is local workspace
+  state (config, skills, run logs, screenshots), not project source.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """
 

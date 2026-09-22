@@ -507,7 +507,8 @@ def test_remember_server_dedupes_and_keeps_newest_first(tmp_path: Path) -> None:
     assert newer[0]["url"] == "http://10.0.0.9:11434/v1"
     assert newer[1]["url"] == "http://10.0.0.8:8000/v1"
     gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
-    assert "servers.json" in gitignore
+    assert "*" in gitignore
+    assert ".loco/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
     remember_server(tmp_path, "http://10.0.0.8:8000/v1", model="remote-coder")
     remember_server(tmp_path, "http://10.0.0.8:8000/v1")
     saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))

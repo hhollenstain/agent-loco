@@ -53,9 +53,9 @@ def test_parse_github_remote_from_common_urls() -> None:
     assert parse_github_remote("https://gitlab.com/acme/repo.git") is None
 
 
-def test_commit_changes_force_adds_pr_screenshots(tmp_path: Path) -> None:
+def test_commit_changes_never_adds_loco_files(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
-    (tmp_path / ".gitignore").write_text(".loco/ui-screenshots/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
     run_git(workspace, ["checkout", "-b", "loco/feature"])
@@ -63,15 +63,15 @@ def test_commit_changes_force_adds_pr_screenshots(tmp_path: Path) -> None:
     shot = tmp_path / ".loco" / "ui-screenshots" / "ui-review_goal.png"
     shot.parent.mkdir(parents=True)
     shot.write_bytes(b"png")
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text("name: demo\n", encoding="utf-8")
     assert not is_tracked(workspace, shot)
-    result = commit_changes(workspace, "update app", extra_paths=[shot])
+    result = commit_changes(workspace, "update app", extra_paths=[shot, config])
     assert result.ok
-    assert is_tracked(workspace, shot)
-    listed = run_git(
-        workspace,
-        ["ls-files", "--", ".loco/ui-screenshots/ui-review_goal.png"],
-    )
-    assert listed.stdout.strip() == ".loco/ui-screenshots/ui-review_goal.png"
+    assert not is_tracked(workspace, shot)
+    assert not is_tracked(workspace, config)
+    listed = run_git(workspace, ["ls-files", "--", ".loco"])
+    assert listed.stdout.strip() == ""
 
 
 def test_with_loco_coauthor_adds_github_trailer() -> None:
@@ -192,6 +192,9 @@ def test_run_log_paths_are_runtime_artifacts() -> None:
     assert is_runtime_artifact(".loco/runs")
     assert is_runtime_artifact(".loco/servers.json")
     assert is_runtime_artifact(".loco/workspaces.json")
+    assert is_runtime_artifact(".loco/config.yaml")
+    assert is_runtime_artifact(".loco/ui-screenshots/ui-review.png")
+    assert is_runtime_artifact(".loco/.gitignore")
     assert is_runtime_artifact("history.json")
     assert not is_runtime_artifact("src/agent_loco/cli.py")
     assert not is_runtime_artifact("loco/runs/cycle.json")
