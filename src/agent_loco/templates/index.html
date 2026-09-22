@@ -2458,7 +2458,9 @@
     function skillOriginLabel(skill) {
       if (skill.origin === "bundled") return "Bundled with loco";
       if (skill.origin === "local") return "Local workspace skill";
-      return skill.source_url || "Cloned skill repo";
+      if (skill.origin === "repo") return "From repository";
+      if (skill.origin === "source") return "From " + skill.source_url;
+      return "Cloned skill repo";
     }
     async function openSkillInfo(name) {
       if (!skillInfoPopEl) return;

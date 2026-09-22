@@ -149,3 +149,73 @@ def test_default_prompts_do_not_hardcode_tdd() -> None:
     prompt = user_prompt("Fix the adder", "")
     assert "enabled workspace skills" in prompt.lower()
     assert "one failing test at the public seam" not in prompt.lower()
+
+
+def test_discover_repo_skills_from_git_repo_root(tmp_path: Path) -> None:
+    from agent_loco.runtime.skills import list_skills
+
+    # Create a repo with a SKILL.md file but no .loco directory
+    workspace = tmp_path / "my_project"
+    workspace.mkdir()
+
+    skill_path = workspace / "SKILL.md"
+    skill_path.write_text(
+        "---\nname: repo-tdd\ndescription: Repo-specific TDD.\n---\n\nWrite tests first.\n",
+        encoding="utf-8",
+    )
+
+    init_git_repo(workspace)
+
+    skills = {item.name: item for item in list_skills(workspace)}
+    assert "repo-tdd" in skills
+    assert skills["repo-tdd"].origin == "repo"
+    assert skills["repo-tdd"].description == "Repo-specific TDD."
+
+    save_enabled_skills(workspace, ["repo-tdd"])
+    assert "repo-tdd" in enabled_skill_names(workspace)
+
+
+def test_agent_loco_repo_skill_is_discoverable() -> None:
+    root = Path(__file__).resolve().parents[1]
+    skill_path = root / "skills" / "agent-loco" / "SKILL.md"
+    assert skill_path.is_file()
+    skills = {item.name: item for item in list_skills(root)}
+    assert "agent-loco" in skills
+    assert skills["agent-loco"].origin == "repo"
+    assert skills["tdd"].origin != "repo"
+    assert "public seam" in skills["agent-loco"].body.lower()
+    listed = skills["agent-loco"].public_dict()
+    assert listed["summary"] == "Conventions for changing this agent-loco repository."
+    assert "body" not in listed
+
+
+def test_discover_repo_skills_skips_loco_subdirectories(tmp_path: Path) -> None:
+    """Skills discovery should skip the .loco subdirectory in the repo."""
+    from agent_loco.runtime.skills import list_skills
+
+    workspace = tmp_path / "my_workspace"
+    workspace.mkdir()
+
+    # Add .loco subdirectory
+    locos_dir = workspace / ".loco"
+    locos_dir.mkdir()
+
+    # Add SKILL.md in .loco - should not be discovered
+    (locos_dir / "SKILL.md").write_text(
+        "---\nname: should-not-discover\ndescription: Should not be discovered.\n---\n",
+        encoding="utf-8",
+    )
+
+    # Add SKILL.md at root - should be discovered
+    skill_path = workspace / "SKILL.md"
+    skill_path.write_text(
+        "---\nname: should-discover\ndescription: Should be discovered.\n---\n",
+        encoding="utf-8",
+    )
+
+    init_git_repo(workspace)
+
+    skills = {item.name: item for item in list_skills(workspace)}
+    assert "should-discover" in skills
+    assert skills["should-discover"].origin == "repo"
+    assert "should-not-discover" not in skills
