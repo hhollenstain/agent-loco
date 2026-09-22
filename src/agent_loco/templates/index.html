@@ -365,6 +365,110 @@
     .modal-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
     .modal-error { color: var(--bad); min-height: 1.2rem; margin: 0.45rem 0 0; font-size: 0.86rem; }
     .checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
+    .sidebar-tools {
+      display: flex;
+      gap: 0.4rem;
+      margin: 0.6rem 0;
+      justify-content: center;
+    }
+    .sidebar-tools button {
+      padding: 0.4rem;
+      width: 2.2rem;
+      height: 2.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sidebar-tools svg {
+      width: 1.1rem;
+      height: 1.1rem;
+    }
+    .goal-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.3rem;
+    }
+    .goal-row textarea {
+      flex: 1;
+    }
+    .goal-row button {
+      flex: 0 0 auto;
+      padding: 0.5rem 0.6rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .goal-row button svg {
+      width: 0.9rem;
+      height: 0.9rem;
+    }
+    .hint#enabled-skills-hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: -0.25rem;
+      margin-bottom: 0.8rem;
+    }
+
+    /* Skills and Guidelines popups */
+    .skills-popup, .guidelines-popup {
+      position: fixed;
+      bottom: 1rem;
+      right: 12rem;
+      z-index: 60;
+      min-width: 24rem;
+      pointer-events: none;
+    }
+    .skills-popup[aria-expanded="true"], .guidelines-popup[aria-expanded="true"] {
+      pointer-events: auto;
+    }
+    .skills-popup-content, .guidelines-popup-content {
+      background: var(--panel-1);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .skills-popup {
+      min-width: 26rem;
+    }
+    .skills-popup-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 0.8rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .skills-popup-head h2 {
+      font-size: 0.95rem;
+      margin: 0;
+    }
+    .skills-popup-body {
+      padding: 0.8rem;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+    .guidelines-popup {
+      min-width: 30rem;
+      max-width: 50rem;
+    }
+    .guidelines-popup-content {
+      padding: 0.8rem;
+    }
+    .guidelines-popup-content textarea {
+      width: 100%;
+      min-height: 12rem;
+      resize: vertical;
+      margin-bottom: 0.6rem;
+      font-family: inherit;
+      font-size: 0.86rem;
+    }
+    .guidelines-popup-actions {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .guidelines-popup-actions button {
+      flex: 0 0 auto;
+    }
     button {
       background: var(--accent);
       color: #16200c;
@@ -1632,6 +1736,20 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-bar">
         <button type="button" class="secondary sidebar-toggle" id="toggle-sidebar" aria-controls="task-form" aria-expanded="true" title="Collapse sidebar">‹</button>
+        <div class="sidebar-tools">
+          <button type="button" class="secondary" id="toggle-skills" aria-label="Toggle skills" aria-expanded="false" aria-controls="skills-popup" title="Manage skills">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M9.6 9.4a2.5 2.5 0 1 1 3.5 2.28c-.72.36-1.1.86-1.1 1.72V14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <circle cx="12" cy="17" r="1.05" fill="currentColor"/>
+            </svg>
+          </button>
+          <button type="button" class="secondary" id="toggle-guidelines-btn" aria-label="Toggle rules editor" aria-expanded="false" aria-controls="guidelines-popup" title="Edit rules">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
         <h1 class="sidebar-title">loco</h1>
       </div>
       <form id="task-form">
@@ -1665,8 +1783,28 @@
         <p class="hint" id="github-issues-status"></p>
       </div>
 
+      <div class="guidelines-popup" id="guidelines-popup" hidden>
+        <div class="guidelines-popup-content">
+          <label for="guidelines-popup-text">Rules / guidelines</label>
+          <textarea id="guidelines-popup-text" spellcheck="false">{{ guidelines }}</textarea>
+          <div class="guidelines-popup-actions">
+            <button type="button" id="save-guidelines-popup">Save rules</button>
+            <button type="button" class="secondary" id="reset-guidelines-popup">Use defaults</button>
+            <button type="button" class="secondary" id="close-guidelines-popup">Close</button>
+          </div>
+        </div>
+      </div>
+
       <label for="goal">Goal</label>
-      <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
+      <div class="goal-row">
+        <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
+        <button type="button" id="toggle-guidelines" aria-label="Toggle rules editor" aria-expanded="false" aria-controls="guidelines-popup" title="Edit rules">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
+          </svg>
+        </button>
+      </div>
+      <p class="hint" id="enabled-skills-hint"></p>
 
       <div class="llm-block">
         <p class="llm-heading">LLM</p>
@@ -1797,6 +1935,24 @@
         </div>
       </div>
       <div class="notice-slot" id="workspace-picker-error"></div>
+    </div>
+  </div>
+  <div class="skills-popup" id="skills-popup" hidden>
+    <div class="skills-popup-content">
+      <div class="skills-popup-head">
+        <h2>Skills</h2>
+        <button type="button" class="secondary" id="close-skills-popup">Close</button>
+      </div>
+      <div class="skills-popup-body">
+        <p class="hint">Enable bundled skills or clone a skill repo into this workspace.</p>
+        <div class="settings-skills-list" id="workspace-skills"></div>
+        <p class="hint" id="skills-status">Loading skills…</p>
+        <div class="settings-skill-sources" id="skill-sources"></div>
+        <div class="settings-skill-source">
+          <input id="skill-source-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
+          <button type="button" class="secondary" id="clone-skill-source">Clone</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="settings-dock" id="settings-dock">
@@ -1935,6 +2091,18 @@
     const notifyPanelEl = document.getElementById("notify-history");
     const notifyListEl = document.getElementById("notify-list");
     const notifyBadgeEl = document.getElementById("notify-badge");
+    const skillsPopupEl = document.getElementById("skills-popup");
+    const toggleSkillsBtn = document.getElementById("toggle-skills");
+    const closeSkillsPopupBtn = document.getElementById("close-skills-popup");
+    const guidelinesPopupEl = document.getElementById("guidelines-popup");
+    const toggleGuidelinesBtn = document.getElementById("toggle-guidelines");
+    const toggleGuidelinesPopup = document.getElementById("toggle-guidelines-btn");
+    const closeGuidelinesPopupBtn = document.getElementById("close-guidelines-popup");
+    const guidelinesPopupText = document.getElementById("guidelines-popup-text");
+    const saveGuidelinesPopup = document.getElementById("save-guidelines-popup");
+    const resetGuidelinesPopup = document.getElementById("reset-guidelines-popup");
+    const enabledSkillsHint = document.getElementById("enabled-skills-hint");
+    const toggleGuidelines = document.getElementById("toggle-guidelines");
     let browsePath = workspaceEl.value;
     let browseParent = "";
 
@@ -2402,6 +2570,48 @@
     document.getElementById("use-folder").addEventListener("click", () => {
       selectWorkspace(browsePath, { seed: true }).catch(showPickerError);
     });
+    function openPopup(popup, btn) {
+      popup.classList.add("open");
+      popup.removeAttribute("hidden");
+      btn.setAttribute("aria-expanded", "true");
+      if (popup.id === "guidelines-popup") {
+        guidelinesPopupText.value = guidelinesEl.value;
+      }
+    }
+    function closePopup(popup, btn) {
+      popup.classList.remove("open");
+      popup.setAttribute("hidden", "");
+      btn.setAttribute("aria-expanded", "false");
+      if (/guidelines.*-popup/.test(popup.id)) {
+        // Sync back to main guidelines textarea on close
+        guidelinesEl.value = guidelinesPopupText.value;
+      }
+    }
+    function togglePopup(popup, btn) {
+      const isOpen = popup.classList.contains("open");
+      if (isOpen) {
+        closePopup(popup, btn);
+      } else {
+        openPopup(popup, btn);
+      }
+    }
+
+    toggleSkillsBtn.addEventListener("click", () => {
+      togglePopup(skillsPopupEl, toggleSkillsBtn);
+    });
+    closeSkillsPopupBtn.addEventListener("click", () => {
+      closePopup(skillsPopupEl, toggleSkillsBtn);
+    });
+    toggleGuidelinesBtn.addEventListener("click", () => {
+      togglePopup(guidelinesPopupEl, toggleGuidelinesBtn);
+    });
+    toggleGuidelinesPopup.addEventListener("click", () => {
+      togglePopup(guidelinesPopupEl, toggleGuidelinesPopup);
+    });
+    closeGuidelinesPopupBtn.addEventListener("click", () => {
+      closePopup(guidelinesPopupEl, toggleGuidelinesBtn);
+    });
+
     document.getElementById("save-guidelines").addEventListener("click", async () => {
       try {
         const res = await fetch("/api/workspaces/guidelines", {
@@ -2444,6 +2654,15 @@
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to load skills");
         renderWorkspaceSkills(body);
+        // Update the enabled skills hint below the goal textarea
+        if (enabledSkillsHintEl) {
+          const enabled = body.enabled || [];
+          if (enabled.length === 0) {
+            enabledSkillsHintEl.textContent = "";
+          } else {
+            enabledSkillsHintEl.textContent = `Skills: ${enabled.join(", ")}`;
+          }
+        }
       } catch (err) {
         if (skillsStatusEl) skillsStatusEl.textContent = err.message;
       }
