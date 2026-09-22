@@ -18,10 +18,11 @@ def build_tools(
     git_author_name: str | None,
     git_author_email: str | None,
     allow_publish: bool = False,
+    goal: str = "",
 ) -> list[ToolSpec]:
     return [
         *file_tools(workspace),
-        *browser_tools(workspace),
+        *browser_tools(workspace, goal=goal),
         *shell_tools(workspace, command_timeout_seconds, allow_publish=allow_publish),
         *test_tools(workspace, test_command, command_timeout_seconds),
         *git_tools(workspace, git_author_name, git_author_email, allow_publish=allow_publish),

@@ -26,6 +26,9 @@ Rules:
 - Dead controls (a tab or button that does not reveal its panel when clicked) are
   unmet. Markup for a Screenshots tab is not enough. A Current/Past runs tab that
   leaves Progress, Changes, or Screenshots at 0x0 or display:none is unmet.
+  A screenshot of the default main screen is not evidence that a new sidebar
+  panel, modal, or tab works; the Rendered UI section must show that control
+  was clicked and its panel is visible.
 - If capture could not click (static dump-dom) and the goal adds tabs, screenshots,
   or other interactive controls, the goal is unmet.
 - A summary that claims the work is done does not count unless the diff shows it.

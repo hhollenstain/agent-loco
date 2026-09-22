@@ -6,15 +6,16 @@ from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 
 
-def browser_tools(workspace: Workspace) -> list[ToolSpec]:
+def browser_tools(workspace: Workspace, goal: str = "") -> list[ToolSpec]:
     return [
         ToolSpec(
             name="review_ui",
             description=(
-                "Render the UI in a headless browser, click new tabs/buttons, and "
-                "report JavaScript errors, dead controls, and crushed/zero-size "
-                "elements. Use this after HTML, CSS, JS, or template edits. Optional "
-                "url, HTML path, and click selector."
+                "Render the UI in a headless browser, click the new control and its "
+                "panel, and report JavaScript errors, dead controls, and crushed/"
+                "zero-size elements. The screenshot is taken after those clicks, so "
+                "the opened panel is visible. Use this after HTML, CSS, JS, or "
+                "template edits. Optional url, HTML path, and extra click selector."
             ),
             parameters=object_schema(
                 {
@@ -28,7 +29,7 @@ def browser_tools(workspace: Workspace) -> list[ToolSpec]:
                     },
                     "click": {
                         "type": "string",
-                        "description": "CSS selector or button name to click before capturing.",
+                        "description": "Extra CSS selector or button name to click last, before capturing.",
                     },
                     "wait_ms": {
                         "type": "integer",
@@ -37,8 +38,8 @@ def browser_tools(workspace: Workspace) -> list[ToolSpec]:
                 },
                 [],
             ),
-            handler=lambda url=None, path=None, click=None, wait_ms=4000: _review_ui(
-                workspace, url, path, click, wait_ms
+            handler=lambda url=None, path=None, click=None, wait_ms=4000, goal=goal: _review_ui(
+                workspace, goal, url, path, click, wait_ms
             ),
         )
     ]
@@ -46,6 +47,7 @@ def browser_tools(workspace: Workspace) -> list[ToolSpec]:
 
 def _review_ui(
     workspace: Workspace,
+    goal: str,
     url: str | None,
     path: str | None,
     click: str | None,
@@ -55,7 +57,7 @@ def _review_ui(
     evidence = collect_ui_evidence(
         workspace,
         project,
-        goal="review ui",
+        goal=goal or "review ui",
         url=url or None,
         path=path or None,
         click=click or None,

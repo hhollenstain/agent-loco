@@ -613,6 +613,102 @@ def test_loco_review_clicks_include_main_and_task_tabs(tmp_path: Path) -> None:
     )
 
 
+def test_loco_review_clicks_open_goal_panels_last(tmp_path: Path) -> None:
+    from agent_loco.runtime.uireview import _review_clicks
+
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").parent.mkdir(parents=True)
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    clicks = _review_clicks(
+        tmp_path,
+        None,
+        "For overall user experience move the skills out of the settings cog",
+    )
+    assert clicks[-1] == "#open-skills"
+    assert "#open-settings" not in clicks
+    assert '[data-main-pane="current"]' in clicks
+    assert clicks.index('[data-main-pane="current"]') < clicks.index("#open-skills")
+
+    rule_clicks = _review_clicks(tmp_path, None, "Move rules into the left pane")
+    assert rule_clicks[-1] == "#open-guidelines"
+
+
+def test_unverified_interactive_ui_requires_skills_click() -> None:
+    evidence = UiEvidence(
+        ok=True,
+        interactive=True,
+        clicked=['[data-main-pane="current"]', "#task-list button.task"],
+        snapshot="overlay: skills-panel hidden=True 0x0",
+    )
+    reason = unverified_interactive_ui(
+        "Move the skills out of the settings cog into the left pane",
+        evidence,
+    )
+    assert reason and "Skills" in reason
+
+
+def test_playwright_probe_marks_dead_aria_controls_panel() -> None:
+    class Locator:
+        def __init__(self) -> None:
+            self.first = self
+
+        def count(self) -> int:
+            return 1
+
+        def click(self, timeout: int = 0) -> None:
+            return None
+
+    class Page:
+        def locator(self, _selector: str) -> Locator:
+            return Locator()
+
+        def get_by_role(self, *_args, **_kwargs) -> Locator:
+            return Locator()
+
+        def wait_for_timeout(self, _ms: int) -> None:
+            return None
+
+        def evaluate(self, script: str, payload: object = None) -> object:
+            if "aria-controls" in script and "getElementById" not in script:
+                return "skills-panel"
+            return {
+                "missing": False,
+                "expanded": "true",
+                "hidden": True,
+                "display": "none",
+                "visibility": "hidden",
+                "height": 0,
+                "textLen": 0,
+            }
+
+    clicked, dead = _playwright_probe(Page(), ["#open-skills"], 500)
+    assert clicked == ["#open-skills"]
+    assert dead and "skills-panel" in dead[0]
+
+
+def test_review_ui_tool_passes_cycle_goal(tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_collect(*args, **kwargs):
+        captured["goal"] = kwargs.get("goal") or (args[2] if len(args) > 2 else None)
+        return UiEvidence(ok=True, snapshot="overlay: skills-panel hidden=False 320x640")
+
+    monkeypatch.setattr("agent_loco.tools.browser.collect_ui_evidence", fake_collect)
+    workspace = Workspace(tmp_path)
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=5,
+        git_author_name=None,
+        git_author_email=None,
+        goal="Move the skills into the sidebar",
+    )
+    result = execute_tool(tools, "review_ui", {})
+    assert result.ok
+    assert captured["goal"] == "Move the skills into the sidebar"
+
+
 def test_unverified_interactive_ui_requires_main_tab_clicks() -> None:
     evidence = UiEvidence(
         ok=True,

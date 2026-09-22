@@ -35,7 +35,8 @@ UI_GOAL_RE = re.compile(
     re.IGNORECASE,
 )
 INTERACTIVE_UI_RE = re.compile(
-    r"\b(tab|tabs|screenshot|screen shot|panel|modal|button)\b",
+    r"\b(tab|tabs|screenshot|screen shot|panel|modal|button|"
+    r"skill|skills|rules?|guidelines?)\b",
     re.IGNORECASE,
 )
 MAX_SNAPSHOT_CHARS = 6_000
@@ -53,7 +54,7 @@ PAGE_EVAL = """() => {
   const nodes = [...document.querySelectorAll(
     'button, a, [role="tab"], [role="button"], h1, h2, h3, label, input,'
     + ' select, textarea, .progress-stage, .task, .task-card,'
-    + ' .rerun-btn, .history-line-stats, .pr-link'
+    + ' .rerun-btn, .history-line-stats, .pr-link, .sidebar-overlay, .sidebar-tools button'
   )];
   const isHidden = (el) => {
     if (!el) return true;
@@ -82,6 +83,18 @@ PAGE_EVAL = """() => {
         panelHidden: hidden,
         panelHeight: box ? Math.round(box.height) : 0,
         panelText: panel ? (panel.innerText || "").trim().slice(0, 80) : "",
+      };
+    }),
+    overlays: [...document.querySelectorAll(".sidebar-overlay, .settings-panel")].slice(0, 8).map((el) => {
+      const style = window.getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      const hidden = isHidden(el) || style.display === "none" || style.visibility === "hidden";
+      return {
+        id: el.id || "",
+        hidden,
+        w: Math.round(box.width),
+        h: Math.round(box.height),
+        text: (el.innerText || "").trim().slice(0, 80),
       };
     }),
     elements: nodes.slice(0, 80).map((el) => {
@@ -277,7 +290,7 @@ def collect_ui_evidence(
             target = preview.url
         page: UiEvidence = capture_page(
             target,
-            clicks=_review_clicks(workspace.root, click),
+            clicks=_review_clicks(workspace.root, click, goal),
             screenshot=screenshot,
             wait_ms=wait_ms,
         )
@@ -457,6 +470,40 @@ PANEL_STATE_EVAL = """({ attr, name }) => {
 }"""
 
 
+ARIA_CONTROLS_EVAL = """(sel) => {
+  const el = document.querySelector(sel);
+  if (!el) return "";
+  return el.getAttribute("aria-controls") || "";
+}"""
+
+ARIA_PANEL_EVAL = """({ id }) => {
+  const panel = document.getElementById(id);
+  const trigger = document.querySelector('[aria-controls="' + id + '"]');
+  if (!panel) {
+    return {
+      missing: true,
+      expanded: trigger ? trigger.getAttribute("aria-expanded") : null,
+      hidden: true,
+      display: "none",
+      height: 0,
+      textLen: 0,
+    };
+  }
+  const style = window.getComputedStyle(panel);
+  const box = panel.getBoundingClientRect();
+  const ancestorHidden = Boolean(panel.closest("[hidden]"));
+  return {
+    missing: false,
+    expanded: trigger ? trigger.getAttribute("aria-expanded") : null,
+    hidden: Boolean(panel.hidden) || ancestorHidden,
+    display: style.display,
+    visibility: style.visibility,
+    height: box.height,
+    textLen: (panel.innerText || "").trim().length,
+  };
+}"""
+
+
 def _playwright_click(page: Any, click: str, wait_ms: int) -> None:
     timeout = min(max(wait_ms, 500), 8000)
     locators = [page.locator(click), page.get_by_role("button", name=click)]
@@ -495,6 +542,17 @@ def _pane_from_selector(selector: str) -> str | None:
     return target[1] if target else None
 
 
+def _aria_controls_id(page: Any, selector: str) -> str | None:
+    try:
+        value = page.evaluate(ARIA_CONTROLS_EVAL, selector)
+    except Exception:  # noqa: BLE001 - missing locator is not a probe failure
+        return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
 def _playwright_probe(
     page: Any, clicks: list[str], wait_ms: int
 ) -> tuple[list[str], list[str]]:
@@ -507,14 +565,35 @@ def _playwright_probe(
         page.wait_for_timeout(400)
         clicked.append(selector)
         target = _tab_target(selector)
-        if not target:
+        if target:
+            attr, pane = target
+            state = page.evaluate(PANEL_STATE_EVAL, {"attr": attr, "name": pane})
+            if isinstance(state, dict):
+                visible = (
+                    state.get("selected") == "true"
+                    and state.get("hidden") is not True
+                    and str(state.get("display") or "") not in {"none"}
+                    and str(state.get("visibility") or "visible") != "hidden"
+                    and float(state.get("height") or 0) >= 8
+                    and int(state.get("textLen") or 0) > 0
+                )
+                if not visible:
+                    dead.append(
+                        f"{selector} did not show the {pane} pane "
+                        f"(aria-selected={state.get('selected')}, hidden={state.get('hidden')}, "
+                        f"display={state.get('display')}, height={state.get('height')}, "
+                        f"textLen={state.get('textLen')})"
+                    )
+        panel_id = _aria_controls_id(page, selector)
+        if not panel_id:
             continue
-        attr, pane = target
-        state = page.evaluate(PANEL_STATE_EVAL, {"attr": attr, "name": pane})
+        state = page.evaluate(ARIA_PANEL_EVAL, {"id": panel_id})
         if not isinstance(state, dict):
             continue
+        expanded = str(state.get("expanded") or "")
         visible = (
-            state.get("selected") == "true"
+            expanded != "false"
+            and state.get("missing") is not True
             and state.get("hidden") is not True
             and str(state.get("display") or "") not in {"none"}
             and str(state.get("visibility") or "visible") != "hidden"
@@ -523,8 +602,8 @@ def _playwright_probe(
         )
         if not visible:
             dead.append(
-                f"{selector} did not show the {pane} pane "
-                f"(aria-selected={state.get('selected')}, hidden={state.get('hidden')}, "
+                f"{selector} did not show #{panel_id} "
+                f"(aria-expanded={state.get('expanded')}, hidden={state.get('hidden')}, "
                 f"display={state.get('display')}, height={state.get('height')}, "
                 f"textLen={state.get('textLen')})"
             )
@@ -640,6 +719,7 @@ def _from_eval(
         height = int(item.get("h") or 0)
         if name and width < 8 and height < 8:
             smashed.append(f"{name} ({width}x{height})")
+    overlays = data.get("overlays") if isinstance(data.get("overlays"), list) else []
     smashed.extend(_overlapping_controls(elements))
     injected = data.get("errors") if isinstance(data.get("errors"), list) else []
     errors = [str(item) for item in [*page_errors, *injected] if str(item).strip()]
@@ -657,7 +737,18 @@ def _from_eval(
                 f"selected tab {name} did not render its pane "
                 f"(panelHidden={item.get('panelHidden')} height={height})"
             )
-    snapshot = _format_snapshot(text, elements, tabs)
+    for item in overlays:
+        if not isinstance(item, dict) or item.get("hidden"):
+            continue
+        name = str(item.get("id") or "overlay").strip() or "overlay"
+        try:
+            width = int(item.get("w") or 0)
+            height = int(item.get("h") or 0)
+        except (TypeError, ValueError):
+            width, height = 0, 0
+        if width < 8 or height < 8:
+            dead.append(f"overlay {name} is open but unusable ({width}x{height})")
+    snapshot = _format_snapshot(text, elements, tabs, overlays)
     failures = [item for item in (network_failures or []) if item]
     notes = [item for item in (network_notes or []) if item]
     evidence = UiEvidence(
@@ -679,7 +770,12 @@ def _from_eval(
     return evidence
 
 
-def _format_snapshot(text: str, elements: list[Any], tabs: list[Any] | None = None) -> str:
+def _format_snapshot(
+    text: str,
+    elements: list[Any],
+    tabs: list[Any] | None = None,
+    overlays: list[Any] | None = None,
+) -> str:
     lines: list[str] = []
     for item in tabs or []:
         if not isinstance(item, dict):
@@ -691,6 +787,14 @@ def _format_snapshot(text: str, elements: list[Any], tabs: list[Any] | None = No
             f"tab: {name} selected={item.get('selected')} "
             f"panelHidden={item.get('panelHidden')} "
             f"panelHeight={item.get('panelHeight')}"
+        )
+    for item in overlays or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("id") or "overlay").strip() or "overlay"
+        lines.append(
+            f"overlay: {name} hidden={item.get('hidden')} "
+            f"{item.get('w')}x{item.get('h')}"
         )
     for item in elements:
         if not isinstance(item, dict):
@@ -739,6 +843,18 @@ def unverified_interactive_ui(goal: str, evidence: UiEvidence) -> str | None:
             return (
                 "Rendered UI never clicked the Current/Past runs tabs; "
                 "those controls were not verified"
+            )
+    if re.search(r"\bskills?\b", goal or "", re.I):
+        if "open-skills" not in clicked and "skills-panel" not in clicked:
+            return (
+                "Rendered UI never opened Skills; "
+                "the control was not clicked"
+            )
+    if re.search(r"\bguidelines?\b|\brules?\b", goal or "", re.I):
+        if "open-guidelines" not in clicked and "guidelines-panel" not in clicked:
+            return (
+                "Rendered UI never opened Rules; "
+                "the control was not clicked"
             )
     if re.search(r"overlap|overlapping", goal or "", re.I):
         if evidence.smashed:
@@ -917,9 +1033,23 @@ def _default_clicks(root: Path) -> list[str]:
     return []
 
 
-def _review_clicks(root: Path, click: str | None) -> list[str]:
+def _goal_clicks(root: Path, goal: str) -> list[str]:
+    if not goal or not _is_loco_project(root):
+        return []
     clicks: list[str] = []
-    for item in [*_default_clicks(root), click or ""]:
+    moved_out_of_settings = bool(re.search(r"out of (the )?settings", goal, re.I))
+    if re.search(r"\bguidelines?\b|\brules?\b", goal, re.I):
+        clicks.append("#open-guidelines")
+    if re.search(r"\bskills?\b", goal, re.I):
+        clicks.append("#open-skills")
+    if re.search(r"\bsettings?\b", goal, re.I) and not moved_out_of_settings:
+        clicks.append("#open-settings")
+    return clicks
+
+
+def _review_clicks(root: Path, click: str | None, goal: str = "") -> list[str]:
+    clicks: list[str] = []
+    for item in [*_default_clicks(root), click or "", *_goal_clicks(root, goal)]:
         text = str(item or "").strip()
         if text and text not in clicks:
             clicks.append(text)

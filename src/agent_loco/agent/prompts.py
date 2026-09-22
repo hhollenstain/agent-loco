@@ -52,7 +52,8 @@ Rules:
   tests, or docs that describe a different task. Only change files that implement
   the stated goal.
 - When the goal changes UI (HTML, CSS, JS, templates, layout), call review_ui
-  after editing. Click new tabs and buttons. Fix JavaScript errors, unusable
+  after editing. Click new tabs and buttons so the opened panel is in the
+  capture, not only the default main view. Fix JavaScript errors, unusable
   layout (zero-size, crushed labels, missing controls), and controls that do
   not change the page. The requested panels must be visible in the capture
   (non-zero size, not display:none). A diff is not done until the rendered page works.

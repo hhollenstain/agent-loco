@@ -145,15 +145,6 @@ def _run_cycle(
     ensure_run_gitignore(workspace.root)
     project = load_project(workspace.root)
     allow_create_pr = resolve_create_pr(settings, project, cli_create_pr)
-    tools = build_tools(
-        workspace,
-        test_command=project.test_command,
-        command_timeout_seconds=settings.command_timeout_seconds,
-        git_author_name=settings.git_author_name,
-        git_author_email=settings.git_author_email,
-        allow_publish=False,
-    )
-
     log_progress("Running before tests...")
     tests_before = _maybe_test(workspace, project, settings, phase="before")
     selected_goal = goal or _choose_goal(project, tests_before)
@@ -172,6 +163,16 @@ def _run_cycle(
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
         return result
+
+    tools = build_tools(
+        workspace,
+        test_command=project.test_command,
+        command_timeout_seconds=settings.command_timeout_seconds,
+        git_author_name=settings.git_author_name,
+        git_author_email=settings.git_author_email,
+        allow_publish=False,
+        goal=selected_goal,
+    )
 
     log_progress(f"Selected goal: {goal_headline(selected_goal)}")
     log_progress("Fetching current SHA...")

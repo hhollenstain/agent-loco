@@ -575,6 +575,13 @@ def test_web_ui_workspace_picker_browse_select_create(
         assert b'id="settings-kind-label"' in home.content
         assert b'id="save-guidelines"' in home.content
         assert b'id="workspace-skills"' in home.content
+        assert home.content.count(b'id="workspace-skills"') == 1
+        assert b'id="open-skills"' in home.content
+        assert b'id="skills-panel"' in home.content
+        assert b'id="open-guidelines"' in home.content
+        assert b'id="guidelines-panel"' in home.content
+        assert b'id="skills-popup"' not in home.content
+        assert b'id="guidelines-popup"' not in home.content
         assert b'id="clone-skill-source"' in home.content
         assert b'id="skill-info-pop"' in home.content
         assert b"skill-markdown" in home.content
