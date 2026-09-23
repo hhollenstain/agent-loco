@@ -1,0 +1,58 @@
+{
+  "name": "agent-loco-extension",
+  "displayName": "Agent Loco",
+  "description": "Run agent-loco tasks from VSCode and Cursor.",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agent-loco.initProject",
+        "title": "Agent Loco: Initialize Project",
+        "category": "Agent Loco"
+      },
+      {
+        "command": "agent-loco.queueTask",
+        "title": "Agent Loco: Queue Task",
+        "category": "Agent Loco"
+      },
+      {
+        "command": "agent-loco.chooseWorkspace",
+        "title": "Agent Loco: Choose Workspace",
+        "category": "Agent Loco"
+      },
+      {
+        "command": "agent-loco.listModels",
+        "title": "Agent Loco: List Models",
+        "category": "Agent Loco"
+      }
+    ],
+    "configuration": [
+      {
+        "title": "Agent Loco",
+        "properties": {
+          "agent-loco.serverUrl": {
+            "type": "string",
+            "default": "ws://127.0.0.1:8080/ws",
+            "description": "WebSocket URL for the agent-loco server"
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.0"
+  }
+}
