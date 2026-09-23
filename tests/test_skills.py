@@ -74,6 +74,16 @@ def test_skill_summary_uses_first_sentence() -> None:
     assert len(clipped) <= 72
 
 
+def test_bundled_ui_skill_is_discoverable(tmp_path: Path) -> None:
+    skill_path = bundled_skills_root() / "ui" / "SKILL.md"
+    assert skill_path.is_file()
+    skills = {item.name: item for item in list_skills(tmp_path)}
+    assert "ui" in skills
+    assert skills["ui"].origin == "bundled"
+    assert "overlap" in skills["ui"].body.lower()
+    assert "review_ui" in skills["ui"].body
+
+
 def test_bundled_tdd_skill_is_discoverable(tmp_path: Path) -> None:
     skill_path = bundled_skills_root() / "tdd" / "SKILL.md"
     assert skill_path.is_file()
@@ -96,7 +106,7 @@ def test_enable_skill_injects_into_system_prompt_and_context(tmp_path: Path) -> 
     assert "red" in prompt.lower()
     project = load_project(tmp_path)
     context = collect_context(tmp_path, project)
-    assert "Enabled skills: tdd" in context
+    assert "Enabled skills: tdd, ui" in context
     save_enabled_skills(tmp_path, [])
     assert enabled_skill_names(tmp_path) == []
     assert "Enabled skills" not in compose_system_prompt(tmp_path)

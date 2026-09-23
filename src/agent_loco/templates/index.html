@@ -1324,6 +1324,45 @@
       z-index: 2;
       pointer-events: auto;
     }
+    .task-card:has(> .card-actions) {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .task-card.selected:has(> .card-actions) { border-color: var(--accent); }
+    .task-card:has(> .card-actions) > .task {
+      background: transparent;
+      border: none;
+      padding-bottom: 0.35rem;
+    }
+    .task-card > .card-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      padding: 0 0.85rem 0.7rem;
+    }
+    .pr-state {
+      font-size: 0.62rem;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.02rem 0.32rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+    }
+    .pr-state-open { color: var(--ok); }
+    .pr-state-merged { color: var(--accent); }
+    .pr-state-closed { color: var(--bad); }
+    .task-card > .card-actions .history-line-stats {
+      position: static;
+      margin-right: auto;
+      pointer-events: none;
+    }
+    .task-card > .card-actions .pr-link {
+      position: static;
+    }
     .task-card .history-line-stats {
       position: absolute;
       left: 1.5rem;
@@ -1980,6 +2019,20 @@
       <div class="notice-slot" id="workspace-picker-error"></div>
     </div>
   </div>
+  <div class="modal-backdrop" id="rerun-goal-picker" role="dialog" aria-modal="true" aria-labelledby="rerun-goal-picker-title" hidden>
+    <div class="modal">
+      <h2 id="rerun-goal-picker-title">Update this run</h2>
+      <p class="hint">Edit the goal to add context. The new run continues on the same branch and updates its pull request when one exists.</p>
+      <div class="modal-section">
+        <label for="rerun-new-goal">Goal</label>
+        <textarea id="rerun-new-goal" spellcheck="false"></textarea>
+        <div class="modal-actions">
+          <button type="button" id="rerun-with-goal">Update run</button>
+          <button type="button" class="secondary" id="close-rerun-goal">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="settings-dock" id="settings-dock">
     <button type="button" class="secondary" id="open-settings" aria-label="Workspace settings" aria-expanded="false" aria-controls="settings-panel" title="Workspace settings">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2027,7 +2080,7 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], taskPage: 1, taskPageSize: 10, taskTotalPages: 1, selected: null, selectedHistoryKey: "", mainPane: "current", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], historyPage: 1, history: [], taskPage: 1, taskPageSize: 10, taskTotalPages: 1, selected: null, selectedHistoryKey: "", mainPane: "current", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("task-list");
     const currentDetailEl = document.getElementById("detail");
     const historyDetailEl = document.getElementById("history-detail");
@@ -3089,17 +3142,44 @@
       return match ? `PR #${match[1]}` : "Pull request";
     }
 
+    function prStateOf(url) {
+      return (url && state.prStates[url]) || "";
+    }
+
+    function prIsOpen(item) {
+      const url = prUrl(item);
+      return Boolean(url) && prStateOf(url) === "open";
+    }
+
+    function prStateLabel(status) {
+      if (status === "open") return "Open";
+      if (status === "merged") return "Merged";
+      if (status === "closed") return "Closed";
+      return "";
+    }
+
     function prLinkHtml(url) {
       if (!url) return "";
       const safe = escapeHtml(url);
-      return `<a class="pr-link" href="${safe}" target="_blank" rel="noopener noreferrer" title="${safe}">${GITHUB_MARK}<span>${escapeHtml(prLabel(url))}</span></a>`;
+      const status = prStateOf(url);
+      const label = prStateLabel(status);
+      const badge = label
+        ? `<span class="pr-state pr-state-${escapeHtml(status)}">${escapeHtml(label)}</span>`
+        : "";
+      return `<a class="pr-link" href="${safe}" target="_blank" rel="noopener noreferrer" title="${safe}">${GITHUB_MARK}<span>${escapeHtml(prLabel(url))}</span>${badge}</a>`;
     }
 
     function historyCardHtml(entry, index) {
       const selected = historyKey(entry, index) === state.selectedHistoryKey ? " selected" : "";
-      const canRerun = entry.status === "failed" || entry.status === "error";
-      const rerunBtn = canRerun
-        ? `<button type="button" class="rerun-btn" data-history-rerun="${escapeHtml(historyKey(entry, index))}" title="Rerun this failed run">↻ Rerun</button>`
+      const key = escapeHtml(historyKey(entry, index));
+      const failed = entry.status === "failed" || entry.status === "error";
+      const succeeded = entry.status === "success";
+      const canUpdate = succeeded && prIsOpen(entry);
+      const rerunBtn = failed
+        ? `<button type="button" class="rerun-btn" data-history-rerun="${key}" title="Rerun this failed run">↻ Rerun</button>`
+        : "";
+      const updateBtn = canUpdate
+        ? `<button type="button" class="rerun-btn" data-history-update="${key}" title="Add context and continue on this open pull request">Update</button>`
         : "";
       const events = entry.events || [];
       const groups = groupedFileChanges(events);
@@ -3112,6 +3192,7 @@
       const linesHtml = lineStats.added || lineStats.removed
         ? `<span class="history-line-stats"><span class="diff-add">+${lineStats.added}</span> <span class="diff-del">−${lineStats.removed}</span></span>`
         : "";
+      const successActions = `${linesHtml}${prLinkHtml(prUrl(entry))}${updateBtn}`;
       return `
         <div class="task-card${selected}">
           <button type="button" class="task${selected}" data-history-key="${escapeHtml(historyKey(entry, index))}">
@@ -3122,9 +3203,9 @@
             <p class="goal">${escapeHtml(goalText(entry))}</p>
             <p class="meta">${escapeHtml(entry.reason || entry.summary || "")}</p>
           </button>
-          ${rerunBtn}
-          ${prLinkHtml(prUrl(entry))}
-          ${linesHtml}
+          ${succeeded && successActions
+            ? `<div class="card-actions">${successActions}</div>`
+            : `${rerunBtn}${prLinkHtml(prUrl(entry))}${linesHtml}`}
         </div>
       `;
     }
@@ -3761,10 +3842,17 @@
         listEl.innerHTML = filteredTasks.map(task => {
           const duration = taskDurationLabel(task);
           const selected = task.id === state.selected ? " selected" : "";
-          const canRerun = task.status === "failed" || task.status === "error";
-          const rerunBtn = canRerun
+          const failed = task.status === "failed" || task.status === "error";
+          const succeeded = task.status === "success";
+          const canUpdate = succeeded && prIsOpen(task);
+          const rerunBtn = failed
             ? `<button type="button" class="rerun-btn" data-rerun-id="${escapeHtml(task.id)}" title="Rerun this task">↻ Rerun</button>`
             : "";
+          const updateBtn = canUpdate
+            ? `<button type="button" class="rerun-btn" data-task-update="${escapeHtml(task.id)}" title="Add context and continue on this open pull request">Update</button>`
+            : "";
+          const pr = prLinkHtml(prUrl(task));
+          const successActions = `${pr}${updateBtn}`;
           return `
           <div class="task-card${selected}">
             <button type="button" class="task${selected}" data-id="${escapeHtml(task.id)}">
@@ -3775,8 +3863,7 @@
               <p class="goal">${escapeHtml(goalText(task))}</p>
               <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}${duration ? " · " + escapeHtml(formatTimestamp(task.started_at || task.created_at)) : ""}</p>
             </button>
-            ${rerunBtn}
-            ${prLinkHtml(prUrl(task))}
+            ${succeeded && successActions ? `<div class="card-actions">${successActions}</div>` : `${rerunBtn}${pr}`}
           </div>
         `}).join("");
       }
@@ -3930,6 +4017,50 @@
       }
 
       render();
+      refreshPullStates(state.tasks.concat(historyItems())).then((changed) => {
+        if (changed) render();
+      });
+    }
+
+    let pullStateKey = "";
+    let pullStateAt = 0;
+    let pullStateInflight = "";
+
+    async function refreshPullStates(items) {
+      const urls = [];
+      for (const item of items) {
+        const url = prUrl(item);
+        if (url && !urls.includes(url)) urls.push(url);
+      }
+      urls.sort();
+      const key = urls.join("\n");
+      const now = Date.now();
+      if (!urls.length) {
+        const had = Object.keys(state.prStates).length > 0;
+        state.prStates = {};
+        pullStateKey = "";
+        return had;
+      }
+      if (pullStateInflight === key) return false;
+      if (key === pullStateKey && now - pullStateAt < 30000) return false;
+      pullStateInflight = key;
+      try {
+        const res = await fetch("/api/pulls/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls }),
+        });
+        if (!res.ok) return false;
+        const body = await res.json();
+        const next = body.states || {};
+        const same = JSON.stringify(next) === JSON.stringify(state.prStates);
+        state.prStates = next;
+        pullStateKey = key;
+        pullStateAt = Date.now();
+        return !same;
+      } finally {
+        if (pullStateInflight === key) pullStateInflight = "";
+      }
     }
 
     taskPaginationEl.addEventListener("click", (event) => {
@@ -3943,6 +4074,14 @@
     });
 
     listEl.addEventListener("click", (event) => {
+      const update = event.target.closest("[data-task-update]");
+      if (update) {
+        event.preventDefault();
+        event.stopPropagation();
+        const task = state.tasks.find((item) => item.id === update.dataset.taskUpdate);
+        if (task) showRerunGoalPicker({ kind: "task", entry: task });
+        return;
+      }
       const rerun = event.target.closest("[data-rerun-id]");
       if (rerun) {
         event.preventDefault();
@@ -3962,6 +4101,15 @@
     });
 
     historyEl.addEventListener("click", (event) => {
+      const historyUpdate = event.target.closest("[data-history-update]");
+      if (historyUpdate) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = historyUpdate.dataset.historyUpdate;
+        const entry = historyItems().find((item, index) => historyKey(item, index) === key);
+        if (entry) showRerunGoalPicker({ kind: "history", entry });
+        return;
+      }
       const historyRerun = event.target.closest("[data-history-rerun]");
       if (historyRerun) {
         event.preventDefault();
@@ -4103,18 +4251,70 @@
       return body;
     }
 
-    async function rerunFailedTask(taskId) {
+    const rerunGoalPickerEl = document.getElementById("rerun-goal-picker");
+    const rerunNewGoalInput = document.getElementById("rerun-new-goal");
+    let pendingUpdate = null;
+
+    function showRerunGoalPicker(pending) {
+      if (!rerunGoalPickerEl || !rerunNewGoalInput || !pending) return;
+      pendingUpdate = pending;
+      rerunNewGoalInput.value = pending.entry.goal || "";
+      rerunGoalPickerEl.hidden = false;
+      rerunGoalPickerEl.classList.add("open");
+      rerunNewGoalInput.focus();
+    }
+
+    function hideRerunGoalPicker() {
+      pendingUpdate = null;
+      if (!rerunGoalPickerEl) return;
+      rerunGoalPickerEl.classList.remove("open");
+      rerunGoalPickerEl.hidden = true;
+      if (rerunNewGoalInput) rerunNewGoalInput.value = "";
+    }
+
+    async function submitRerunGoal() {
+      const pending = pendingUpdate;
+      if (!pending) return;
+      const revised = (rerunNewGoalInput && rerunNewGoalInput.value.trim()) || pending.entry.goal || "";
+      hideRerunGoalPicker();
+      if (pending.kind === "history") {
+        await rerunHistoryEntry(pending.entry, revised);
+        return;
+      }
+      await rerunFailedTask(pending.entry.id, revised);
+    }
+
+    document.getElementById("rerun-with-goal").addEventListener("click", () => {
+      submitRerunGoal();
+    });
+    document.getElementById("close-rerun-goal").addEventListener("click", hideRerunGoalPicker);
+    rerunGoalPickerEl.addEventListener("click", (event) => {
+      if (event.target === rerunGoalPickerEl) hideRerunGoalPicker();
+    });
+    rerunNewGoalInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        submitRerunGoal();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        hideRerunGoalPicker();
+      }
+    });
+
+    async function rerunFailedTask(taskId, newGoal) {
       try {
+        const revised = (newGoal || "").trim();
+        const payload = revised ? { goal: revised } : {};
         const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/rerun`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: "{}",
+          body: JSON.stringify(payload),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "Could not rerun task");
         state.selected = body.id;
         state.taskStatus[body.id] = body.status || "queued";
-        notify("queued", goalText(body), { title: "Rerun queued" });
+        notify("queued", goalText(body), { title: revised ? "Update queued" : "Rerun queued" });
         showMainPane("current");
         await refresh();
       } catch (err) {
@@ -4123,20 +4323,23 @@
       }
     }
 
-    async function rerunHistoryEntry(entry) {
+    async function rerunHistoryEntry(entry, newGoal) {
+      const revised = (newGoal || "").trim() || entry.goal || "";
+      const hasPr = Boolean(prUrl(entry));
       try {
         await queueTask(
           {
             workspace: document.getElementById("workspace").value,
-            goal: entry.goal || "",
+            goal: revised,
             base_url: document.getElementById("base-url").value,
             model: document.getElementById("model").value,
             auto_commit: document.getElementById("auto-commit").checked,
-            create_pr: document.getElementById("create-pr").checked,
+            create_pr: hasPr || document.getElementById("create-pr").checked,
             resume_branch: entry.branch || undefined,
             resume_sha: entry.commit_sha || undefined,
+            pr_url: entry.status === "success" ? (prUrl(entry) || undefined) : undefined,
           },
-          "Rerun queued",
+          entry.status === "success" ? "Update queued" : "Rerun queued",
         );
       } catch (err) {
         showNotice(errorEl, "error", err.message);

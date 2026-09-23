@@ -851,13 +851,17 @@ def unverified_interactive_ui(goal: str, evidence: UiEvidence) -> str | None:
                 "Rendered UI never clicked the Current/Past runs tabs; "
                 "those controls were not verified"
             )
-    if re.search(r"\bskills?\b", goal or "", re.I):
+    if re.search(r"\bskills?\b", goal or "", re.I) and re.search(
+        r"skills-panel|open-skills", snapshot, re.I
+    ):
         if "open-skills" not in clicked and "skills-panel" not in clicked:
             return (
                 "Rendered UI never opened Skills; "
                 "the control was not clicked"
             )
-    if re.search(r"\bguidelines?\b|\brules?\b", goal or "", re.I):
+    if re.search(r"\bguidelines?\b|\brules?\b", goal or "", re.I) and re.search(
+        r"guidelines-panel|open-guidelines", snapshot, re.I
+    ):
         if "open-guidelines" not in clicked and "guidelines-panel" not in clicked:
             return (
                 "Rendered UI never opened Rules; "

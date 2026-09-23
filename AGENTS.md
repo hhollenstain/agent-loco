@@ -40,8 +40,10 @@ itself is also in `skills/agent-loco/SKILL.md`.
   panel from its Close button or a click outside the panel. Clicks inside the
   panel, including search and clone, leave it open.
 - The main task pane stays visible beside an open sidebar overlay.
-- After a UI edit, exercise the control in a browser: open it, use it, and
-  close it. A template diff is not done.
+- UI layout is the bundled `ui` skill. New workspaces enable it with `tdd`.
+  After a UI edit, exercise the control in a browser: open it, use it, and
+  close it. A template diff is not done. `review_ui` must show the control
+  without overlap, unreadable controls, dead buttons, or 404s.
 
 ## Skills and the cycle
 

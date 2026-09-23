@@ -58,6 +58,7 @@ from agent_loco.tools.git import (
     is_protected_branch,
     is_tracked,
     push_changes,
+    update_pull_request,
     upstream_state,
 )
 from agent_loco.tools.tests import run_project_tests
@@ -429,8 +430,36 @@ def _publish_pull_request(
         _append_to_history(workspace.root, result)
         return False, None, result
     if existing:
-        log_progress(f"Branch already has pull request {existing}")
-        record_event(kind="pr", url=existing, message="existing pull request")
+        log_progress(f"Updating pull request {existing}")
+        updated = update_pull_request(
+            workspace,
+            _commit_message(goal, summary),
+            _pr_body(
+                goal,
+                summary,
+                tests_passed=tests_passed,
+                commit_sha=sha,
+                branch=branch or "",
+                screenshots=[
+                    path.name
+                    for path in screenshot_files
+                    if is_tracked(workspace, path)
+                ],
+                image_base=_pr_image_base(
+                    workspace,
+                    sha,
+                    project.publish_remote,
+                ),
+            ),
+        )
+        if updated.ok:
+            log_progress(f"Updated pull request {existing}")
+        else:
+            log_progress(
+                "Pushed the branch; pull request text was not refreshed: "
+                f"{updated.output}"
+            )
+        record_event(kind="pr", url=existing, message=updated.output or "existing pull request")
         return True, existing, None
     log_progress("Opening pull request...")
     pr = create_pull_request(

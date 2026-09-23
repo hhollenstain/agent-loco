@@ -700,16 +700,23 @@ def test_cycle_reuses_existing_pr_without_creating_another(
     _green_project(tmp_path)
     _commit_on_feature_branch(tmp_path)
     created = {"count": 0}
+    edited = {"count": 0}
 
     def fake_pr(*args, **kwargs):
         created["count"] += 1
         return ToolResult(True, "https://example.test/pull/8")
+
+    def fake_edit(*args, **kwargs):
+        edited["count"] += 1
+        edited["title"] = args[1] if len(args) > 1 else kwargs.get("title")
+        return ToolResult(True, "updated")
 
     monkeypatch.setattr(
         "agent_loco.runtime.improve.push_changes",
         lambda *args, **kwargs: ToolResult(True, "pushed"),
     )
     monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_loco.runtime.improve.update_pull_request", fake_edit)
     monkeypatch.setattr(
         "agent_loco.runtime.improve.existing_pull_request",
         lambda _ws: "https://example.test/pull/7",
@@ -732,6 +739,7 @@ def test_cycle_reuses_existing_pr_without_creating_another(
     assert result.published is True
     assert result.pr_url == "https://example.test/pull/7"
     assert created["count"] == 0
+    assert edited["count"] == 1
 
 
 def test_cycle_does_not_open_pr_from_main_without_new_files(

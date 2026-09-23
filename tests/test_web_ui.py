@@ -101,6 +101,11 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function prLinkHtml(" in home.content
         assert b"function rerunFailedTask(" in home.content
         assert b"data-rerun-id" in home.content
+        assert b'id="rerun-goal-picker"' in home.content
+        assert b"data-history-update" in home.content
+        assert b"card-actions" in home.content
+        assert b"pr-state" in home.content
+        assert b"/api/pulls/status" in home.content
         assert b"/rerun" in home.content
         assert b"GITHUB_MARK" in home.content
         assert b'event.kind === "pr"' in home.content
@@ -1093,7 +1098,161 @@ def test_web_ui_reruns_failed_task(settings: Settings, tmp_path: Path) -> None:
         assert rerun.json()["id"] != task_id
         assert rerun.json()["goal"] == "Allow rerun"
         success = client.post(f"/api/tasks/{rerun.json()['id']}/rerun", json={})
-        assert success.status_code == 404
+        assert success.status_code == 400
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_updates_successful_task_on_its_branch(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", lambda _url: "open")
+    seen: list[Task] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append(task)
+        return CycleResult(
+            status="success",
+            goal=task.goal,
+            summary="done",
+            tests_passed=True,
+            committed=True,
+            published=True,
+            commit_sha="abc123",
+            reason="completed",
+            pr_url="https://example.test/pull/9",
+            branch="loco/feature",
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Ship the panel", "auto_commit": False},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        body = None
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            match = next((item for item in listed if item["id"] == task_id), None)
+            if match and match["status"] not in {"queued", "running"}:
+                body = match
+                break
+            time.sleep(0.05)
+        assert body is not None
+        assert body["status"] == "success"
+        assert body["branch"] == "loco/feature"
+        updated = client.post(
+            f"/api/tasks/{task_id}/rerun",
+            json={"goal": "Ship the panel\n\nAlso leave room for the PR link"},
+        )
+        assert updated.status_code == 201
+        payload = updated.json()
+        assert payload["id"] != task_id
+        assert "PR link" in payload["goal"]
+        assert payload["create_pr"] is True
+        follow = None
+        for _ in range(50):
+            if len(seen) >= 2:
+                follow = seen[1]
+                break
+            time.sleep(0.05)
+        assert follow is not None
+        assert follow.resume_branch == "loco/feature"
+        assert follow.resume_sha == "abc123"
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_refuses_update_when_pull_request_is_not_open(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", lambda _url: "merged")
+
+    def runner(task: Task) -> CycleResult:
+        return CycleResult(
+            status="success",
+            goal=task.goal,
+            summary="done",
+            tests_passed=True,
+            committed=True,
+            published=True,
+            commit_sha="abc123",
+            reason="completed",
+            pr_url="https://example.test/pull/10",
+            branch="loco/feature",
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Ship the panel", "auto_commit": False},
+        )
+        task_id = created.json()["id"]
+        body = None
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            match = next((item for item in listed if item["id"] == task_id), None)
+            if match and match["status"] not in {"queued", "running"}:
+                body = match
+                break
+            time.sleep(0.05)
+        assert body is not None
+        refused = client.post(
+            f"/api/tasks/{task_id}/rerun",
+            json={"goal": "Ship the panel\n\nMore context"},
+        )
+        assert refused.status_code == 409
+        queued = client.post(
+            "/api/tasks",
+            json={
+                "workspace": str(tmp_path),
+                "goal": "More context",
+                "pr_url": "https://example.test/pull/10",
+                "resume_branch": "loco/feature",
+            },
+        )
+        assert queued.status_code == 409
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_reports_pull_request_states(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_state(url: str) -> str:
+        if url.endswith("/9"):
+            return "open"
+        if url.endswith("/10"):
+            return "merged"
+        return ""
+
+    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", fake_state)
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        listed = client.post(
+            "/api/pulls/status",
+            json={
+                "urls": [
+                    "https://example.test/pull/9",
+                    "https://example.test/pull/10",
+                    "not a pull request",
+                ]
+            },
+        )
+        assert listed.status_code == 200
+        states = listed.json()["states"]
+        assert states["https://example.test/pull/9"] == "open"
+        assert states["https://example.test/pull/10"] == "merged"
+        assert "not a pull request" not in states
     finally:
         manager.shutdown(wait=False)
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -47,6 +49,7 @@ from agent_loco.runtime.workspaces import (
     load_workspaces,
     remember_workspace,
 )
+from agent_loco.tools.git import extract_pr_url, pull_request_state
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -59,6 +62,27 @@ FAVICON_SVG = (
 )
 
 
+_PR_STATE_TTL = 45.0
+_PR_STATE_CACHE: dict[str, tuple[float, str]] = {}
+_PR_STATE_LOCK = threading.Lock()
+
+
+def lookup_pull_state(url: str) -> str:
+    """Cached pull-request state. Empty when the URL is missing or gh cannot tell."""
+    clean = extract_pr_url(url or "") or ""
+    if not clean:
+        return ""
+    now = time.monotonic()
+    with _PR_STATE_LOCK:
+        cached = _PR_STATE_CACHE.get(clean)
+        if cached is not None and now - cached[0] < _PR_STATE_TTL:
+            return cached[1]
+    state = pull_request_state(clean)
+    with _PR_STATE_LOCK:
+        _PR_STATE_CACHE[clean] = (time.monotonic(), state)
+    return state
+
+
 class TaskCreate(BaseModel):
     workspace: str | None = None
     goal: str | None = None
@@ -69,10 +93,16 @@ class TaskCreate(BaseModel):
     create_pr: bool | None = None
     resume_branch: str | None = None
     resume_sha: str | None = None
+    pr_url: str | None = None
 
 
 class RerunPayload(BaseModel):
     sha: str | None = None
+    goal: str | None = None
+
+
+class PullStatusQuery(BaseModel):
+    urls: list[str] = []
 
 
 class ModelsQuery(BaseModel):
@@ -489,7 +519,20 @@ def create_app(
     def rerun_task(task_id: str, request: Request, payload: RerunPayload | None = None) -> Any:
         ui: UiState = request.app.state.ui
         run_from_sha = payload.sha if payload else None
-        new_task = ui.manager.rerun(task_id, run_from_sha)
+        new_goal = payload.goal if payload else None
+        old_task = ui.manager.get(task_id)
+        if old_task is None:
+            return JSONResponse({"error": "task not found"}, status_code=404)
+        if old_task.status not in ("failed", "error", "success"):
+            return JSONResponse({"error": "task not rerunnable"}, status_code=400)
+        if old_task.status == "success" and lookup_pull_state(old_task.pr_url or "") != "open":
+            return JSONResponse({"error": "pull request is not open"}, status_code=409)
+        goal_to_use = new_goal or old_task.goal
+        new_task = ui.manager.rerun(
+            task_id,
+            from_sha=run_from_sha,
+            goal=goal_to_use,
+        )
         if new_task is None:
             return JSONResponse({"error": "task not found or not rerunnable"}, status_code=404)
         return JSONResponse(new_task.to_dict(), status_code=201)
@@ -501,6 +544,8 @@ def create_app(
     ) -> JSONResponse:
         ui: UiState = request.app.state.ui
         body = payload or TaskCreate()
+        if body.pr_url and lookup_pull_state(body.pr_url) != "open":
+            return JSONResponse({"error": "pull request is not open"}, status_code=409)
         workspace_raw = body.workspace or ui.default_workspace
         try:
             task = ui.manager.submit(
@@ -519,6 +564,17 @@ def create_app(
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(task.to_dict(), status_code=201)
+
+    @app.post("/api/pulls/status")
+    def pull_status(payload: PullStatusQuery | None = None) -> dict[str, Any]:
+        body = payload or PullStatusQuery()
+        states: dict[str, str] = {}
+        for raw in body.urls[:20]:
+            clean = extract_pr_url(raw or "") or ""
+            if not clean or clean in states:
+                continue
+            states[clean] = lookup_pull_state(clean)
+        return {"states": states}
 
     @app.get("/api/history")
     def get_history(

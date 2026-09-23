@@ -224,21 +224,28 @@ class TaskManager:
             "total": len(statuses),
         }
 
-    def rerun(self, task_id: str, from_sha: str | None = None) -> Task | None:
-        """Queue a new cycle for a failed task, resuming its feature branch when possible."""
+    def rerun(
+        self,
+        task_id: str,
+        from_sha: str | None = None,
+        goal: str | None = None,
+    ) -> Task | None:
+        """Queue a new cycle on the task's branch, with an optional revised goal."""
         with self._lock:
             old_task = self._tasks.get(task_id)
         if not old_task:
             return None
-        if old_task.status not in ("failed", "error"):
+        if old_task.status not in ("failed", "error", "success"):
             return None
         resume_branch = old_task.branch
         resume_sha = (from_sha or old_task.commit_sha or old_task.sha_before or "").strip() or None
+        revised = (goal or "").strip()
+        create_pr = True if old_task.pr_url else old_task.create_pr
         return self.submit(
             Path(old_task.workspace),
-            old_task.goal,
+            revised or old_task.goal,
             auto_commit=old_task.auto_commit,
-            create_pr=old_task.create_pr,
+            create_pr=create_pr,
             model_name=old_task.model_name,
             model_base_url=old_task.model_base_url,
             model_api_key=old_task.model_api_key,

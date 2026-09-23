@@ -646,6 +646,32 @@ def test_unverified_interactive_ui_requires_skills_click() -> None:
     assert reason and "Skills" in reason
 
 
+def test_unverified_interactive_ui_ignores_panels_the_page_does_not_have() -> None:
+    skills = unverified_interactive_ui(
+        "Enable workspace skills from the repo",
+        UiEvidence(ok=True, interactive=True, snapshot="div: settings (200x40)"),
+    )
+    rules = unverified_interactive_ui(
+        "Move guidelines into a settings menu",
+        UiEvidence(ok=True, interactive=True, snapshot="div: settings (200x40)"),
+    )
+    assert skills is None
+    assert rules is None
+
+
+def test_unverified_interactive_ui_requires_rules_click_when_panel_is_present() -> None:
+    reason = unverified_interactive_ui(
+        "Move guidelines into a settings menu",
+        UiEvidence(
+            ok=True,
+            interactive=True,
+            snapshot="overlay: guidelines-panel hidden=True 0x0",
+            clicked=['[data-main-pane="current"]'],
+        ),
+    )
+    assert reason and "Rules" in reason
+
+
 def test_playwright_probe_marks_dead_aria_controls_panel() -> None:
     class Locator:
         def __init__(self) -> None:

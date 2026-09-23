@@ -27,8 +27,9 @@ rendered page. Do not add a helper, route, or control that nothing calls.
 
 - Process belongs in a skill, not hardcoded into `SYSTEM_PROMPT` or the agent loop.
 - After behavior changes, call `run_tests`.
-- After UI edits, call `review_ui`, click the new control, and fix JS errors,
-  404s, dead buttons, and zero-size panels. A template diff is not done.
+- After UI edits, follow the bundled `ui` skill: call `review_ui`, click the
+  new control, and fix overlap, unreadable controls, JS errors, 404s, dead
+  buttons, and zero-size panels. A template diff is not done.
 - If you add a bundled skill, keep `package-data` `skills/*/SKILL.md`.
 
 ## Do not

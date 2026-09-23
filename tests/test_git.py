@@ -21,9 +21,11 @@ from agent_loco.tools.git import (
     is_runtime_artifact,
     is_tracked,
     parse_github_remote,
+    pull_request_state,
     push_changes,
     resume_workspace,
     run_git,
+    update_pull_request,
     upstream_state,
     with_loco_coauthor,
 )
@@ -111,6 +113,43 @@ def test_existing_pull_request_reads_gh_json(tmp_path: Path, monkeypatch) -> Non
 
     monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
     assert existing_pull_request(workspace) == "https://github.com/acme/repo/pull/4"
+
+
+def test_pull_request_state_reads_gh_json(monkeypatch) -> None:
+    def fake_run(args, **kwargs):
+        assert args[:4] == ["gh", "pr", "view", "https://github.com/acme/repo/pull/4"]
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout='{"state":"MERGED"}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    assert pull_request_state("https://github.com/acme/repo/pull/4") == "merged"
+
+
+def test_update_pull_request_edits_the_open_pr(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    seen: dict[str, list[str]] = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = list(args)
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            stdout="https://github.com/acme/repo/pull/4\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    result = update_pull_request(workspace, "Keep the branch", "Added more context")
+    assert result.ok
+    assert seen["args"][:3] == ["gh", "pr", "edit"]
+    assert "Keep the branch" in seen["args"]
+    assert any("Added more context" in part for part in seen["args"])
 
 
 def test_existing_pull_request_missing_gh_is_none(tmp_path: Path, monkeypatch) -> None:

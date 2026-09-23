@@ -36,6 +36,35 @@ def with_loco_coauthor(message: str) -> str:
     return f"{subject}\n\n{CO_AUTHORED_BY}"
 
 
+def pull_request_state(url: str) -> str:
+    """Return open, closed, or merged for a pull-request URL. Empty when unknown."""
+    target = extract_pr_url(url)
+    if not target:
+        return ""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", target, "--json", "state"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    try:
+        payload = json.loads(result.stdout or "")
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    state = str(payload.get("state") or "").strip().lower()
+    if state in {"open", "closed", "merged"}:
+        return state
+    return ""
+
+
 def extract_pr_url(text: str | None) -> str | None:
     """Return the first GitHub/GitLab-style pull-request URL in command output."""
     if not text:
@@ -569,6 +598,31 @@ def create_pull_request(
     if extract_pr_url(output):
         return ToolResult(True, output)
     return ToolResult(False, output)
+
+
+def update_pull_request(
+    workspace: Workspace,
+    title: str,
+    body: str,
+) -> ToolResult:
+    """Refresh the open pull request on the current branch."""
+    title = " ".join(title.split()).strip() or "loco changes"
+    body = (body or title).rstrip()
+    if "co-authored-by: agent-loco" not in body.lower():
+        body = f"{body}\n\n{CO_AUTHORED_BY}"
+    args = ["gh", "pr", "edit", "--title", title, "--body", body]
+    try:
+        result = subprocess.run(
+            args,
+            cwd=workspace.root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return ToolResult(False, "gh not found")
+    output = (result.stdout or result.stderr).strip()
+    return ToolResult(result.returncode == 0, output or "updated pull request")
 
 
 def existing_pull_request(workspace: Workspace) -> str | None:
