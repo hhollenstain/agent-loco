@@ -183,6 +183,23 @@ def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
     assert unwired_ui_markers(wired) == []
 
 
+def test_unwired_ui_markers_treat_event_source_as_a_client_call() -> None:
+    from agent_loco.runtime.review import unwired_ui_markers
+
+    wired = (
+        "diff --git a/src/agent_loco/templates/index.html "
+        "b/src/agent_loco/templates/index.html\n"
+        "--- a/src/agent_loco/templates/index.html\n"
+        "+++ b/src/agent_loco/templates/index.html\n"
+        '+      source = new EventSource("/api/events/stream");\n'
+        "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
+        "--- a/src/agent_loco/web_ui.py\n"
+        "+++ b/src/agent_loco/web_ui.py\n"
+        '+    @app.get("/api/events/stream")\n'
+    )
+    assert unwired_ui_markers(wired) == []
+
+
 def test_invalid_doc_commands_catch_docker_clone_and_overlay() -> None:
     from agent_loco.runtime.review import invalid_doc_commands
 

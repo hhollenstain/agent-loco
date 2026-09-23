@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import threading
@@ -10,7 +11,13 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -374,6 +381,16 @@ class UiState:
         }
 
 
+def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
+    """Logs for the newest running task, or the newest task if none is running."""
+    tasks = manager.list()
+    running = [task for task in tasks if task.status in {"queued", "running"}]
+    task = running[0] if running else (tasks[0] if tasks else None)
+    if task is None:
+        return "", []
+    return task.id, list(task.logs)
+
+
 def create_app(
     manager: TaskManager,
     *,
@@ -403,6 +420,37 @@ def create_app(
     def meta(request: Request) -> dict[str, Any]:
         ui: UiState = request.app.state.ui
         return ui.meta()
+
+    @app.get("/api/events/stream")
+    async def events_stream(request: Request) -> StreamingResponse:
+        """Stream the running task's agent and LLM log as server-sent events."""
+        ui: UiState = request.app.state.ui
+
+        async def event_stream():
+            seen_id = ""
+            seen = 0
+            while True:
+                if await request.is_disconnected():
+                    return
+                task_id, lines = _live_task_logs(ui.manager)
+                if task_id != seen_id:
+                    seen_id = task_id
+                    seen = 0
+                for line in lines[seen:]:
+                    yield f"data: {json.dumps({'line': line})}\n\n"
+                seen = len(lines)
+                yield ": heartbeat\n\n"
+                await asyncio.sleep(0.4)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     def _models_payload(
         ui: UiState,

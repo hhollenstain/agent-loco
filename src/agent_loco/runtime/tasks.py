@@ -284,6 +284,9 @@ class TaskManager:
         loco_log = logging.getLogger("loco")
         loco_log.setLevel(logging.INFO)
         loco_log.addHandler(handler)
+        exchange_logs = [logging.getLogger(name) for name in ("httpx", "openai")]
+        for exchange_log in exchange_logs:
+            exchange_log.addHandler(handler)
         progress = bind_progress(task.events)
         log.info("task %s model=%s url=%s", task.id, task.model_name, task.model_base_url)
         try:
@@ -307,6 +310,8 @@ class TaskManager:
         finally:
             reset_progress(progress)
             loco_log.removeHandler(handler)
+            for exchange_log in exchange_logs:
+                exchange_log.removeHandler(handler)
             task.finished_at = _utcnow()
 
     def _execute(self, task: Task) -> CycleResult:

@@ -240,7 +240,8 @@ def unwired_ui_markers(diff: str | None) -> list[str]:
         if not segments:
             continue
         token = segments[-1]
-        if token in script or f"/{token}" in script:
+        client_text = "\n".join(html_added + js_added)
+        if path in client_text or token in script or f"/{token}" in script:
             continue
         hits.append(f"route {path} is not called from the UI")
     return hits

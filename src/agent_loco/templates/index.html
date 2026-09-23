@@ -418,6 +418,52 @@
       background: var(--panel);
     }
     .sidebar-overlay[hidden] { display: none; }
+    #live-console { z-index: 60; }
+    #live-console .modal {
+      display: flex;
+      flex-direction: column;
+      width: min(48rem, 100%);
+      max-height: min(32rem, 92vh);
+      overflow: hidden;
+    }
+    .live-console-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+    }
+    .live-console-head .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--bad);
+      display: inline-block;
+    }
+    .status-dot.connected { background: var(--ok); }
+    .live-console-output {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: min(22rem, calc(92vh - 7.5rem));
+      overflow: auto;
+      margin-top: 0.7rem;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.75rem;
+      line-height: 1.45;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 0.6rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .live-console-output .log-entry { margin: 0.15rem 0; }
     #skills-panel .sidebar-overlay-body {
       display: flex;
       flex-direction: column;
@@ -1808,6 +1854,12 @@
               <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
             </svg>
           </button>
+          <button type="button" class="secondary" id="open-live-console" aria-label="Live console" aria-expanded="false" title="Live console">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
+              <circle cx="12" cy="12" r="2" fill="currentColor"/>
+            </svg>
+          </button>
         </div>
       </div>
       <div class="sidebar-stack">
@@ -2017,6 +2069,23 @@
         </div>
       </div>
       <div class="notice-slot" id="workspace-picker-error"></div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="live-console" role="dialog" aria-modal="true" aria-labelledby="live-console-title" hidden>
+    <div class="modal">
+      <div class="live-console-head">
+        <h2 id="live-console-title">Live console</h2>
+        <button type="button" class="secondary" id="close-live-console">Close</button>
+      </div>
+      <div class="live-console-head">
+        <span class="connection-status">
+          <span class="status-dot disconnected" id="console-status-dot"></span>
+          <span class="status-text" id="console-status-text">Disconnected</span>
+        </span>
+        <button type="button" class="secondary" id="clear-console">Clear</button>
+      </div>
+      <div class="live-console-output" id="live-console-output"></div>
+      <p class="hint">Agent and LLM server traffic for the current task.</p>
     </div>
   </div>
   <div class="modal-backdrop" id="rerun-goal-picker" role="dialog" aria-modal="true" aria-labelledby="rerun-goal-picker-title" hidden>
@@ -2982,6 +3051,10 @@
         closePicker();
         return;
       }
+      if (liveConsoleEl && liveConsoleEl.classList.contains("open")) {
+        setLiveConsoleOpen(false);
+        return;
+      }
       if (overlayOpen(skillsPanelEl) || overlayOpen(guidelinesPanelEl)) {
         closeSidebarOverlays();
         return;
@@ -3001,6 +3074,69 @@
       state.notifications = [];
       renderNotificationHistory();
     });
+    const liveConsoleEl = document.getElementById("live-console");
+    const openConsoleBtn = document.getElementById("open-live-console");
+    let consoleEventSource = null;
+
+    function setLiveConsoleOpen(open) {
+      if (!liveConsoleEl) return;
+      liveConsoleEl.classList.toggle("open", open);
+      liveConsoleEl.hidden = !open;
+      if (openConsoleBtn) openConsoleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) connectConsoleStream();
+      else disconnectConsoleStream();
+    }
+
+    function disconnectConsoleStream() {
+      if (consoleEventSource) {
+        consoleEventSource.close();
+        consoleEventSource = null;
+      }
+      const statusText = document.getElementById("console-status-text");
+      const statusDot = document.getElementById("console-status-dot");
+      if (statusText) statusText.textContent = "Disconnected";
+      if (statusDot) statusDot.className = "status-dot disconnected";
+    }
+
+    function connectConsoleStream() {
+      disconnectConsoleStream();
+      const outputEl = document.getElementById("live-console-output");
+      const statusText = document.getElementById("console-status-text");
+      const statusDot = document.getElementById("console-status-dot");
+      consoleEventSource = new EventSource("/api/events/stream");
+      consoleEventSource.onerror = () => {
+        if (statusText) statusText.textContent = "Reconnecting";
+        if (statusDot) statusDot.className = "status-dot disconnected";
+      };
+      consoleEventSource.onopen = () => {
+        if (statusText) statusText.textContent = "Connected";
+        if (statusDot) statusDot.className = "status-dot connected";
+      };
+      consoleEventSource.onmessage = (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch (exc) {
+          return;
+        }
+        const line = data && data.line ? String(data.line) : "";
+        if (!line || !outputEl) return;
+        const entry = document.createElement("div");
+        entry.className = "log-entry";
+        entry.textContent = line;
+        outputEl.appendChild(entry);
+        outputEl.scrollTop = outputEl.scrollHeight;
+      };
+    }
+
+    document.getElementById("close-live-console").addEventListener("click", () => {
+      setLiveConsoleOpen(false);
+    });
+    openConsoleBtn.addEventListener("click", () => setLiveConsoleOpen(true));
+    liveConsoleEl.addEventListener("click", (event) => {
+      if (event.target === liveConsoleEl) setLiveConsoleOpen(false);
+    });
+
     document.addEventListener("click", (event) => {
       if (settingsOpen() && !settingsDockEl.contains(event.target)) setSettingsOpen(false);
       if (
@@ -4182,6 +4318,13 @@
       state.historyPage = 1;
       searchInput.value = "";
       refresh();
+    });
+
+    document.getElementById("clear-console")?.addEventListener("click", () => {
+      const outputEl = document.getElementById("live-console-output");
+      if (outputEl) {
+        outputEl.innerHTML = "";
+      }
     });
 
     function showMainPane(name) {

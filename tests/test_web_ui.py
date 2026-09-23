@@ -70,6 +70,39 @@ def test_queue_runs_one_at_a_time(settings: Settings, tmp_path: Path) -> None:
         manager.shutdown(wait=False)
 
 
+def test_live_task_logs_follow_the_running_task(settings: Settings, tmp_path: Path) -> None:
+    from agent_loco.web_ui import _live_task_logs
+
+    gate = threading.Event()
+
+    def runner(task: Task) -> CycleResult:
+        task.logs.append("model hello from the server")
+        gate.wait(timeout=2)
+        return _ok_result(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        queued = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "watch the console"},
+        )
+        assert queued.status_code == 201
+        deadline = time.time() + 2
+        lines: list[str] = []
+        while time.time() < deadline:
+            _task_id, lines = _live_task_logs(manager)
+            if any("hello from the server" in line for line in lines):
+                break
+            time.sleep(0.05)
+        assert any("hello from the server" in line for line in lines)
+        assert any(getattr(route, "path", "") == "/api/events/stream" for route in app.routes)
+    finally:
+        gate.set()
+        manager.shutdown(wait=False)
+
+
 def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> None:
     gate = threading.Event()
 
@@ -102,6 +135,10 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function rerunFailedTask(" in home.content
         assert b"data-rerun-id" in home.content
         assert b'id="rerun-goal-picker"' in home.content
+        assert b'id="open-live-console"' in home.content
+        assert b'id="live-console"' in home.content
+        assert b'id="close-live-console"' in home.content
+        assert b"/api/events/stream" in home.content
         assert b"data-history-update" in home.content
         assert b"card-actions" in home.content
         assert b"pr-state" in home.content

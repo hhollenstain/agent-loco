@@ -175,6 +175,9 @@ class CodingAgent:
         for iteration in range(1, self.max_iterations + 1):
             turn = timed_complete(self.llm, messages, schemas, purpose="agent")
             last_text = turn.text or last_text
+            snippet = " ".join((turn.text or "").split())
+            if snippet:
+                log.info("model %s", snippet[:400])
             calls = turn.tool_calls or parse_tool_calls(turn.text, known_names)
             if calls:
                 native = bool(turn.tool_calls)

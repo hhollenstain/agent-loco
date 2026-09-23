@@ -40,6 +40,9 @@ done.
 - A class that is only used for color or position is not a handler. If the
   review says `button.<class> has no click handler`, the listener does not
   reference that class.
+- A new route is wired when the added page contains that path. `fetch`,
+  `EventSource`, and a template URL all count. Do not add a second route
+  that the page never calls.
 - Do not leave a button, route, or form field that nothing calls.
 
 ## Prove the layout
