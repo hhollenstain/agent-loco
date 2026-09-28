@@ -135,6 +135,10 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function rerunFailedTask(" in home.content
         assert b"data-rerun-id" in home.content
         assert b'id="rerun-goal-picker"' in home.content
+        assert b'id="editor-scheme"' in home.content
+        assert b'<option value="cursor">Cursor</option>' in home.content
+        assert b"file-open-link" in home.content
+        assert b"function editorFileUrl(" in home.content
         assert b'id="open-live-console"' in home.content
         assert b'id="live-console"' in home.content
         assert b'id="close-live-console"' in home.content

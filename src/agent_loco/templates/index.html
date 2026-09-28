@@ -1581,6 +1581,17 @@
     }
     .file-change-stats .diff-add,
     .file-change-stats .diff-del { font-weight: 650; }
+    .file-open-link {
+      margin-left: 0.6rem;
+      font-size: 0.72rem;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.05rem 0.45rem;
+      white-space: nowrap;
+    }
+    .file-open-link:hover { border-color: var(--accent); }
     .file-changes .empty { margin: 0.85rem 0 0; }
     .ui-screenshots {
       list-style: none;
@@ -2128,6 +2139,13 @@
             <p class="settings-path" id="settings-path">{{ default_workspace }}</p>
           </div>
         </div>
+        <label for="editor-scheme">Open files in</label>
+        <select id="editor-scheme" aria-label="Editor for changed files">
+          <option value="cursor">Cursor</option>
+          <option value="vscode">VS Code</option>
+          <option value="">Do not link</option>
+        </select>
+        <p class="hint">Changed files in a run get an Open link that jumps to the file in this editor.</p>
       </div>
     </div>
   </div>
@@ -3692,7 +3710,30 @@
       };
     }
 
-    function renderFileChanges(events) {
+    const EDITOR_SCHEMES = { cursor: "Cursor", vscode: "VS Code" };
+    const editorSchemeEl = document.getElementById("editor-scheme");
+
+    function editorScheme() {
+      const saved = localStorage.getItem("loco-editor");
+      if (saved === null) return "cursor";
+      return EDITOR_SCHEMES[saved] ? saved : "";
+    }
+
+    function firstChangedLine(diff) {
+      const match = String(diff || "").match(/^@@ -\d+(?:,\d+)? \+(\d+)/m);
+      return match ? Number(match[1]) : 1;
+    }
+
+    function editorFileUrl(root, path, line) {
+      const scheme = editorScheme();
+      if (!scheme || !root || !path) return "";
+      const base = String(root).replace(/\/+$/, "");
+      const target = String(path);
+      const absolute = target.startsWith("/") ? target : `${base}/${target}`;
+      return `${scheme}://file${absolute.startsWith("/") ? "" : "/"}${absolute}:${line || 1}`;
+    }
+
+    function renderFileChanges(events, root) {
       const groups = groupedFileChanges(events);
       if (!groups.length) {
         return `<p class="empty">No file changes in this task.</p>`;
@@ -3709,7 +3750,11 @@
         const body = review.diff
           ? `<pre class="diff">${renderDiff(review.diff)}</pre>`
           : `<p class="empty">No diff captured.</p>`;
-        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}<span class="file-change-path">${escapeHtml(review.action)} ${escapeHtml(group.path)}</span><span class="file-change-stats">${escapeHtml(edits)}<span class="diff-add">+${stats.added}</span> <span class="diff-del">−${stats.removed}</span></span></summary>${body}</details></li>`;
+        const url = editorFileUrl(root, group.path, firstChangedLine(review.diff));
+        const openLink = url
+          ? `<a class="file-open-link" href="${escapeHtml(url)}" title="Open in ${escapeHtml(EDITOR_SCHEMES[editorScheme()])}">Open</a>`
+          : "";
+        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}<span class="file-change-path">${escapeHtml(review.action)} ${escapeHtml(group.path)}</span><span class="file-change-stats">${escapeHtml(edits)}<span class="diff-add">+${stats.added}</span> <span class="diff-del">−${stats.removed}</span></span>${openLink}</summary>${body}</details></li>`;
       }).join("");
       return `<ol class="file-changes" id="file-changes">${items}</ol>`;
     }
@@ -3838,7 +3883,7 @@
       }, { added: 0, removed: 0 });
       return progressHtml + renderTaskPanes(
         logHtml,
-        renderFileChanges(events),
+        renderFileChanges(events, item.workspace || workspaceEl.value),
         groups.length,
         screenshotHtml,
         lineStats,
@@ -4268,6 +4313,12 @@
 
     function bindDetailEvents(el) {
       el.addEventListener("click", (event) => {
+        const openLink = event.target.closest(".file-open-link");
+        if (openLink && el.contains(openLink)) {
+          event.preventDefault();
+          window.location.href = openLink.getAttribute("href");
+          return;
+        }
         const paneTab = event.target.closest("[data-task-pane]");
         if (paneTab && el.contains(paneTab)) {
           const pane = taskPaneFromTab(paneTab.dataset.taskPane);
@@ -4356,6 +4407,16 @@
     serverFilterEl.addEventListener("change", (event) => {
       state.serverFilter = event.target.value;
       refresh();
+    });
+
+    editorSchemeEl.value = editorScheme();
+    editorSchemeEl.addEventListener("change", (event) => {
+      try {
+        localStorage.setItem("loco-editor", event.target.value);
+      } catch (_err) {
+        /* ignore quota / private mode */
+      }
+      render();
     });
 
     toggleBtn.addEventListener("click", () => applySidebar(!state.sidebarCollapsed));
