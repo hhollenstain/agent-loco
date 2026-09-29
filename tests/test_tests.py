@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from agent_loco.progress import bind_progress, current_events, reset_progress
+from agent_loco.sandbox import Workspace
+from agent_loco.tools.tests import run_project_tests
+
+
+def test_run_project_tests_reuses_result_when_tree_is_unchanged(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    marker = loco / "runs.txt"
+    (tmp_path / "check.py").write_text(
+        "from pathlib import Path\n"
+        "marker = Path('.loco/runs.txt')\n"
+        "count = int(marker.read_text()) if marker.exists() else 0\n"
+        "marker.write_text(str(count + 1))\n",
+        encoding="utf-8",
+    )
+    workspace = Workspace(tmp_path)
+    command = "python3 check.py"
+    token = bind_progress()
+    try:
+        first = run_project_tests(workspace, command, 10, phase="agent")
+        second = run_project_tests(workspace, command, 10, phase="after")
+        events = current_events()
+    finally:
+        reset_progress(token)
+    assert first.ok
+    assert second.ok
+    assert marker.read_text(encoding="utf-8") == "1"
+    assert events[0]["reused"] is False
+    assert events[1]["reused"] is True
+    assert events[1]["elapsed_ms"] == 0
+    assert events[1]["phase"] == "after"
+
+
+def test_run_project_tests_reruns_after_an_edit(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    marker = loco / "runs.txt"
+    (tmp_path / "check.py").write_text(
+        "from pathlib import Path\n"
+        "marker = Path('.loco/runs.txt')\n"
+        "count = int(marker.read_text()) if marker.exists() else 0\n"
+        "marker.write_text(str(count + 1))\n",
+        encoding="utf-8",
+    )
+    workspace = Workspace(tmp_path)
+    command = "python3 check.py"
+    first = run_project_tests(workspace, command, 10, phase="agent")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    second = run_project_tests(workspace, command, 10, phase="after")
+    assert first.ok
+    assert second.ok
+    assert marker.read_text(encoding="utf-8") == "2"

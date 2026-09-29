@@ -19,6 +19,36 @@ def test_write_and_read_roundtrip(tmp_path: Path) -> None:
     read = _tool(workspace, "read_file").handler(path="hello.txt")
     assert read.ok
     assert "hi" in read.output
+    assert read.output.startswith("hello.txt  lines 1-1 of 1")
+
+
+def test_str_replace_strips_numbered_read_prefixes(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "app.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    result = _tool(workspace, "str_replace").handler(
+        path="app.py",
+        old_string="   1|def add(a, b):\n   2|    return a + b",
+        new_string="def add(a, b):\n    return a - b",
+    )
+    assert result.ok
+    assert "ignored numbered read_file prefixes" in result.output
+    assert (tmp_path / "app.py").read_text(encoding="utf-8") == (
+        "def add(a, b):\n    return a - b\n"
+    )
+
+
+def test_str_replace_missing_text_includes_nearby_lines(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / "note.txt").write_text("alpha loco beta\n", encoding="utf-8")
+    missing = _tool(workspace, "str_replace").handler(
+        path="note.txt",
+        old_string="gamma",
+        new_string="delta",
+    )
+    assert not missing.ok
+    assert "not found" in missing.output
+    assert "File starts with:" in missing.output
+    assert "alpha loco beta" in missing.output
 
 
 def test_write_file_records_create_and_update_diffs(tmp_path: Path) -> None:

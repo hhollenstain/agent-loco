@@ -26,6 +26,9 @@ that nothing calls.
   Wire the API, CLI, or UI the test actually invokes.
 - **One slice at a time.** One seam, one test, one minimal implementation.
 - Do not write all tests first, then all implementation.
+- After the implementation, call `run_tests` once. If the tree has not changed
+  since the last run, loco reuses that result instead of running the suite again.
+  Do not keep calling `run_tests` on an unchanged tree.
 
 ## Anti-patterns
 
@@ -36,7 +39,8 @@ that nothing calls.
 
 ## In this workspace
 
-- After the failing test, implement, then call `run_tests` until it passes.
+- After the failing test, implement, then call `run_tests` once more.
+  Loco reuses a previous result when the tree has not changed.
 - If the change is UI, `review_ui` is the rendered-page seam: click the new
   control and fix errors, 404s, or dead buttons.
 - If existing tests assert old markup or APIs this goal replaces, update those
