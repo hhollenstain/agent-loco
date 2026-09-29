@@ -382,13 +382,101 @@ class UiState:
 
 
 def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
-    """Logs for the newest running task, or the newest task if none is running."""
+    """Logs for the newest running task, or the newest task if none is running.
+    
+    Returns both the traditional log lines AND the detailed event-based logs
+    for the in-depth back-and-forth between LLM and agent.
+    """
+    from agent_loco.logging import format_elapsed
+    
     tasks = manager.list()
     running = [task for task in tasks if task.status in {"queued", "running"}]
     task = running[0] if running else (tasks[0] if tasks else None)
     if task is None:
         return "", []
-    return task.id, list(task.logs)
+    
+    # Build enriched log output: interleaved timestamps from original logs
+    # plus detailed event logs showing LLM reasoning, file changes, tests, and PRs
+    all_lines = []
+    seen_logs = set()
+    
+    # Process events in order to create rich console output
+    for event in task.events:
+        kind = event.get("kind", "")
+        at = event.get("at", "")
+        purpose = event.get("purpose", "")
+        elapsed = event.get("elapsed_ms")
+        ok = event.get("ok")
+        path = event.get("path", "")
+        action = event.get("action", "")
+        diff = event.get("net_diff", "") or event.get("diff", "")
+        command = event.get("command", "")
+        test_ok = event.get("ok", ok)
+        phase = event.get("phase", "")
+        message = event.get("message", "")
+        url = event.get("url", "")
+        
+        parts = [f"[{at}]"]
+        
+        if kind == "llm":
+            status = "✓" if ok else "✗"
+            if elapsed:
+                parts.append(f" {status} LLM ({purpose}) in {format_elapsed(elapsed/1000)}")
+            else:
+                parts.append(f" {status} LLM ({purpose})")
+            all_lines.append(" ".join(parts))
+        
+        elif kind == "file":
+            if diff:
+                # Show a trimmed repr of the diff
+                preview = diff.replace("\n", " ").strip()[:80]
+                if len(diff) > 80:
+                    preview += "…"
+                parts.append(f" {action} {path} [{preview}]")
+            else:
+                parts.append(f" {action} {path}")
+            all_lines.append(" ".join(parts))
+        
+        elif kind == "test":
+            status = "✓" if test_ok else "✗"
+            if command:
+                cmd_display = command[:50] + ("…" if len(command) > 50 else "")
+                parts.append(f" {status} test ({cmd_display})")
+            elif phase:
+                parts.append(f" {status} {phase} tests")
+            else:
+                parts.append(f" {status} test run")
+            all_lines.append(" ".join(parts))
+        
+        elif kind == "step":
+            if message:
+                parts.append(f" → {message}")
+            else:
+                parts.append(f" step at {at}")
+            all_lines.append(" ".join(parts))
+        
+        elif kind == "pr":
+            status = "✓" if ok else "✗"
+            if url:
+                parts.append(f" {status} PR: {url}")
+            elif message:
+                parts.append(f" {status} PR: {message}")
+            else:
+                parts.append(f" {status} PR created")
+            all_lines.append(" ".join(parts))
+        
+        elif message:
+            parts.append(f" {message}")
+            all_lines.append(" ".join(parts))
+    
+    # Also include original logs for background details (deduplicated)
+    for log_line in task.logs:
+        stripped = log_line.strip()
+        if stripped and log_line not in seen_logs:
+            all_lines.append(log_line)
+            seen_logs.add(log_line)
+    
+    return task.id, all_lines
 
 
 def create_app(
@@ -425,6 +513,7 @@ def create_app(
     async def events_stream(request: Request) -> StreamingResponse:
         """Stream the running task's agent and LLM log as server-sent events."""
         ui: UiState = request.app.state.ui
+        manager = ui.manager
 
         async def event_stream():
             seen_id = ""
@@ -432,10 +521,30 @@ def create_app(
             while True:
                 if await request.is_disconnected():
                     return
-                task_id, lines = _live_task_logs(ui.manager)
+                task_id, lines = _live_task_logs(manager)
                 if task_id != seen_id:
                     seen_id = task_id
                     seen = 0
+                    # Also emit raw events for the frontend to parse
+                    task = manager.get(task_id) if task_id else None
+                    if task:
+                        for event in task.events:
+                            event_data = {
+                                'kind': event.get('kind'),
+                                'at': event.get('at'),
+                                'purpose': event.get('purpose'),
+                                'elapsed_ms': event.get('elapsed_ms'),
+                                'ok': event.get('ok'),
+                                'path': event.get('path'),
+                                'action': event.get('action'),
+                                'net_diff': event.get('net_diff', ''),
+                                'diff': event.get('diff', ''),
+                                'command': event.get('command'),
+                                'phase': event.get('phase'),
+                                'message': event.get('message'),
+                                'url': event.get('url')
+                            }
+                            yield f"data: {json.dumps(event_data)}\n\n"
                 for line in lines[seen:]:
                     yield f"data: {json.dumps({'line': line})}\n\n"
                 seen = len(lines)
