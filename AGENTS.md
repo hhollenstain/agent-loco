@@ -44,6 +44,12 @@ itself is also in `skills/agent-loco/SKILL.md`.
   After a UI edit, exercise the control in a browser: open it, use it, and
   close it. A template diff is not done. `review_ui` must show the control
   without overlap, unreadable controls, dead buttons, or 404s.
+## CSS
+
+- Extract inline styles from templates into `static/layout.css`.
+- Do not add inline `style=` attributes to HTML elements in templates.
+- Define CSS classes in `layout.css` and apply them to HTML elements.
+- After CSS changes, run `review_ui` to verify the page renders correctly.
 
 ## Skills and the cycle
 
