@@ -420,11 +420,39 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
         
         if kind == "llm":
             status = "✓" if ok else "✗"
+            messages = event.get("messages")
+            response = event.get("response")
             if elapsed:
-                parts.append(f" {status} LLM ({purpose}) in {format_elapsed(elapsed/1000)}")
+                time_str = format_elapsed(elapsed/1000)
             else:
+                time_str = ""
+            
+            # Show detailed LLM conversation when messages/response are available
+            if messages and response:
+                # LLM interaction details
                 parts.append(f" {status} LLM ({purpose})")
-            all_lines.append(" ".join(parts))
+                parts.append(f"  ↓ {len(messages) if isinstance(messages, list) else 'msg'} messages")
+                # Show message exchanges
+                if isinstance(messages, list) and len(messages) > 0:
+                    for i, msg in enumerate(messages[:3]):  # Show first 3 messages
+                        role = msg.get("role", "unknown")[:3] if isinstance(msg, dict) else str(msg)[:20]
+                        parts.append(f"  → [{i+1}] {role}")
+                    if len(messages) > 3:
+                        all_lines.append(" ".join(parts))
+                        parts = [f"[{at}]"]
+                        parts.append(f"  · {len(messages)-3} more messages")
+                        all_lines.append(" ".join(parts))
+                        parts = [f"[{at}] {status} LLM ({purpose})"]
+                parts.append(f"  ↑ Response: {response[:100]}{'…' if len(response) > 100 else ''}")
+                all_lines.append(" ".join(parts))
+                parts = [f"[{at}]"]
+            else:
+                # Sparse legacy format - no detailed conversation data
+                if time_str:
+                    parts.append(f" {status} LLM ({purpose}) in {time_str}")
+                else:
+                    parts.append(f" {status} LLM ({purpose})")
+                all_lines.append(" ".join(parts))
         
         elif kind == "file":
             if diff:

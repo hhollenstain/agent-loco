@@ -154,11 +154,14 @@ def timed_complete(
         raise
     elapsed = time.perf_counter() - started
     elapsed_ms = int(round(elapsed * 1000))
+    # Record full conversation details for in-depth console logging
     record_event(
         kind="llm",
         purpose=purpose,
         ok=True,
         elapsed_ms=elapsed_ms,
+        messages=messages,  # All messages sent to LLM
+        response=turn.text or "",  # LLM's response text
     )
     log.info("llm %s response in %s", purpose, format_elapsed(elapsed))
     return turn
