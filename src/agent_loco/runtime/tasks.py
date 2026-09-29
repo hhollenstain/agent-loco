@@ -291,7 +291,6 @@ class TaskManager:
         log.info("task %s model=%s url=%s", task.id, task.model_name, task.model_base_url)
         try:
             result = self._execute(task)
-            task.status = result.status
             task.summary = result.summary
             task.reason = result.reason
             task.tests_passed = result.tests_passed
@@ -302,17 +301,19 @@ class TaskManager:
             if getattr(result, "branch", None):
                 task.branch = result.branch
             self._refresh_git_state(task)
+            task.finished_at = _utcnow()
+            task.status = result.status
         except Exception as exc:
             log.exception("task %s crashed", task.id)
-            task.status = "error"
             task.error = str(exc)
             task.reason = f"task crashed: {exc}"
+            task.finished_at = _utcnow()
+            task.status = "error"
         finally:
             reset_progress(progress)
             loco_log.removeHandler(handler)
             for exchange_log in exchange_logs:
                 exchange_log.removeHandler(handler)
-            task.finished_at = _utcnow()
 
     def _execute(self, task: Task) -> CycleResult:
         self._resume_workspace(task)

@@ -103,6 +103,28 @@ def test_live_task_logs_follow_the_running_task(settings: Settings, tmp_path: Pa
         manager.shutdown(wait=False)
 
 
+def test_console_event_payload_splits_agent_and_model() -> None:
+    from agent_loco.web_ui import _console_event_payload
+
+    payload = _console_event_payload(
+        {
+            "kind": "llm",
+            "purpose": "agent",
+            "ok": True,
+            "at": "2026-09-29T01:00:00Z",
+            "messages": [
+                {"role": "system", "content": "You are loco."},
+                {"role": "user", "content": "fix the live console colors"},
+                {"role": "assistant", "content": "I will look at index.html"},
+            ],
+            "response": "Colored agent and model lines in the live console.",
+        }
+    )
+    assert payload["agent"] == "fix the live console colors"
+    assert payload["model"] == "Colored agent and model lines in the live console."
+    assert payload["kind"] == "llm"
+
+
 def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> None:
     gate = threading.Event()
 
@@ -143,6 +165,12 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'id="live-console"' in home.content
         assert b'id="close-live-console"' in home.content
         assert b"/api/events/stream" in home.content
+        assert b"function appendConsoleEntry(" in home.content
+        assert b"log-chat log-agent" in home.content
+        assert b"log-chat log-model" in home.content
+        assert b"log-speaker" in home.content
+        assert b"data.agent" in home.content
+        assert b"data.model" in home.content
         assert b"data-history-update" in home.content
         assert b"card-actions" in home.content
         assert b"pr-state" in home.content
@@ -280,7 +308,11 @@ def test_finished_task_records_start_and_finish_times(
         for _ in range(50):
             listed = client.get("/api/tasks").json()
             match = next((item for item in listed if item["id"] == task_id), None)
-            if match and match["status"] not in {"queued", "running"}:
+            if (
+                match
+                and match["status"] not in {"queued", "running"}
+                and match["finished_at"]
+            ):
                 body = match
                 break
             time.sleep(0.05)
