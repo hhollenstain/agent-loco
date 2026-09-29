@@ -146,8 +146,10 @@ def _run_cycle(
     ensure_run_gitignore(workspace.root)
     project = load_project(workspace.root)
     allow_create_pr = resolve_create_pr(settings, project, cli_create_pr)
-    log_progress("Running before tests...")
-    tests_before = _maybe_test(workspace, project, settings, phase="before")
+    tests_before = None
+    if goal is None:
+        log_progress("Running before tests...")
+        tests_before = _maybe_test(workspace, project, settings, phase="before")
     selected_goal = goal or _choose_goal(project, tests_before)
     if not selected_goal:
         log_progress("No pending goals and tests are green.")

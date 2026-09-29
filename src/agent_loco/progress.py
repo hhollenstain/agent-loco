@@ -118,6 +118,7 @@ def record_test_run(
     output: str,
     phase: str = "tests",
     elapsed_ms: int | None = None,
+    reused: bool = False,
 ) -> dict[str, Any]:
     event = record_event(
         kind="test",
@@ -125,9 +126,13 @@ def record_test_run(
         ok=ok,
         phase=phase,
         elapsed_ms=elapsed_ms,
+        reused=reused,
         output=clip_output(output),
     )
-    log.info("tests %s ok=%s", phase, ok)
+    if reused:
+        log.info("tests %s ok=%s reused", phase, ok)
+    else:
+        log.info("tests %s ok=%s", phase, ok)
     return event
 
 

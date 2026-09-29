@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -29,6 +30,8 @@ MAX_READ_CHARS = 200_000
 MAX_WRITE_BYTES = 1_000_000
 MAX_LIST_ENTRIES = 200
 MAX_SEARCH_HITS = 50
+MAX_HITS_PER_FILE = 5
+_NUMBERED_READ_RE = re.compile(r"(?m)^[ \t]*\d+\|")
 
 
 def file_tools(workspace: Workspace) -> list[ToolSpec]:
@@ -49,7 +52,8 @@ def file_tools(workspace: Workspace) -> list[ToolSpec]:
         ),
         ToolSpec(
             name="read_file",
-            description="Read a text file. Optionally slice by 1-based start_line and end_line.",
+            description="Read a text file. Optionally slice by 1-based start_line and end_line. "
+            "The `N|` prefix is a line number; do not copy it into str_replace.",
             parameters=object_schema(
                 {
                     "path": {"type": "string", "description": "File path inside the workspace."},
@@ -88,7 +92,8 @@ def file_tools(workspace: Workspace) -> list[ToolSpec]:
             name="str_replace",
             description=(
                 "Replace exact text in an existing file. Prefer this over write_file "
-                "for edits. old_string must match exactly once unless replace_all is true."
+                "for edits. old_string must match exactly once unless replace_all is true. "
+                "Copy the file text without the numbered `N|` prefix from read_file."
             ),
             parameters=object_schema(
                 {
@@ -180,10 +185,11 @@ def _read_file(
         return ToolResult(False, "start_line must be <= end_line")
     sliced = lines[start - 1 : end]
     numbered = [f"{idx + start:>4}|{line}" for idx, line in enumerate(sliced)]
-    body = "\n".join(numbered)
+    header = f"{path}  lines {start}-{end} of {len(lines)}"
+    body = header + ("\n" + "\n".join(numbered) if numbered else "\n(empty file)")
     if len(body) > MAX_READ_CHARS:
         body = body[:MAX_READ_CHARS] + "\n... truncated"
-    return ToolResult(True, body or "(empty file)")
+    return ToolResult(True, body)
 
 
 def _write_file(workspace: Workspace, path: str, content: str) -> ToolResult:
@@ -230,9 +236,18 @@ def _str_replace(
         return ToolResult(False, f"not a utf-8 text file: {path}")
     except OSError as exc:
         return ToolResult(False, f"read failed: {exc}")
-    matches = before.count(old_string)
+    needle = old_string
+    stripped_numbers = False
+    matches = before.count(needle)
     if matches == 0:
-        return ToolResult(False, f"old_string not found in {path}")
+        stripped = _without_read_prefixes(needle)
+        if stripped != needle:
+            needle = stripped
+            stripped_numbers = True
+            matches = before.count(needle)
+    if matches == 0:
+        hint = _nearby_hint(before, old_string)
+        return ToolResult(False, f"old_string not found in {path}.{hint}")
     replace_every = _as_bool(replace_all)
     if matches > 1 and not replace_every:
         return ToolResult(
@@ -241,9 +256,9 @@ def _str_replace(
             "provide more context or set replace_all=true",
         )
     if replace_every:
-        after = before.replace(old_string, new_string)
+        after = before.replace(needle, new_string)
     else:
-        after = before.replace(old_string, new_string, 1)
+        after = before.replace(needle, new_string, 1)
     encoded = after.encode("utf-8")
     if len(encoded) > MAX_WRITE_BYTES:
         return ToolResult(False, f"refusing to write more than {MAX_WRITE_BYTES} bytes")
@@ -254,7 +269,11 @@ def _str_replace(
     rel = workspace.relative(file_path)
     record_file_change(rel, before=before, after=after, created=False)
     replaced = matches if replace_every else 1
-    return ToolResult(True, f"updated {rel} ({replaced} replacement{'s' if replaced != 1 else ''})")
+    note = " (ignored numbered read_file prefixes)" if stripped_numbers else ""
+    return ToolResult(
+        True,
+        f"updated {rel} ({replaced} replacement{'s' if replaced != 1 else ''}){note}",
+    )
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -305,16 +324,39 @@ def _search_walk(workspace: Workspace, query: str, glob: str | None) -> ToolResu
         if any(part in SKIP_DIR_NAMES for part in path.parts):
             continue
         try:
+            file_hits = 0
             for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
                 if query in line:
                     rel = workspace.relative(path)
                     hits.append(f"{rel}:{lineno}:{line.strip()}")
                     if len(hits) >= MAX_SEARCH_HITS:
                         return ToolResult(True, "\n".join(hits))
-                    break
+                    file_hits += 1
+                    if file_hits >= MAX_HITS_PER_FILE:
+                        break
         except (OSError, UnicodeDecodeError):
             continue
     return ToolResult(True, "\n".join(hits) if hits else "no matches")
+
+
+def _without_read_prefixes(text: str) -> str:
+    return _NUMBERED_READ_RE.sub("", text)
+
+
+def _nearby_hint(before: str, needle: str) -> str:
+    token = " ".join(needle.split())
+    token = _without_read_prefixes(token)[:48]
+    lines = before.splitlines()
+    if token:
+        hits = [
+            f"{index:>4}|{line}"
+            for index, line in enumerate(lines, start=1)
+            if token[:24] in line
+        ]
+        if hits:
+            return " Nearby lines:\n" + "\n".join(hits[:8])
+    preview = "\n".join(f"{index:>4}|{line}" for index, line in enumerate(lines[:12], start=1))
+    return f" File starts with:\n{preview}" if preview else ""
 
 
 def is_probably_secret_path(path: Path) -> bool:

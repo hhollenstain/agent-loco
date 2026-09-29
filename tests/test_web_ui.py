@@ -190,6 +190,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'data-main-pane="current"' in home.content
         assert b'data-main-pane="history"' in home.content
         assert b'id="current-run"' in home.content
+        assert b'id="running-chicken"' in home.content
+        assert b"function runningChickenHtml(" in home.content
+        assert b"function syncRunningChicken(" in home.content
         assert b'id="past-runs"' in home.content
         assert b'id="history-detail"' in home.content
         assert b'id="history-picker"' in home.content

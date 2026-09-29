@@ -1277,6 +1277,70 @@
       flex-direction: column;
       gap: 0.35rem;
     }
+    .progress-heading {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+    }
+    .progress-heading > label { margin: 0; flex: 0 0 auto; }
+    .running-chicken {
+      flex: 1 1 auto;
+      min-width: 4.5rem;
+      height: 2.7rem;
+      overflow: hidden;
+      position: relative;
+      pointer-events: none;
+    }
+    .running-chicken svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 3.5rem;
+      height: 2.7rem;
+      overflow: visible;
+      animation: chicken-sprint 1.7s linear infinite;
+    }
+    .chicken-body { transform-origin: 22px 28px; animation: chicken-wobble 0.28s ease-in-out infinite; }
+    .chicken-wing { transform-origin: 24px 26px; animation: chicken-flap 0.14s ease-in-out infinite; }
+    .chicken-leg-front { transform-origin: 20px 36px; animation: chicken-kick 0.16s linear infinite; }
+    .chicken-leg-back { transform-origin: 28px 36px; animation: chicken-kick 0.16s linear infinite reverse; }
+    .chicken-bawk {
+      transform-origin: 48px 10px;
+      animation: chicken-bawk 1.1s ease-in-out infinite;
+    }
+    @keyframes chicken-sprint {
+      0% { left: 0; transform: scaleX(1); }
+      46% { left: calc(100% - 3.5rem); transform: scaleX(1); }
+      50% { left: calc(100% - 3.5rem); transform: scaleX(-1); }
+      96% { left: 0; transform: scaleX(-1); }
+      100% { left: 0; transform: scaleX(1); }
+    }
+    @keyframes chicken-wobble {
+      0%, 100% { transform: rotate(-14deg) translateY(0) scale(1, 1); }
+      30% { transform: rotate(16deg) translateY(-6px) scale(1.08, 0.9); }
+      60% { transform: rotate(-22deg) translateY(3px) scale(0.92, 1.12); }
+    }
+    @keyframes chicken-flap {
+      from { transform: rotate(-50deg); }
+      to { transform: rotate(55deg); }
+    }
+    @keyframes chicken-kick {
+      from { transform: rotate(-40deg); }
+      to { transform: rotate(35deg); }
+    }
+    @keyframes chicken-bawk {
+      0%, 55%, 100% { opacity: 0; transform: scale(0.2) translateY(4px); }
+      62%, 78% { opacity: 1; transform: scale(1) translateY(-2px) rotate(-8deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .running-chicken svg,
+      .chicken-body,
+      .chicken-wing,
+      .chicken-leg-front,
+      .chicken-leg-back,
+      .chicken-bawk { animation: none; }
+      .running-chicken svg { left: 0.2rem; }
+    }
     .progress-bar {
       display: flex;
       flex-wrap: wrap;
@@ -3969,6 +4033,44 @@
       return event.message || event.kind || "event";
     }
 
+    function runningChickenHtml() {
+      return `<div id="running-chicken" class="running-chicken" aria-hidden="true" title="Agent is running">
+        <svg viewBox="0 0 64 44" role="img">
+          <g class="chicken-body">
+            <path d="M14 24 Q4 16 6 28 Q10 34 16 28" fill="#e24b4b"/>
+            <ellipse cx="24" cy="26" rx="12" ry="9" fill="#f0d264"/>
+            <g class="chicken-wing">
+              <ellipse cx="22" cy="26" rx="8" ry="5" fill="#e2b84a"/>
+            </g>
+            <circle cx="34" cy="18" r="7" fill="#f0d264"/>
+            <path d="M30 12 l3 -9 l3 8 l4 -7 l2 9" fill="#e24b4b"/>
+            <polygon points="40,17 50,20 40,24" fill="#f08a3a"/>
+            <circle cx="36.5" cy="16.5" r="2.2" fill="#fff7d6"/>
+            <circle cx="37.2" cy="16.5" r="1.1" fill="#1a1a12"/>
+            <g class="chicken-leg-back">
+              <path d="M26 34 L31 42 L34 41" stroke="#e07a32" stroke-width="2" fill="none" stroke-linecap="round"/>
+            </g>
+            <g class="chicken-leg-front">
+              <path d="M20 34 L15 42 L12 41" stroke="#e07a32" stroke-width="2" fill="none" stroke-linecap="round"/>
+            </g>
+            <g class="chicken-bawk">
+              <rect x="42" y="1" width="21" height="11" rx="3" fill="#1a1f18" stroke="#f0d264" stroke-width="1"/>
+              <text x="52.5" y="9" text-anchor="middle" font-size="6" font-weight="700" fill="#f0d264">BAWK</text>
+            </g>
+          </g>
+        </svg>
+      </div>`;
+    }
+
+    function syncRunningChicken(root, running) {
+      if (!root) return;
+      const heading = root.querySelector(".progress-heading");
+      if (!heading) return;
+      const hen = heading.querySelector("#running-chicken");
+      if (running && !hen) heading.insertAdjacentHTML("beforeend", runningChickenHtml());
+      else if (!running && hen) hen.remove();
+    }
+
     function renderProgress(item, { running = false } = {}) {
       const events = item.events || [];
       const logs = (item.logs || []).join("\n");
@@ -4240,10 +4342,14 @@
         if (body && lastProgressHtml !== progressHtml) {
           body.innerHTML = progressHtml;
         }
+        syncRunningChicken(root, live);
       } else {
         target.innerHTML = `
           <div data-progress-root data-item-key="${escapeHtml(itemKey)}">
-            <label>Progress</label>
+            <div class="progress-heading">
+              <label>Progress</label>
+              ${live ? runningChickenHtml() : ""}
+            </div>
             <p class="meta" data-progress-meta>${escapeHtml(metaText)}</p>
             <div class="progress-pr" data-progress-pr>${prHtml}</div>
             <div data-progress-body>${progressHtml}</div>

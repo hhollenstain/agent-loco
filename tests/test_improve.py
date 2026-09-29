@@ -110,6 +110,18 @@ def test_cycle_skips_commit_when_tests_still_fail(tmp_path: Path, settings: Sett
     assert failed
     assert any("NotImplementedError" in (event.get("output") or "") for event in failed)
     assert any(event.get("phase") == "after" for event in tests)
+    assert not any(event.get("phase") == "before" for event in tests)
+
+
+def test_cycle_skips_before_tests_when_a_goal_is_given(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _broken_project(tmp_path)
+    llm = ScriptedClient([AssistantTurn(text="I looked around and stopped.")])
+    result = run_cycle(tmp_path, settings, llm, goal="Make the adder work")
+    phases = [event.get("phase") for event in result.events if event["kind"] == "test"]
+    assert "before" not in phases
+    assert "after" in phases
 
 
 def test_no_create_pr_flag_wins_over_project_config(tmp_path: Path, settings: Settings) -> None:
