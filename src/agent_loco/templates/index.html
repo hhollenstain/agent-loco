@@ -425,12 +425,20 @@
       width: min(48rem, 100%);
       max-height: min(32rem, 92vh);
       overflow: hidden;
+      padding: 0.65rem;
+      box-sizing: border-box;
+      gap: 0;
     }
-    .live-console-head {
+    #live-console .live-console-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.6rem;
+      gap: 1rem;
+    }
+    #live-console .live-console-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
     }
     .live-console-head .connection-status {
       display: flex;
@@ -2122,14 +2130,10 @@
     <div class="modal">
       <div class="live-console-head">
         <h2 id="live-console-title">Live console</h2>
-        <button type="button" class="secondary" id="close-live-console">Close</button>
-      </div>
-      <div class="live-console-head">
-        <span class="connection-status">
-          <span class="status-dot disconnected" id="console-status-dot"></span>
-          <span class="status-text" id="console-status-text">Disconnected</span>
-        </span>
-        <button type="button" class="secondary" id="clear-console">Clear</button>
+        <div class="live-console-actions">
+          <button type="button" class="secondary" id="close-live-console">Close</button>
+          <button type="button" class="secondary" id="clear-console">Clear</button>
+        </div>
       </div>
       <div class="live-console-output" id="live-console-output"></div>
       <p class="hint">Agent and LLM server traffic for the current task.</p>
