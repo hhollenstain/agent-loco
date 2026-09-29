@@ -431,11 +431,14 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
             if messages and response:
                 # LLM interaction details
                 parts.append(f" {status} LLM ({purpose})")
-                parts.append(f"  ↓ {len(messages) if isinstance(messages, list) else 'msg'} messages")
-                # Show message exchanges
+                count = len(messages) if isinstance(messages, list) else "msg"
+                parts.append(f"  ↓ {count} messages")
                 if isinstance(messages, list) and len(messages) > 0:
-                    for i, msg in enumerate(messages[:3]):  # Show first 3 messages
-                        role = msg.get("role", "unknown")[:3] if isinstance(msg, dict) else str(msg)[:20]
+                    for i, msg in enumerate(messages[:3]):
+                        if isinstance(msg, dict):
+                            role = str(msg.get("role", "unknown"))[:3]
+                        else:
+                            role = str(msg)[:20]
                         parts.append(f"  → [{i+1}] {role}")
                     if len(messages) > 3:
                         all_lines.append(" ".join(parts))

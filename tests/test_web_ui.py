@@ -280,7 +280,11 @@ def test_finished_task_records_start_and_finish_times(
         for _ in range(50):
             listed = client.get("/api/tasks").json()
             match = next((item for item in listed if item["id"] == task_id), None)
-            if match and match["status"] not in {"queued", "running"}:
+            if (
+                match
+                and match["status"] not in {"queued", "running"}
+                and match["finished_at"]
+            ):
                 body = match
                 break
             time.sleep(0.05)
