@@ -239,6 +239,33 @@ def test_run_log_paths_are_runtime_artifacts() -> None:
     assert not is_runtime_artifact("loco/runs/cycle.json")
 
 
+def test_tool_caches_are_runtime_artifacts() -> None:
+    assert is_runtime_artifact("__pycache__/app.cpython-312.pyc")
+    assert is_runtime_artifact("src/pkg/__pycache__/mod.cpython-312.pyc")
+    assert is_runtime_artifact(".pytest_cache/v/cache/nodeids")
+    assert is_runtime_artifact(".ruff_cache/CACHEDIR.TAG")
+    assert is_runtime_artifact("build/mod.pyc")
+    assert not is_runtime_artifact("src/pkg/mod.py")
+    assert not is_runtime_artifact("docs/pycache_notes.md")
+
+
+def test_bytecode_left_by_the_test_command_is_not_project_work(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    cache = tmp_path / "__pycache__"
+    cache.mkdir()
+    (cache / "app.cpython-312.pyc").write_bytes(b"\x00")
+    assert not has_changes(workspace)
+    (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    assert has_changes(workspace)
+    result = commit_changes(workspace, "change app")
+    assert result.ok
+    tracked = run_git(workspace, ["ls-files"]).stdout.split()
+    assert "app.py" in tracked
+    assert not any(path.startswith("__pycache__/") for path in tracked)
+
+
 def test_commit_happy_path(tmp_path: Path) -> None:
     (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
     init_git_repo(tmp_path)

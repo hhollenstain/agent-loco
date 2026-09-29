@@ -303,12 +303,20 @@ def _git_log(workspace: Workspace, limit: int) -> ToolResult:
     return ToolResult(result.returncode == 0, _output(result))
 
 
+_TOOL_CACHE_DIRS = frozenset({"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"})
+
+
 def is_runtime_artifact(path: Path | str) -> bool:
-    """Local loco state and cycle logs are telemetry, not project work."""
+    """Local loco state, cycle logs, and caches left by the test command are not project work."""
     posix = _posix_rel(path)
     if posix == "history.json":
         return True
-    return posix == ".loco" or posix.startswith(".loco/")
+    if posix == ".loco" or posix.startswith(".loco/"):
+        return True
+    parts = posix.split("/")
+    if any(part in _TOOL_CACHE_DIRS for part in parts):
+        return True
+    return parts[-1].endswith((".pyc", ".pyo"))
 
 
 def has_changes(workspace: Workspace) -> bool:
