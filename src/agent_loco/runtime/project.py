@@ -26,6 +26,7 @@ class ProjectConfig:
     goals_file: str
     max_repair_attempts: int
     preview_command: str | None = None
+    is_git: bool = False
 
 
 def load_project(root: Path) -> ProjectConfig:
@@ -44,18 +45,24 @@ def load_project(root: Path) -> ProjectConfig:
 
     configured = raw.get("test_command")
     test_command = str(configured) if configured else infer_test_command(root)
+    is_git = _is_git_repository(root)
+    publish_enabled = (
+        bool(publish["enabled"]) if "enabled" in publish else is_git
+    )
+    create_pr = bool(publish["create_pr"]) if "create_pr" in publish else is_git
     return ProjectConfig(
         name=str(raw.get("name") or root.name),
         root=root,
         test_command=test_command,
         setup_command=raw.get("setup_command"),
-        publish_enabled=bool(publish.get("enabled", False)),
+        publish_enabled=publish_enabled,
         publish_remote=str(publish.get("remote") or "origin"),
         publish_branch=publish.get("branch"),
-        create_pr=bool(publish.get("create_pr", False)),
+        create_pr=create_pr,
         goals_file=str(raw.get("goals_file") or "goals.md"),
         max_repair_attempts=_max_repair_attempts(raw.get("max_repair_attempts")),
         preview_command=str(raw["preview_command"]) if raw.get("preview_command") else None,
+        is_git=is_git,
     )
 
 
@@ -152,16 +159,18 @@ def write_default_project_files(root: Path) -> list[Path]:
 
     config_path = loco / "config.yaml"
     if not config_path.exists():
+        is_git = _is_git_repository(root)
         test_command = infer_test_command(root) or "pytest -q"
+        publish_on = "true" if is_git else "false"
         config_path.write_text(
             (
                 f"name: {root.name}\n"
                 f"test_command: {test_command}\n"
                 f"max_repair_attempts: {DEFAULT_MAX_REPAIR_ATTEMPTS}\n"
                 "publish:\n"
-                "  enabled: false\n"
+                f"  enabled: {publish_on}\n"
                 "  remote: origin\n"
-                "  create_pr: false\n"
+                f"  create_pr: {publish_on}\n"
                 "goals_file: goals.md\n"
                 "skills:\n"
                 "  enabled:\n"
@@ -292,6 +301,7 @@ def collect_context(
         f"Root: {root}",
         f"Test command: {project.test_command or '(none)'}",
         f"Create PR: {'on' if publish_on else 'off'} via {project.publish_remote}"
+        + (" (git repo)" if project.is_git else ""),
         " (never pushes to main)",
     ]
     goals = load_goals(root, project.goals_file)
@@ -328,6 +338,10 @@ def render_tree(root: Path, *, max_entries: int = 80, max_depth: int = 3) -> str
 
     walk(root, "", 1)
     return "\n".join(lines)
+
+
+def _is_git_repository(root: Path) -> bool:
+    return (root / ".git").exists()
 
 
 def _makefile_has_target(path: Path, target: str) -> bool:

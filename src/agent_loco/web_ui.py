@@ -184,9 +184,13 @@ class UiState:
         )
         self.default_goal = default_goal or ""
         self.default_auto_commit = manager.settings.auto_commit
-        self.default_create_pr = bool(
-            default_create_pr if default_create_pr is not None else manager.settings.create_pr
-        )
+        if default_create_pr is not None:
+            self.default_create_pr = bool(default_create_pr)
+        else:
+            workspace = Path(self.default_workspace)
+            self.default_create_pr = bool(
+                manager.settings.create_pr or (workspace / ".git").exists()
+            )
 
     def known_servers(self) -> list[dict[str, str]]:
         return list_known_servers(

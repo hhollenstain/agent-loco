@@ -103,6 +103,20 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
     assert "You are loco" in guidelines.read_text(encoding="utf-8")
     config = (tmp_path / ".loco" / "config.yaml").read_text(encoding="utf-8")
     assert "max_repair_attempts: 4" in config
+    assert "enabled: false" in config
+    assert "create_pr: false" in config
+
+
+def test_init_enables_publish_for_a_git_repo(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    write_default_project_files(tmp_path)
+    config = (tmp_path / ".loco" / "config.yaml").read_text(encoding="utf-8")
+    assert "enabled: true" in config
+    assert "create_pr: true" in config
+    project = load_project(tmp_path)
+    assert project.is_git is True
+    assert project.publish_enabled is True
+    assert project.create_pr is True
 
 
 def test_guidelines_default_until_overridden(tmp_path: Path) -> None:

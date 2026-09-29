@@ -101,7 +101,7 @@ def resolve_create_pr(
     project: ProjectConfig,
     cli_create_pr: bool | None = None,
 ) -> bool:
-    """`--no-create-pr` always wins. Otherwise CLI, env, or project config can enable it."""
+    """`--no-create-pr` always wins. Otherwise CLI, settings, or a git repo can enable it."""
     if cli_create_pr is False:
         return False
     if cli_create_pr is True:
