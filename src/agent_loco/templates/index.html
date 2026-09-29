@@ -468,15 +468,38 @@
     .live-console-output .log-status { font-weight: 700; margin-right: 0.35rem; }
     .live-console-output .log-ok { color: var(--ok); }
     .live-console-output .log-fail { color: var(--bad); }
-    .live-console-output .log-purpose { color: var(--primary); font-weight: 600; }
-    .live-console-output .log-action { color: var(--secondary); }
+    .live-console-output .log-purpose { color: var(--accent); font-weight: 600; }
+    .live-console-output .log-action { color: var(--queued); }
     .live-console-output .log-path { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); }
     .live-console-output .log-diff { color: var(--muted); }
-    .live-console-output .log-phase { color: var(--primary); }
+    .live-console-output .log-phase { color: var(--accent); }
     .live-console-output .log-command { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
     .live-console-output .log-message { color: var(--ink); }
-    .live-console-output .log-url a { color: var(--primary); text-decoration: underline; }
+    .live-console-output .log-url a { color: var(--accent); text-decoration: underline; }
     .live-console-output .log-time { color: var(--muted); }
+    .live-console-output .log-chat {
+      margin: 0.2rem 0 0.25rem 0.15rem;
+      padding: 0.25rem 0.45rem;
+      border-left: 2px solid transparent;
+      border-radius: 0 3px 3px 0;
+    }
+    .live-console-output .log-agent {
+      color: var(--queued);
+      border-left-color: var(--queued);
+      background: color-mix(in srgb, var(--queued) 12%, transparent);
+    }
+    .live-console-output .log-model {
+      color: var(--accent);
+      border-left-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+    .live-console-output .log-speaker {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.68em;
+      letter-spacing: 0.04em;
+      margin-right: 0.45rem;
+    }
     #skills-panel .sidebar-overlay-body {
       display: flex;
       flex-direction: column;
@@ -3150,77 +3173,84 @@
         } catch (exc) {
           return;
         }
-        const line = data && data.line ? String(data.line) : "";
-        if (!line || !outputEl) return;
-        const entry = document.createElement("div");
-        entry.className = "log-entry";
-
-        // Parse event-based logs to show rich LLM/agent back-and-forth
-        if (data.kind) {
-          const kind = data.kind;
-          const at = data.at || "";
-          const purpose = data.purpose || "";
-          const elapsed = data.elapsed_ms;
-          const ok = data.ok;
-          const path = data.path || "";
-          const action = data.action || "";
-          const diff = data.net_diff || data.diff || "";
-          const command = data.command || "";
-          const test_ok = data.ok ?? ok;
-          const phase = data.phase || "";
-          const message = data.message || "";
-          const url = data.url || "";
-
-          let html = `<span class="log-timestamp">[${at}]</span>`;
-          let status = "";
-
-          if (kind === "llm") {
-            status = ok ? "✓" : "✗";
-            const elapsedStr = elapsed ? formatElapsed(elapsed / 1000) : "";
-            html += `<span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> LLM (<span class="log-purpose">${escapeHtml(purpose)}</span>)${elapsedStr ? ` in <span class="log-time">${elapsedStr}</span>` : ""}`;
-            entry.innerHTML = html;
-          } else if (kind === "file") {
-            const diffPreview = diff ? escapeHtml(diff.replace("\n", " ").trim().slice(0, 80)) + (diff.length > 80 ? "…" : "") : "";
-            html += ` <span class="log-action">${escapeHtml(action)}</span> <span class="log-path">${escapeHtml(path)}</span>${diffPreview ? ` [<span class="log-diff">${diffPreview}</span>]` : ""}`;
-            entry.innerHTML = html;
-          } else if (kind === "test") {
-            status = test_ok ? "✓" : "✗";
-            let testInfo = "";
-            if (command) {
-              const cmdDisplay = escapeHtml(command.slice(0, 50)) + (command.length > 50 ? "…" : "");
-              testInfo = ` test (<span class="log-command">${cmdDisplay}</span>)`;
-            } else if (phase) {
-              testInfo = ` <span class="log-phase">${escapeHtml(phase)}</span> tests`;
-            } else {
-              testInfo = " test run";
-            }
-            html += ` <span class="log-status ${test_ok ? "log-ok" : "log-fail"}">${status}</span>${testInfo}`;
-            entry.innerHTML = html;
-          } else if (kind === "step") {
-            html += message ? ` → ${escapeHtml(message)}` : ` step at <span class="log-time">${escapeHtml(at)}</span>`;
-            entry.innerHTML = html;
-          } else if (kind === "pr") {
-            status = ok ? "✓" : "✗";
-            html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> PR:`;
-            if (url) {
-              html += ` <span class="log-url"><a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a></span>`;
-            } else if (message) {
-              html += ` <span class="log-message">${escapeHtml(message)}</span>`;
-            } else {
-              html += ` PR created`;
-            }
-            entry.innerHTML = html;
-          } else if (message) {
-            html += ` ${escapeHtml(message)}`;
-            entry.innerHTML = html;
-          }
-        } else {
-          entry.textContent = line;
-        }
-
-        outputEl.appendChild(entry);
-        outputEl.scrollTop = outputEl.scrollHeight;
+        appendConsoleEntry(data);
       };
+    }
+
+    function appendConsoleEntry(data) {
+      const outputEl = document.getElementById("live-console-output");
+      if (!data || !outputEl) return;
+      const entry = document.createElement("div");
+      entry.className = "log-entry";
+      if (data.kind) {
+        const kind = data.kind;
+        const at = data.at || "";
+        const purpose = data.purpose || "";
+        const elapsed = data.elapsed_ms;
+        const ok = data.ok;
+        const path = data.path || "";
+        const action = data.action || "";
+        const diff = data.net_diff || data.diff || "";
+        const command = data.command || "";
+        const phase = data.phase || "";
+        const message = data.message || "";
+        const url = data.url || "";
+        let html = `<span class="log-timestamp">[${escapeHtml(at)}]</span>`;
+        if (kind === "llm") {
+          const status = ok ? "✓" : "✗";
+          const elapsedStr = elapsed ? formatElapsed(elapsed / 1000) : "";
+          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> LLM (<span class="log-purpose">${escapeHtml(purpose)}</span>)`;
+          if (elapsedStr) html += ` <span class="log-time">${elapsedStr}</span>`;
+          if (data.agent) {
+            html += `<div class="log-chat log-agent"><span class="log-speaker">agent</span> ${escapeHtml(data.agent)}</div>`;
+          }
+          if (data.model) {
+            html += `<div class="log-chat log-model"><span class="log-speaker">model</span> ${escapeHtml(data.model)}</div>`;
+          }
+        } else if (kind === "file") {
+          const diffPreview = diff
+            ? escapeHtml(String(diff).replace("\n", " ").trim().slice(0, 80)) + (String(diff).length > 80 ? "…" : "")
+            : "";
+          html += ` <span class="log-action">${escapeHtml(action)}</span> <span class="log-path">${escapeHtml(path)}</span>`;
+          if (diffPreview) html += ` [<span class="log-diff">${diffPreview}</span>]`;
+        } else if (kind === "test") {
+          const status = ok ? "✓" : "✗";
+          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span>`;
+          if (command) {
+            const cmdDisplay = escapeHtml(String(command).slice(0, 50)) + (String(command).length > 50 ? "…" : "");
+            html += ` test (<span class="log-command">${cmdDisplay}</span>)`;
+          } else if (phase) {
+            html += ` <span class="log-phase">${escapeHtml(phase)}</span> tests`;
+          } else {
+            html += " test run";
+          }
+        } else if (kind === "step") {
+          if (message) {
+            html += `<div class="log-chat log-agent"><span class="log-speaker">agent</span> ${escapeHtml(message)}</div>`;
+          } else {
+            html += ` step at <span class="log-time">${escapeHtml(at)}</span>`;
+          }
+        } else if (kind === "pr") {
+          const status = ok ? "✓" : "✗";
+          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> PR:`;
+          if (url) {
+            html += ` <span class="log-url"><a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a></span>`;
+          } else if (message) {
+            html += ` <span class="log-message">${escapeHtml(message)}</span>`;
+          } else {
+            html += " PR created";
+          }
+        } else if (message) {
+          html += ` ${escapeHtml(message)}`;
+        }
+        entry.innerHTML = html;
+      } else if (data.line) {
+        entry.textContent = String(data.line);
+      } else {
+        return;
+      }
+      outputEl.appendChild(entry);
+      outputEl.scrollTop = outputEl.scrollHeight;
     }
 
     function formatElapsed(seconds) {
