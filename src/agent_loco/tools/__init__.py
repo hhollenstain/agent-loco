@@ -33,12 +33,12 @@ def build_tools(
 def execute_tool(tools: list[ToolSpec], name: str, arguments: dict) -> ToolResult:
     spec = next((tool for tool in tools if tool.name == name), None)
     if spec is None:
-        return ToolResult(False, f"unknown tool: {name}")
+        return ToolResult(False, f"unknown tool: {name}", "")
     try:
         return spec.handler(**arguments)
     except SandboxError as exc:
-        return ToolResult(False, str(exc))
+        return ToolResult(False, str(exc), "")
     except TypeError as exc:
-        return ToolResult(False, f"invalid arguments for {name}: {exc}")
+        return ToolResult(False, f"invalid arguments for {name}: {exc}", "")
     except Exception as exc:  # noqa: BLE001 - tool errors must stay in-band
-        return ToolResult(False, f"{name} failed: {exc}")
+        return ToolResult(False, f"{name} failed: {exc}", "")

@@ -129,6 +129,7 @@ class AgentResult:
     iterations: int
     tool_calls: int
     stopped_reason: str
+    last_error: str | None = None
 
 
 class CodingAgent:
@@ -172,6 +173,7 @@ class CodingAgent:
         inspect_rounds = 0
 
         last_text = ""
+        last_error: str | None = None
         for iteration in range(1, self.max_iterations + 1):
             turn = timed_complete(self.llm, messages, schemas, purpose="agent")
             last_text = turn.text or last_text
@@ -192,6 +194,8 @@ class CodingAgent:
                     result = execute_tool(self.tools, call.name, call.arguments)
                     log.info("tool %s ok=%s", call.name, result.ok)
                     log.debug("%s args=%s", call.name, call.arguments)
+                    if not result.ok:
+                        last_error = result.stdout[:200] if hasattr(result, "stdout") else str(result)[:200]
                     if call.name in MUTATING_TOOLS and result.ok:
                         mutated = True
                         wrote = True
@@ -270,6 +274,7 @@ class CodingAgent:
                 iterations=iteration,
                 tool_calls=tool_calls,
                 stopped_reason="completed",
+                last_error=last_error,
             )
 
         if mutated_ui and not verified_ui and "review_ui" in known_names:
@@ -295,6 +300,7 @@ class CodingAgent:
             iterations=self.max_iterations,
             tool_calls=tool_calls,
             stopped_reason="max_iterations",
+            last_error=last_error,
         )
 
 

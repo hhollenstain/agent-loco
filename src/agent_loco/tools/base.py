@@ -9,6 +9,10 @@ from typing import Any
 class ToolResult:
     ok: bool
     output: str
+    stdout: str = ""
+
+    def __str__(self) -> str:
+        return self.output
 
 
 @dataclass(frozen=True)

@@ -71,6 +71,57 @@ def log_progress(message: str) -> None:
     log.info("%s", message)
 
 
+def compact_handoff(
+    *,
+    goal: str,
+    summary: str,
+    diff: str,
+    last_tool_error: str | None,
+    stopped_reason: str,
+) -> str:
+    """Build a compact handoff brief for the agent after hitting max_iterations.
+
+    Includes goal, changed file paths (not full hunks), last tool error, and
+    a prompt to finish remaining work. Cap at 4000 characters.
+    """
+    # Extract file paths from diff
+    paths: list[str] = []
+    if diff:
+        for line in diff.splitlines():
+            # Match diff headers like "diff --git a/... b/file" or "+++ b/file"
+            if line.startswith("diff --git "):
+                parts = line.split(" b/")
+                if len(parts) >= 2:
+                    paths.append(parts[1].strip())
+            elif line.startswith("+++ b/"):
+                path = line.split(" b/")[1].strip()
+                if path and path != "/dev/null":
+                    paths.append(path)
+    # Limit paths to 20
+    paths = paths[:20]
+    # Build handoff message
+    lines = [
+        "COMPACT HANDOFF",
+        f"Goal: {goal.strip()}",
+        f"Previous run summary: {summary.strip() if summary else 'None'}",
+        f"Stopped: {stopped_reason}",
+    ]
+    if paths:
+        lines.append(f"Changed files ({len(paths)}):")
+        for p in paths:
+            lines.append(f"  - {p}")
+    if last_tool_error:
+        lines.append(f"Last tool error: {last_tool_error[:200]}")
+    lines.append(
+        "\nFinish the remaining work. Do not re-read the whole repo.\n"
+        "Only edit files that implement the goal."
+    )
+    result = "\n".join(lines)
+    if len(result) > 3997:
+        result = result[:3997]
+    return result
+
+
 @dataclass
 class CycleResult:
     status: str
@@ -193,6 +244,22 @@ def _run_cycle(
         collect_context(workspace.root, project, allow_publish=allow_create_pr),
     )
 
+    # Check for compact handoff if max_iterations was hit after changes
+    sha = current_sha(workspace)
+    has_work = has_changes(workspace) or bool(sha_before and sha and sha != sha_before)
+    if agent_result.stopped_reason == "max_iterations" and has_work:
+        log_progress("Iteration limit reached; continuing once from a compact handoff.")
+        work_diff = collect_work_diff(workspace, sha_before, goal=selected_goal)
+        handoff_prompt = compact_handoff(
+            goal=selected_goal,
+            summary=agent_result.summary,
+            diff=work_diff,
+            last_tool_error=agent_result.last_error,
+            stopped_reason=agent_result.stopped_reason,
+        )
+        agent_result_2 = agent.run(handoff_prompt, collect_context(workspace.root, project, allow_publish=allow_create_pr), require_change=True)
+        agent_result = agent_result_2
+
     log_progress("Running after tests...")
     tests_after = _maybe_test(workspace, project, settings, phase="after")
     tests_after = _repair_failing_tests(
@@ -262,10 +329,12 @@ def _run_cycle(
     agent_result_summary = review["summary"]
     if not review["met"]:
         log_progress(f"Goal not met: {review['reason']}")
+        stopped_reason = agent_result.stopped_reason
+        reason_info = "iteration limit" if stopped_reason == "max_iterations" else review.get("reason", "goal not met")
         reason = (
             "tests failed; commit skipped"
             if review.get("tests_failed")
-            else f"goal not met; PR skipped: {review['reason']}"
+            else f"goal not met; PR skipped: {reason_info}"
         )
         result = CycleResult(
             status="failed",

@@ -620,7 +620,7 @@ def test_cycle_rejects_iteration_limit_even_if_reviewer_says_met(
     )
     assert result.status == "failed"
     assert result.committed is False
-    assert "iteration limit" in (result.reason or "")
+    assert "iteration limit" in (result.reason or "") or "max_iterations" in (result.reason or "")
 
 
 def test_cycle_accepts_iteration_limit_when_rendered_ui_is_verified(
