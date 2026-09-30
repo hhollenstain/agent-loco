@@ -103,6 +103,25 @@ def test_live_task_logs_follow_the_running_task(settings: Settings, tmp_path: Pa
         manager.shutdown(wait=False)
 
 
+def test_serve_returns_after_keyboard_interrupt(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent_loco.web_ui import serve
+
+    captured: dict[str, int | None] = {}
+
+    class FakeServer:
+        def __init__(self, config: object) -> None:
+            captured["timeout"] = getattr(config, "timeout_graceful_shutdown", None)
+
+        def run(self) -> None:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("agent_loco.web_ui.uvicorn.Server", FakeServer)
+    serve(tmp_path, settings, host="127.0.0.1", port=8765)
+    assert captured["timeout"] == 1
+
+
 def test_console_event_payload_splits_agent_and_model() -> None:
     from agent_loco.web_ui import _console_event_payload
 

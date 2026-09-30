@@ -606,26 +606,29 @@ def create_app(
             seen_id = ""
             seen_events = 0
             seen_logs = 0
-            while True:
-                if await request.is_disconnected():
-                    return
-                task = _live_task(manager)
-                task_id = task.id if task else ""
-                if task_id != seen_id:
-                    seen_id = task_id
-                    seen_events = 0
-                    seen_logs = 0
-                if task is not None:
-                    events = list(task.events)
-                    for event in events[seen_events:]:
-                        yield f"data: {json.dumps(_console_event_payload(event))}\n\n"
-                    seen_events = len(events)
-                    logs = list(task.logs)
-                    for line in logs[seen_logs:]:
-                        yield f"data: {json.dumps({'line': line})}\n\n"
-                    seen_logs = len(logs)
-                yield ": heartbeat\n\n"
-                await asyncio.sleep(0.4)
+            try:
+                while True:
+                    if await request.is_disconnected():
+                        return
+                    task = _live_task(manager)
+                    task_id = task.id if task else ""
+                    if task_id != seen_id:
+                        seen_id = task_id
+                        seen_events = 0
+                        seen_logs = 0
+                    if task is not None:
+                        events = list(task.events)
+                        for event in events[seen_events:]:
+                            yield f"data: {json.dumps(_console_event_payload(event))}\n\n"
+                        seen_events = len(events)
+                        logs = list(task.logs)
+                        for line in logs[seen_logs:]:
+                            yield f"data: {json.dumps({'line': line})}\n\n"
+                        seen_logs = len(logs)
+                    yield ": heartbeat\n\n"
+                    await asyncio.sleep(0.4)
+            except asyncio.CancelledError:
+                return
 
         return StreamingResponse(
             event_stream(),
@@ -1095,7 +1098,17 @@ def serve(
         default_goal=default_goal,
         default_create_pr=default_create_pr,
     )
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        timeout_graceful_shutdown=1,
+    )
+    server = uvicorn.Server(config)
     try:
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        server.run()
+    except KeyboardInterrupt:
+        pass
     finally:
         manager.shutdown(wait=False)
