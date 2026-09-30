@@ -106,7 +106,7 @@ def test_enable_skill_injects_into_system_prompt_and_context(tmp_path: Path) -> 
     assert "red" in prompt.lower()
     project = load_project(tmp_path)
     context = collect_context(tmp_path, project)
-    assert "Enabled skills: tdd, ui" in context
+    assert "Enabled skills: implement, tdd, ui" in context
     save_enabled_skills(tmp_path, [])
     assert enabled_skill_names(tmp_path) == []
     assert "Enabled skills" not in compose_system_prompt(tmp_path)

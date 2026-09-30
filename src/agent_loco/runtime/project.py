@@ -174,6 +174,7 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "goals_file: goals.md\n"
                 "skills:\n"
                 "  enabled:\n"
+                "    - implement\n"
                 "    - tdd\n"
                 "    - ui\n"
             ),
