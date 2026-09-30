@@ -61,6 +61,7 @@ from agent_loco.tools.git import (
     update_pull_request,
     upstream_state,
 )
+from agent_loco.tools.lint import run_project_lint
 from agent_loco.tools.tests import run_project_tests
 
 log = logging.getLogger("loco")
@@ -69,6 +70,57 @@ log = logging.getLogger("loco")
 def log_progress(message: str) -> None:
     record_event(kind="step", message=message)
     log.info("%s", message)
+
+
+def compact_handoff(
+    *,
+    goal: str,
+    summary: str,
+    diff: str,
+    last_tool_error: str | None,
+    stopped_reason: str,
+) -> str:
+    """Build a compact handoff brief for the agent after hitting max_iterations.
+
+    Includes goal, changed file paths (not full hunks), last tool error, and
+    a prompt to finish remaining work. Cap at 4000 characters.
+    """
+    # Extract file paths from diff
+    paths: list[str] = []
+    if diff:
+        for line in diff.splitlines():
+            # Match diff headers like "diff --git a/... b/file" or "+++ b/file"
+            if line.startswith("diff --git "):
+                parts = line.split(" b/")
+                if len(parts) >= 2:
+                    paths.append(parts[1].strip())
+            elif line.startswith("+++ b/"):
+                path = line.split(" b/")[1].strip()
+                if path and path != "/dev/null":
+                    paths.append(path)
+    # Limit paths to 20
+    paths = paths[:20]
+    # Build handoff message
+    lines = [
+        "COMPACT HANDOFF",
+        f"Goal: {goal.strip()}",
+        f"Previous run summary: {summary.strip() if summary else 'None'}",
+        f"Stopped: {stopped_reason}",
+    ]
+    if paths:
+        lines.append(f"Changed files ({len(paths)}):")
+        for p in paths:
+            lines.append(f"  - {p}")
+    if last_tool_error:
+        lines.append(f"Last tool error: {last_tool_error[:200]}")
+    lines.append(
+        "\nFinish the remaining work. Do not re-read the whole repo.\n"
+        "Only edit files that implement the goal."
+    )
+    result = "\n".join(lines)
+    if len(result) > 3997:
+        result = result[:3997]
+    return result
 
 
 @dataclass
@@ -170,6 +222,7 @@ def _run_cycle(
     tools = build_tools(
         workspace,
         test_command=project.test_command,
+        lint_command=project.lint_command,
         command_timeout_seconds=settings.command_timeout_seconds,
         git_author_name=settings.git_author_name,
         git_author_email=settings.git_author_email,
@@ -192,6 +245,26 @@ def _run_cycle(
         selected_goal,
         collect_context(workspace.root, project, allow_publish=allow_create_pr),
     )
+
+    # Check for compact handoff if max_iterations was hit after changes
+    sha = current_sha(workspace)
+    has_work = has_changes(workspace) or bool(sha_before and sha and sha != sha_before)
+    if agent_result.stopped_reason == "max_iterations" and has_work:
+        log_progress("Iteration limit reached; continuing once from a compact handoff.")
+        work_diff = collect_work_diff(workspace, sha_before, goal=selected_goal)
+        handoff_prompt = compact_handoff(
+            goal=selected_goal,
+            summary=agent_result.summary,
+            diff=work_diff,
+            last_tool_error=agent_result.last_error,
+            stopped_reason=agent_result.stopped_reason,
+        )
+        agent_result_2 = agent.run(
+            handoff_prompt,
+            collect_context(workspace.root, project, allow_publish=allow_create_pr),
+            require_change=True,
+        )
+        agent_result = agent_result_2
 
     log_progress("Running after tests...")
     tests_after = _maybe_test(workspace, project, settings, phase="after")
@@ -262,10 +335,15 @@ def _run_cycle(
     agent_result_summary = review["summary"]
     if not review["met"]:
         log_progress(f"Goal not met: {review['reason']}")
+        stopped_reason = agent_result.stopped_reason
+        if stopped_reason == "max_iterations":
+            reason_info = "iteration limit"
+        else:
+            reason_info = review.get("reason", "goal not met")
         reason = (
             "tests failed; commit skipped"
             if review.get("tests_failed")
-            else f"goal not met; PR skipped: {review['reason']}"
+            else f"goal not met; PR skipped: {reason_info}"
         )
         result = CycleResult(
             status="failed",
@@ -281,6 +359,30 @@ def _run_cycle(
         _append_to_history(workspace.root, result)
         return result
     agent_result.summary = agent_result_summary
+
+    log_progress("Running linter before publish...")
+    lint_after = _ensure_lint(
+        workspace,
+        project,
+        settings,
+        agent,
+        allow_create_pr=allow_create_pr,
+    )
+    if lint_after is not None and not lint_after.ok:
+        log_progress("Lint failed after repairs.")
+        result = CycleResult(
+            status="failed",
+            goal=selected_goal,
+            summary=agent_result.summary,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=current_sha(workspace),
+            reason="lint failed; commit skipped",
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return result
 
     log_progress("Goal confirmed; checking for publishable changes...")
     committed = False
@@ -1026,6 +1128,59 @@ def _maybe_test(
         settings.command_timeout_seconds,
         phase=phase,
     )
+
+
+def _lint_repair_prompt(output: str) -> str:
+    return (
+        "The linter failed after the last changes. Fix every reported error. "
+        "Ruff F401 means remove or use the unused import. E501 means wrap the "
+        "line to 100 characters or less. I001 means sort imports the way ruff "
+        "does. Do not disable the linter. Do not skip a finding. After edits, "
+        "the configured lint command must pass.\n\n"
+        f"{(output or '').strip()}"
+    )
+
+
+def _maybe_lint(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    *,
+    phase: str = "lint",
+):
+    if not project.lint_command:
+        return None
+    return run_project_lint(
+        workspace,
+        project.lint_command,
+        settings.command_timeout_seconds,
+        phase=phase,
+    )
+
+
+def _ensure_lint(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    agent: CodingAgent,
+    *,
+    allow_create_pr: bool,
+):
+    lint_after = _maybe_lint(workspace, project, settings, phase="after")
+    if lint_after is None or lint_after.ok:
+        return lint_after
+    context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    for attempt in range(project.max_repair_attempts):
+        log_progress(f"Lint repair {attempt + 1}/{project.max_repair_attempts}")
+        agent.run(
+            _lint_repair_prompt(lint_after.output),
+            context,
+            require_change=True,
+        )
+        lint_after = _maybe_lint(workspace, project, settings, phase="repair")
+        if lint_after is None or lint_after.ok:
+            break
+    return lint_after
 
 
 def _commit_message(goal: str, summary: str) -> str:

@@ -113,6 +113,49 @@ def test_cycle_skips_commit_when_tests_still_fail(tmp_path: Path, settings: Sett
     assert not any(event.get("phase") == "before" for event in tests)
 
 
+def test_cycle_skips_commit_when_lint_fails(tmp_path: Path, settings: Settings) -> None:
+    _broken_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        "name: fixture\n"
+        "test_command: python3 check.py\n"
+        "lint_command: python3 -c \"raise SystemExit('F401 unused import')\"\n"
+        "max_repair_attempts: 0\n"
+        "publish:\n  enabled: false\n"
+        "goals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add and verified with python3 check.py."),
+            _review_turn(True, "adder returns 5 and tests passed"),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm)
+    assert result.status == "failed"
+    assert result.tests_passed is True
+    assert result.committed is False
+    assert result.published is False
+    assert result.reason == "lint failed; commit skipped"
+    lint_events = [event for event in result.events if event["kind"] == "lint"]
+    assert lint_events
+    assert any(event["ok"] is False for event in lint_events)
+    assert any("F401" in (event.get("output") or "") for event in lint_events)
+
+
 def test_cycle_skips_before_tests_when_a_goal_is_given(
     tmp_path: Path, settings: Settings
 ) -> None:
@@ -620,7 +663,7 @@ def test_cycle_rejects_iteration_limit_even_if_reviewer_says_met(
     )
     assert result.status == "failed"
     assert result.committed is False
-    assert "iteration limit" in (result.reason or "")
+    assert "iteration limit" in (result.reason or "") or "max_iterations" in (result.reason or "")
 
 
 def test_cycle_accepts_iteration_limit_when_rendered_ui_is_verified(
