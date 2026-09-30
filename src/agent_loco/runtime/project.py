@@ -294,7 +294,19 @@ def collect_context(
     project: ProjectConfig,
     *,
     allow_publish: bool | None = None,
+    brief_context: bool = False,
 ) -> str:
+    """Collect workspace context or task brief.
+
+    Args:
+        root: Workspace root path
+        project: ProjectConfig
+        allow_publish: Override publish_enabled flag
+        brief_context: If True, use build_task_brief; otherwise use legacy collect_context
+    """
+    if brief_context:
+        from agent_loco.runtime.brief import build_task_brief
+        return build_task_brief(root, project.goals_file, project)
     publish_on = project.publish_enabled if allow_publish is None else allow_publish
     parts = [
         f"Project: {project.name}",
