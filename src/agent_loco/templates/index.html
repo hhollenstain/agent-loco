@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" href="/favicon.ico">
+  <link rel="icon" href="/favicon.ico" sizes="any" type="image/svg+xml">
   <title>loco — task runner</title>
   <link rel="stylesheet" href="/static/themes.css">
   <link rel="stylesheet" href="/static/layout.css">
@@ -1960,7 +1960,19 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-bar">
         <button type="button" class="secondary sidebar-toggle" id="toggle-sidebar" aria-controls="task-form" aria-expanded="true" title="Collapse sidebar">‹</button>
-        <h1 class="sidebar-title">loco</h1>
+        <a href="/" id="app-logo" aria-label="LoCO task runner" class="sidebar-logo">
+          <svg class="sidebar-logo-mark" viewBox="0 0 118 36" width="118" height="36" role="img" aria-hidden="true">
+            <title>LoCO</title>
+            <g transform="skewX(-8)">
+              <path class="logo-lo" d="M4 3.2h6.6v18.4H23v6.2H4z"/>
+              <path class="logo-lo" fill-rule="evenodd" d="M37.6 14.2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 4.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z"/>
+              <path class="logo-co" d="M76.2 8.4A14.6 14.6 0 1 0 76.2 27.2L71.3 23.1A8.2 8.2 0 1 1 71.3 12.5Z"/>
+              <path class="logo-co" fill-rule="evenodd" d="M98.2 3.2a14.6 14.6 0 1 0 0 29.2 14.6 14.6 0 0 0 0-29.2zm0 6.4a8.2 8.2 0 1 1 0 16.4 8.2 8.2 0 0 1 0-16.4z"/>
+            </g>
+            <rect class="logo-rail" x="8" y="33.2" width="26" height="1.5" rx="0.75"/>
+            <rect class="logo-rail" x="80" y="33.2" width="30" height="1.5" rx="0.75"/>
+          </svg>
+        </a>
         <div class="sidebar-tools">
           <button type="button" class="secondary" id="open-skills" aria-label="Manage skills" aria-expanded="false" aria-controls="skills-panel" title="Manage skills">
             <svg viewBox="0 0 24 24" aria-hidden="true">

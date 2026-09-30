@@ -61,12 +61,7 @@ from agent_loco.tools.git import extract_pr_url, pull_request_state
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
-FAVICON_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
-    '<rect width="16" height="16" rx="3" fill="#111111"/>'
-    '<circle cx="8" cy="8" r="4" fill="#7dba5d"/>'
-    "</svg>"
-)
+FAVICON_SVG = (STATIC_DIR / "favicon.svg").read_text(encoding="utf-8")
 
 
 _PR_STATE_TTL = 45.0
