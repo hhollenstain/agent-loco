@@ -141,6 +141,31 @@ def test_no_create_pr_flag_wins_over_project_config(tmp_path: Path, settings: Se
     assert resolve_create_pr(settings, project, cli_create_pr=True) is True
 
 
+def test_git_repo_defaults_to_creating_a_pr(tmp_path: Path, settings: Settings) -> None:
+    (tmp_path / ".git").mkdir()
+    project = load_project(tmp_path)
+    assert project.is_git is True
+    assert project.publish_enabled is True
+    assert resolve_create_pr(settings, project, cli_create_pr=None) is True
+    assert resolve_create_pr(settings, project, cli_create_pr=False) is False
+
+
+def test_explicit_publish_off_still_disables_pr_on_a_git_repo(
+    tmp_path: Path, settings: Settings
+) -> None:
+    (tmp_path / ".git").mkdir()
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text(
+        "name: fixture\npublish:\n  enabled: false\n",
+        encoding="utf-8",
+    )
+    project = load_project(tmp_path)
+    assert project.is_git is True
+    assert project.publish_enabled is False
+    assert resolve_create_pr(settings, project, cli_create_pr=None) is False
+
+
 def _green_project(root: Path) -> None:
     (root / "app.py").write_text(
         "def add(left, right):\n    return left + right\n",

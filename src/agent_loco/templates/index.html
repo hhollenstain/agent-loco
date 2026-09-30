@@ -2038,10 +2038,10 @@
       </div>
 
       <div class="checks">
-        <label style="text-transform:none;letter-spacing:0;margin:0">
+        <label>
           <input id="auto-commit" type="checkbox" {% if default_auto_commit %}checked{% endif %}> commit if tests pass
         </label>
-        <label style="text-transform:none;letter-spacing:0;margin:0">
+        <label>
           <input id="create-pr" type="checkbox" {% if default_create_pr %}checked{% endif %}> create pull request
         </label>
       </div>
@@ -2100,7 +2100,7 @@
         <div class="main-pane" role="tabpanel" id="current-run" data-main-pane="current" aria-labelledby="tab-current">
           <div class="tasks-toolbar">
             <div class="row">
-              <label style="margin:0">Tasks</label>
+              <label class="label-no-margin">Tasks</label>
               <span class="meta" id="counts"></span>
             </div>
             <div class="server-filter">
@@ -2119,7 +2119,7 @@
         <div class="main-pane" role="tabpanel" id="past-runs" data-main-pane="history" aria-labelledby="tab-history" hidden>
           <div class="history-toolbar">
             <div class="history-heading">
-              <label style="margin:0">Past run</label>
+              <label class="label-no-margin">Past run</label>
               <span class="meta" id="history-counts"></span>
             </div>
             <button type="button" class="secondary" id="open-history-picker" aria-expanded="false" aria-controls="history-picker">Browse runs</button>
@@ -2132,7 +2132,7 @@
               <button type="button" class="secondary" id="close-history-picker">Close</button>
             </div>
             <div class="search-row">
-              <label for="history-search" style="margin:0">Filter</label>
+              <label for="history-search" class="label-no-margin">Filter</label>
               <input id="history-search" type="text" placeholder="goal, status, summary, id">
               <button type="button" class="secondary" id="clear-search">Clear</button>
             </div>
@@ -2182,7 +2182,7 @@
         <label for="clone-name">Folder name</label>
         <input id="clone-name" type="text" spellcheck="false" placeholder="defaults to the repo name">
         <p class="hint">Creates a local checkout and a .loco workspace so you can run and open PRs from this machine.</p>
-        <div class="modal-actions" style="margin-top:0.65rem">
+        <div class="modal-actions modal-actions-no-top-margin">
           <button type="button" id="clone-repo">Clone</button>
           <button type="button" class="secondary" id="close-workspace-picker">Close</button>
         </div>
