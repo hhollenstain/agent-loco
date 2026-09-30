@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent_loco.agent.prompts import SYSTEM_PROMPT, user_prompt
@@ -70,6 +71,16 @@ VALIDATE_OPS_NUDGE = (
     "git clone, never docker clone. Do not bind-mount this app's .loco over "
     "/workspaces/.loco. init requires a directory that already exists."
 )
+RECOVERY_TWICE_NUDGE = (
+    "Tool {name} failed twice: {message}. Do not repeat the same arguments. "
+    "If this is str_replace, call read_file on {path}, copy a unique old_string "
+    "from the file body (not the N| prefix), then str_replace once."
+)
+RECOVERY_THREE_NUDGE = (
+    "Tool {name} failed three times in a row. "
+    "Search the workspace or list the directory to understand the current state "
+    "before trying again."
+)
 _UNFINISHED_RE = re.compile(
     r"(?is)("
     r"\blet me\b|"
@@ -124,6 +135,41 @@ def _tool_path(arguments: dict) -> str:
 
 
 @dataclass
+class FailureTracker:
+    """Track consecutive failures for recovery logic."""
+
+    consecutive_failures: int = 0
+    last_failed: str | None = None
+    failed_by_tool_path: dict[tuple[str, str], int] = field(
+        default_factory=lambda: defaultdict(int)
+    )
+    last_path: str | None = None
+
+    def reset(self) -> None:
+        self.consecutive_failures = 0
+        self.last_failed = None
+        self.failed_by_tool_path.clear()
+        self.last_path = None
+
+    def record_failure(self, tool_name: str, path: str, message: str) -> None:
+        """Record a tool failure, updating counters and tracking."""
+        self.consecutive_failures += 1
+        self.last_failed = message
+        self.last_path = path if path else None
+        key = (tool_name, path)
+        self.failed_by_tool_path[key] += 1
+
+    def get_same_tool_failures(self, tool_name: str, path: str) -> int:
+        """Get failure count for the same tool on the same path."""
+        key = (tool_name, path)
+        return self.failed_by_tool_path.get(key, 0)
+
+    def has_recovery_triggered(self) -> bool:
+        """Check if recovery should trigger (3 consecutive failures but not auto-read)."""
+        return self.consecutive_failures >= 3
+
+
+@dataclass
 class AgentResult:
     summary: str
     iterations: int
@@ -174,6 +220,8 @@ class CodingAgent:
 
         last_text = ""
         last_error: str | None = None
+        failure_tracker = FailureTracker()
+
         for iteration in range(1, self.max_iterations + 1):
             turn = timed_complete(self.llm, messages, schemas, purpose="agent")
             last_text = turn.text or last_text
@@ -196,22 +244,83 @@ class CodingAgent:
                     log.debug("%s args=%s", call.name, call.arguments)
                     if not result.ok:
                         last_error = (result.output or "")[:200]
-                    if call.name in MUTATING_TOOLS and result.ok:
-                        mutated = True
-                        wrote = True
-                        verified_tests = False
-                        tool_path = _tool_path(call.arguments)
-                        if _is_ui_path(tool_path):
-                            mutated_ui = True
-                            verified_ui = False
-                        if _is_ops_path(tool_path):
-                            mutated_ops = True
-                    elif call.name == "review_ui":
-                        verified_ui = bool(result.ok)
-                    elif call.name == "run_tests":
-                        verified_tests = bool(result.ok)
-                    elif call.name not in VERIFY_TOOLS:
-                        inspected = True
+                        # Track failure with path
+                        path = _tool_path(call.arguments)
+                        failure_tracker.record_failure(call.name, path, result.output or "")
+
+                        # Check for recovery trigger after 3 consecutive failures
+                        if failure_tracker.has_recovery_triggered():
+                            # Avoid auto-reading on a failed auto-read
+                            if call.name != "read_file" or "recovery" not in (result.output or ""):
+                                path_to_read = failure_tracker.last_path
+                                if path_to_read:
+                                    log.info("tool %s ok=… (recovery)", "read_file")
+                                    read_result = execute_tool(
+                                        self.tools, "read_file", {"path": path_to_read}
+                                    )
+                                    tool_calls += 1  # Count the recovery read_file call
+                                    log.info(
+                                        "tool read_file ok=%s (recovery)", read_result.ok
+                                    )
+                                    messages.append(
+                                        _tool_result_message(
+                                            ToolCall(
+                                                id="auto-read",
+                                                name="read_file",
+                                                arguments={"path": path_to_read},
+                                            ),
+                                            read_result.output,
+                                            native=True,
+                                        )
+                                    )
+                                    failure_tracker.reset()
+                                else:
+                                    # No path known, nudge agent to search/list
+                                    nudge_msg = RECOVERY_THREE_NUDGE.format(
+                                        name=call.name,
+                                    )
+                                    log.info("nudging agent to search or list after hammering")
+                                    messages.append(
+                                        {"role": "user", "content": _nudge(nudge_msg, goal)}
+                                    )
+                                    failure_tracker.reset()
+                                continue
+                        # Check for 2 failures of same tool on same path
+                        same_path_failures = failure_tracker.get_same_tool_failures(
+                            call.name, path
+                        )
+                        if same_path_failures >= 2:
+                            nudge_msg = RECOVERY_TWICE_NUDGE.format(
+                                name=call.name,
+                                message=(result.output or "")[:200],
+                                path=path or "the file",
+                            )
+                            log.info(
+                                "injecting recovery nudge: tool %s failed twice", call.name
+                            )
+                            messages.append(
+                                {"role": "user", "content": _nudge(nudge_msg, goal)}
+                            )
+                    else:
+                        # Success resets failure counter
+                        failure_tracker.reset()
+
+                        if call.name in MUTATING_TOOLS:
+                            mutated = True
+                            wrote = True
+                            verified_tests = False
+                            tool_path = _tool_path(call.arguments)
+                            if _is_ui_path(tool_path):
+                                mutated_ui = True
+                                verified_ui = False
+                            if _is_ops_path(tool_path):
+                                mutated_ops = True
+                        elif call.name == "review_ui":
+                            verified_ui = bool(result.ok)
+                        elif call.name == "run_tests":
+                            verified_tests = bool(result.ok)
+                        elif call.name not in VERIFY_TOOLS:
+                            inspected = True
                     messages.append(_tool_result_message(call, result.output, native=native))
                 if wrote:
                     inspect_rounds = 0
