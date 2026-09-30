@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -7,6 +9,28 @@ from agent_loco.runtime.project import render_tree
 from agent_loco.tools.files import is_probably_secret_path
 
 STOPWORDS = frozenset({"the", "and", "for", "add", "make", "is", "to", "of", "a", "in", "on"})
+LAST_FAILURE_FILE = ".loco/last-failure.json"
+
+
+def _compute_goal_key(goal: str) -> str:
+    """Compute a 16-char hex prefix of sha256 of stripped goal."""
+    stripped = goal.strip()
+    digest = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
+def _read_last_failure(root: Path, goal: str) -> dict | None:
+    """Read last-failure.json and return if goal_key matches current goal."""
+    try:
+        failure_path = root / LAST_FAILURE_FILE
+        if not failure_path.exists():
+            return None
+        data = json.loads(failure_path.read_text(encoding="utf-8"))
+        if _compute_goal_key(goal) != data.get("goal_key"):
+            return None
+        return data
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return None
 
 
 def build_task_brief(root: Path, goal: str, project) -> str:
@@ -64,6 +88,14 @@ def build_task_brief(root: Path, goal: str, project) -> str:
     if tree:
         parts.append("Workspace files:")
         parts.append(tree)
+
+    # Last failure for this goal
+    failure = _read_last_failure(root, goal)
+    if failure:
+        parts.append("")
+        parts.append("Last attempt of this goal failed:")
+        parts.append(f"status: {failure.get('status', 'unknown')}")
+        parts.append(f"reason: {failure.get('reason', 'unknown')}")
 
     return "\n".join(parts)
 

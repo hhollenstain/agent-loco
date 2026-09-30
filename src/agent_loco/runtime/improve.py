@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import asdict, dataclass, field
@@ -121,6 +122,54 @@ def compact_handoff(
     if len(result) > 3997:
         result = result[:3997]
     return result
+
+
+def _compute_goal_key(goal: str) -> str:
+    """Compute a 16-char hex prefix of sha256 of stripped goal."""
+    stripped = goal.strip()
+    digest = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
+def _write_last_failure(root: Path, goal: str, result: CycleResult) -> None:
+    """Write last-failure.json after a failed cycle.
+
+    Does not fail the cycle if JSON write fails; logs and continues.
+    """
+    LAST_FAILURE_FILE = ".loco/last-failure.json"
+    try:
+        failure_path = root / LAST_FAILURE_FILE
+        # Ensure .loco directory exists before writing the file
+        failure_path.parent.mkdir(parents=True, exist_ok=True)
+        summary = (result.summary or "")[:500] if result.summary else ""
+        data = {
+            "goal": goal,
+            "goal_key": _compute_goal_key(goal),
+            "status": result.status,
+            "reason": result.reason or "unknown",
+            "summary": summary,
+            "finished_at": result.created_at,
+        }
+        failure_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        log_progress("Remembered last failure for the next run.")
+    except (OSError, TypeError) as e:
+        log.warning(f"Failed to write last-failure.json: {e}")
+        # Do not fail the cycle; just log and continue
+
+
+def _delete_last_failure(root: Path) -> None:
+    """Delete last-failure.json if it exists.
+
+    Does not fail if deletion fails; logs and continues.
+    """
+    LAST_FAILURE_FILE = ".loco/last-failure.json"
+    try:
+        failure_path = root / LAST_FAILURE_FILE
+        if failure_path.exists():
+            failure_path.unlink()
+            log.debug("Deleted last-failure.json after successful cycle.")
+    except OSError as e:
+        log.warning(f"Failed to delete last-failure.json: {e}")
 
 
 @dataclass
@@ -292,6 +341,7 @@ def _run_cycle(
         )
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
+        _write_last_failure(workspace.root, selected_goal, result)
         return result
 
     log_progress("Checking for changes...")
@@ -357,6 +407,7 @@ def _run_cycle(
         )
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
+        _write_last_failure(workspace.root, selected_goal, result)
         return result
     agent_result.summary = agent_result_summary
 
@@ -382,6 +433,7 @@ def _run_cycle(
         )
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
+        _write_last_failure(workspace.root, selected_goal, result)
         return result
 
     log_progress("Goal confirmed; checking for publishable changes...")
@@ -475,6 +527,7 @@ def _run_cycle(
     )
     _write_run_log(workspace.root, result)
     _append_to_history(workspace.root, result)
+    _delete_last_failure(workspace.root)
     return result
 
 
