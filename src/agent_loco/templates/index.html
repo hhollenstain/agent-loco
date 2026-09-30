@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" href="/favicon.ico">
+  <link rel="icon" href="/favicon.ico" sizes="any" type="image/svg+xml">
   <title>loco — task runner</title>
   <link rel="stylesheet" href="/static/themes.css">
   <link rel="stylesheet" href="/static/layout.css">
@@ -1960,7 +1960,22 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-bar">
         <button type="button" class="secondary sidebar-toggle" id="toggle-sidebar" aria-controls="task-form" aria-expanded="true" title="Collapse sidebar">‹</button>
-        <h1 class="sidebar-title">loco</h1>
+        <a href="/" aria-label="loco task runner" class="sidebar-logo">
+          <svg viewBox="0 0 160 48" width="160" height="48" aria-hidden="true">
+            <defs>
+              <linearGradient id="locoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#0ea5e9;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
+              </linearGradient>
+            </defs>
+            <g font-family="system-ui, -apple-system, sans-serif" font-weight="900" letter-spacing="-1.2" font-size="34">
+              <text x="0" y="32" fill="url(#locoGradient)">l</text>
+              <text x="10" y="40" fill="url(#locoGradient)">o</text>
+              <text x="28" y="6" fill="url(#locoGradient)">c</text>
+              <text x="42" y="36" fill="url(#locoGradient)">o</text>
+            </g>
+          </svg>
+        </a>
         <div class="sidebar-tools">
           <button type="button" class="secondary" id="open-skills" aria-label="Manage skills" aria-expanded="false" aria-controls="skills-panel" title="Manage skills">
             <svg viewBox="0 0 24 24" aria-hidden="true">

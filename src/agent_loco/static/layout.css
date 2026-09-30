@@ -57,6 +57,22 @@ main.collapsed {
   letter-spacing: 0.02em;
 }
 
+.sidebar-logo {
+  display: block;
+  margin: 0;
+  padding: 0.1rem 0 0;
+  transition: opacity 0.15s ease;
+}
+
+.sidebar-logo:hover {
+  opacity: 0.85;
+}
+
+main.collapsed .sidebar-logo,
+main.collapsed #task-form {
+  display: none;
+}
+
 .sidebar-toggle {
   flex: 0 0 auto;
   padding: 0.4rem 0.55rem;
