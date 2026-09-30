@@ -195,7 +195,7 @@ class CodingAgent:
                     log.info("tool %s ok=%s", call.name, result.ok)
                     log.debug("%s args=%s", call.name, call.arguments)
                     if not result.ok:
-                        last_error = result.stdout[:200] if hasattr(result, "stdout") else str(result)[:200]
+                        last_error = (result.output or "")[:200]
                     if call.name in MUTATING_TOOLS and result.ok:
                         mutated = True
                         wrote = True

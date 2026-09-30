@@ -26,6 +26,7 @@ class ProjectConfig:
     goals_file: str
     max_repair_attempts: int
     preview_command: str | None = None
+    lint_command: str | None = None
     is_git: bool = False
 
 
@@ -45,6 +46,13 @@ def load_project(root: Path) -> ProjectConfig:
 
     configured = raw.get("test_command")
     test_command = str(configured) if configured else infer_test_command(root)
+    configured_lint = raw.get("lint_command")
+    if configured_lint is None:
+        lint_command = infer_lint_command(root)
+    elif configured_lint == "" or configured_lint is False:
+        lint_command = None
+    else:
+        lint_command = str(configured_lint)
     is_git = _is_git_repository(root)
     publish_enabled = (
         bool(publish["enabled"]) if "enabled" in publish else is_git
@@ -62,6 +70,7 @@ def load_project(root: Path) -> ProjectConfig:
         goals_file=str(raw.get("goals_file") or "goals.md"),
         max_repair_attempts=_max_repair_attempts(raw.get("max_repair_attempts")),
         preview_command=str(raw["preview_command"]) if raw.get("preview_command") else None,
+        lint_command=lint_command,
         is_git=is_git,
     )
 
@@ -88,6 +97,21 @@ def infer_test_command(root: Path) -> str | None:
         return "cargo test"
     if (root / "go.mod").exists():
         return "go test ./..."
+    return None
+
+
+def infer_lint_command(root: Path) -> str | None:
+    """Infer a linter that matches CI for this workspace."""
+    has_ruff = (root / "ruff.toml").exists() or (root / "pyproject.toml").exists()
+    if has_ruff:
+        src = root / "src"
+        tests_dir = root / "tests"
+        if src.is_dir() and tests_dir.is_dir():
+            return "ruff check src tests"
+        return "ruff check ."
+    package_json = root / "package.json"
+    if package_json.exists() and '"lint"' in package_json.read_text(encoding="utf-8"):
+        return "npm run lint"
     return None
 
 
@@ -161,11 +185,14 @@ def write_default_project_files(root: Path) -> list[Path]:
     if not config_path.exists():
         is_git = _is_git_repository(root)
         test_command = infer_test_command(root) or "pytest -q"
+        lint_command = infer_lint_command(root)
         publish_on = "true" if is_git else "false"
+        lint_line = f"lint_command: {lint_command}\n" if lint_command else ""
         config_path.write_text(
             (
                 f"name: {root.name}\n"
                 f"test_command: {test_command}\n"
+                f"{lint_line}"
                 f"max_repair_attempts: {DEFAULT_MAX_REPAIR_ATTEMPTS}\n"
                 "publish:\n"
                 f"  enabled: {publish_on}\n"
@@ -313,6 +340,7 @@ def collect_context(
         f"Project: {project.name}",
         f"Root: {root}",
         f"Test command: {project.test_command or '(none)'}",
+        f"Lint command: {project.lint_command or '(none)'}",
         f"Create PR: {'on' if publish_on else 'off'} via {project.publish_remote}"
         + (" (git repo)" if project.is_git else ""),
         " (never pushes to main)",

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
+from agent_loco.agent.loop import AgentResult
 from agent_loco.runtime.improve import compact_handoff
-from agent_loco.agent.loop import CodingAgent, AgentResult
 
 
 class TestCompactHandoff:
@@ -79,7 +75,6 @@ index 789..012 100644
 
 class TestAgentResultLastError:
     def test_agent_result_includes_last_error_on_max_iterations(self):
-        agent = MagicMock(spec=CodingAgent)
         result = AgentResult(
             summary="done",
             iterations=40,

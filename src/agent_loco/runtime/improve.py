@@ -61,6 +61,7 @@ from agent_loco.tools.git import (
     update_pull_request,
     upstream_state,
 )
+from agent_loco.tools.lint import run_project_lint
 from agent_loco.tools.tests import run_project_tests
 
 log = logging.getLogger("loco")
@@ -221,6 +222,7 @@ def _run_cycle(
     tools = build_tools(
         workspace,
         test_command=project.test_command,
+        lint_command=project.lint_command,
         command_timeout_seconds=settings.command_timeout_seconds,
         git_author_name=settings.git_author_name,
         git_author_email=settings.git_author_email,
@@ -257,7 +259,11 @@ def _run_cycle(
             last_tool_error=agent_result.last_error,
             stopped_reason=agent_result.stopped_reason,
         )
-        agent_result_2 = agent.run(handoff_prompt, collect_context(workspace.root, project, allow_publish=allow_create_pr), require_change=True)
+        agent_result_2 = agent.run(
+            handoff_prompt,
+            collect_context(workspace.root, project, allow_publish=allow_create_pr),
+            require_change=True,
+        )
         agent_result = agent_result_2
 
     log_progress("Running after tests...")
@@ -330,7 +336,10 @@ def _run_cycle(
     if not review["met"]:
         log_progress(f"Goal not met: {review['reason']}")
         stopped_reason = agent_result.stopped_reason
-        reason_info = "iteration limit" if stopped_reason == "max_iterations" else review.get("reason", "goal not met")
+        if stopped_reason == "max_iterations":
+            reason_info = "iteration limit"
+        else:
+            reason_info = review.get("reason", "goal not met")
         reason = (
             "tests failed; commit skipped"
             if review.get("tests_failed")
@@ -350,6 +359,30 @@ def _run_cycle(
         _append_to_history(workspace.root, result)
         return result
     agent_result.summary = agent_result_summary
+
+    log_progress("Running linter before publish...")
+    lint_after = _ensure_lint(
+        workspace,
+        project,
+        settings,
+        agent,
+        allow_create_pr=allow_create_pr,
+    )
+    if lint_after is not None and not lint_after.ok:
+        log_progress("Lint failed after repairs.")
+        result = CycleResult(
+            status="failed",
+            goal=selected_goal,
+            summary=agent_result.summary,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=current_sha(workspace),
+            reason="lint failed; commit skipped",
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return result
 
     log_progress("Goal confirmed; checking for publishable changes...")
     committed = False
@@ -1095,6 +1128,59 @@ def _maybe_test(
         settings.command_timeout_seconds,
         phase=phase,
     )
+
+
+def _lint_repair_prompt(output: str) -> str:
+    return (
+        "The linter failed after the last changes. Fix every reported error. "
+        "Ruff F401 means remove or use the unused import. E501 means wrap the "
+        "line to 100 characters or less. I001 means sort imports the way ruff "
+        "does. Do not disable the linter. Do not skip a finding. After edits, "
+        "the configured lint command must pass.\n\n"
+        f"{(output or '').strip()}"
+    )
+
+
+def _maybe_lint(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    *,
+    phase: str = "lint",
+):
+    if not project.lint_command:
+        return None
+    return run_project_lint(
+        workspace,
+        project.lint_command,
+        settings.command_timeout_seconds,
+        phase=phase,
+    )
+
+
+def _ensure_lint(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    agent: CodingAgent,
+    *,
+    allow_create_pr: bool,
+):
+    lint_after = _maybe_lint(workspace, project, settings, phase="after")
+    if lint_after is None or lint_after.ok:
+        return lint_after
+    context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    for attempt in range(project.max_repair_attempts):
+        log_progress(f"Lint repair {attempt + 1}/{project.max_repair_attempts}")
+        agent.run(
+            _lint_repair_prompt(lint_after.output),
+            context,
+            require_change=True,
+        )
+        lint_after = _maybe_lint(workspace, project, settings, phase="repair")
+        if lint_after is None or lint_after.ok:
+            break
+    return lint_after
 
 
 def _commit_message(goal: str, summary: str) -> str:

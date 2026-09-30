@@ -136,6 +136,31 @@ def record_test_run(
     return event
 
 
+def record_lint_run(
+    *,
+    command: str,
+    ok: bool,
+    output: str,
+    phase: str = "lint",
+    elapsed_ms: int | None = None,
+    reused: bool = False,
+) -> dict[str, Any]:
+    event = record_event(
+        kind="lint",
+        command=command,
+        ok=ok,
+        phase=phase,
+        elapsed_ms=elapsed_ms,
+        reused=reused,
+        output=clip_output(output),
+    )
+    if reused:
+        log.info("lint %s ok=%s reused", phase, ok)
+    else:
+        log.info("lint %s ok=%s", phase, ok)
+    return event
+
+
 def timed_complete(
     llm: LLMClient,
     messages: list[dict[str, Any]],
