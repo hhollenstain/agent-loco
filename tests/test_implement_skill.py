@@ -7,7 +7,6 @@ from agent_loco.runtime.project import write_default_project_files
 from agent_loco.runtime.skills import (
     bundled_skills_root,
     compose_system_prompt,
-    enabled_skill_names,
     list_skills,
 )
 
@@ -32,8 +31,6 @@ def test_implement_skill_is_bundled_and_injected(tmp_path: Path) -> None:
     assert "implement" in skills
     assert skills["implement"].origin == "bundled"
     assert "Implementation Process" in skills["implement"].body
-
-    from agent_loco.runtime.project import load_project, write_default_project_files
 
     write_default_project_files(tmp_path)
 
