@@ -1,14 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 48" width="160" height="48">
-  <defs>
-    <linearGradient id="locoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0ea5e9;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  <g font-family="system-ui, -apple-system, sans-serif" font-weight="900" letter-spacing="-1.2">
-    <text x="0" y="32" font-size="34" fill="url(#locoGradient)">l</text>
-    <text x="10" y="40" font-size="40" fill="url(#locoGradient)">o</text>
-    <text x="28" y="6" font-size="30" fill="url(#locoGradient)">c</text>
-    <text x="42" y="36" font-size="36" fill="url(#locoGradient)">o</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 118 36" width="118" height="36" role="img" aria-label="LoCO">
+  <title>LoCO</title>
+  <g transform="skewX(-8)">
+    <path fill="#e7eedf" d="M4 3.2h6.6v18.4H23v6.2H4z"/>
+    <path fill="#e7eedf" fill-rule="evenodd" d="M37.6 14.2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 4.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z"/>
+    <path fill="#c4e38a" d="M76.2 8.4A14.6 14.6 0 1 0 76.2 27.2L71.3 23.1A8.2 8.2 0 1 1 71.3 12.5Z"/>
+    <path fill="#c4e38a" fill-rule="evenodd" d="M98.2 3.2a14.6 14.6 0 1 0 0 29.2 14.6 14.6 0 0 0 0-29.2zm0 6.4a8.2 8.2 0 1 1 0 16.4 8.2 8.2 0 0 1 0-16.4z"/>
   </g>
+  <rect fill="#c4e38a" opacity="0.5" x="8" y="33.2" width="26" height="1.5" rx="0.75"/>
+  <rect fill="#c4e38a" opacity="0.5" x="82" y="33.2" width="30" height="1.5" rx="0.75"/>
 </svg>

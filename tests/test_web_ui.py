@@ -160,6 +160,8 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert home.content.strip().startswith(b"<!DOCTYPE html>")
         assert b"</html>" in home.content
         assert b"loco" in home.content
+        assert b'id="app-logo"' in home.content
+        assert b"<title>LoCO</title>" in home.content
         assert b"<title>" in home.content
         assert b"<header>" not in home.content
         assert b'id="toggle-sidebar"' in home.content
@@ -302,6 +304,9 @@ def test_web_ui_paginates_tasks_and_serves_favicon(
         icon = client.get("/favicon.ico")
         assert icon.status_code == 200
         assert b"<svg" in icon.content
+        assert b"LoCO" in icon.content
+        assert b"#c4e38a" in icon.content
+        assert b"#11140f" in icon.content
         themes = client.get("/static/themes.css")
         assert themes.status_code == 200
         assert b"--bg:" in themes.content

@@ -44,7 +44,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-agent_loco = ["templates/*.html", "static/*.css", "skills/*/SKILL.md"]
+agent_loco = ["templates/*.html", "static/*.css", "static/*.svg", "skills/*/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

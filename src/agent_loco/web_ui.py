@@ -61,20 +61,7 @@ from agent_loco.tools.git import extract_pr_url, pull_request_state
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
-FAVICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 48" width="160" height="48">
-  <defs>
-    <linearGradient id="locoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#6366f1" stop-opacity="1"/>
-    </linearGradient>
-  </defs>
-  <g font-family="system-ui, -apple-system, sans-serif" font-weight="900" letter-spacing="-1.2" font-size="34">
-    <text x="0" y="32" fill="url(#locoGradient)">l</text>
-    <text x="10" y="40" fill="url(#locoGradient)">o</text>
-    <text x="28" y="6" fill="url(#locoGradient)">c</text>
-    <text x="42" y="36" fill="url(#locoGradient)">o</text>
-  </g>
-</svg>'''
+FAVICON_SVG = (STATIC_DIR / "favicon.svg").read_text(encoding="utf-8")
 
 
 _PR_STATE_TTL = 45.0
