@@ -7,7 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent_loco.agent.prompts import SYSTEM_PROMPT, user_prompt
+from agent_loco.agent.prompts import SYSTEM_PROMPT, adapt_system_prompt, user_prompt
 from agent_loco.llm.client import AssistantTurn, LLMClient, ToolCall
 from agent_loco.llm.toolparse import parse_tool_calls
 from agent_loco.progress import record_event, timed_complete
@@ -191,7 +191,8 @@ class CodingAgent:
         self.tools = tools
         self.max_iterations = max_iterations
         prompt = (system_prompt or "").strip()
-        self.system_prompt = prompt or SYSTEM_PROMPT.strip()
+        model = getattr(llm, "model", "") or ""
+        self.system_prompt = adapt_system_prompt(prompt or SYSTEM_PROMPT, model)
 
     def run(
         self,

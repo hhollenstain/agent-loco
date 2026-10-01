@@ -1285,8 +1285,8 @@
     .progress-heading > label { margin: 0; flex: 0 0 auto; }
     .running-chicken {
       flex: 1 1 auto;
-      min-width: 4.5rem;
-      height: 2.7rem;
+      min-width: 6rem;
+      height: 3.6rem;
       overflow: hidden;
       position: relative;
       pointer-events: none;
@@ -1295,30 +1295,30 @@
       position: absolute;
       top: 0;
       left: 0;
-      width: 3.5rem;
-      height: 2.7rem;
+      width: 4.8rem;
+      height: 3.6rem;
       overflow: visible;
-      animation: chicken-sprint 3.5s linear infinite;
+      animation: chicken-sprint 5s linear infinite;
     }
-    .chicken-body { transform-origin: 22px 28px; animation: chicken-wobble 0.58s ease-in-out infinite; }
-    .chicken-wing { transform-origin: 24px 26px; animation: chicken-flap 0.29s ease-in-out infinite; }
-    .chicken-leg-front { transform-origin: 20px 36px; animation: chicken-kick 0.33s linear infinite; }
-    .chicken-leg-back { transform-origin: 28px 36px; animation: chicken-kick 0.33s linear infinite reverse; }
+    .chicken-body { transform-origin: 22px 28px; animation: chicken-wobble 0.68s ease-in-out infinite; }
+    .chicken-wing { transform-origin: 24px 26px; animation: chicken-flap 0.34s ease-in-out infinite; }
+    .chicken-leg-front { transform-origin: 20px 36px; animation: chicken-kick 0.36s linear infinite; }
+    .chicken-leg-back { transform-origin: 28px 36px; animation: chicken-kick 0.36s linear infinite reverse; }
     .chicken-bawk {
       transform-origin: 48px 10px;
       animation: chicken-bawk 2.3s ease-in-out infinite;
     }
     @keyframes chicken-sprint {
       0% { left: 0; transform: scaleX(1); }
-      46% { left: calc(100% - 3.5rem); transform: scaleX(1); }
-      50% { left: calc(100% - 3.5rem); transform: scaleX(-1); }
+      46% { left: calc(100% - 4.8rem); transform: scaleX(1); }
+      50% { left: calc(100% - 4.8rem); transform: scaleX(-1); }
       96% { left: 0; transform: scaleX(-1); }
       100% { left: 0; transform: scaleX(1); }
     }
     @keyframes chicken-wobble {
-      0%, 100% { transform: rotate(-14deg) translateY(0) scale(1, 1); }
-      30% { transform: rotate(16deg) translateY(-6px) scale(1.08, 0.9); }
-      60% { transform: rotate(-22deg) translateY(3px) scale(0.92, 1.12); }
+      0%, 100% { transform: rotate(-12deg) translateY(0) scale(1, 1); }
+      30% { transform: rotate(14deg) translateY(-5px) scale(1.06, 0.94); }
+      60% { transform: rotate(-20deg) translateY(2px) scale(0.96, 1.08); }
     }
     @keyframes chicken-flap {
       from { transform: rotate(-50deg); }

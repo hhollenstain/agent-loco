@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
@@ -8,6 +10,10 @@ from urllib.parse import urlparse
 
 import httpx
 from openai import OpenAI
+
+from agent_loco.llm.glimmer import ATEM_RETRY_NUDGE, is_atem_parse_error
+
+log = logging.getLogger("loco")
 
 _WINDOW_CACHE: dict[tuple[str, str], int | None] = {}
 _CONTEXT_KEYS = (
@@ -54,6 +60,20 @@ class OpenAICompatClient:
         self.client = OpenAI(base_url=self.base_url, api_key=api_key)
 
     def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> AssistantTurn:
+        try:
+            return self._complete(messages, tools)
+        except Exception as exc:
+            if not (tools and is_atem_parse_error(exc)):
+                raise
+            log.warning("server rejected Glimmer tool call without ATEM wrapper; retrying")
+            nudged = [*messages, {"role": "user", "content": ATEM_RETRY_NUDGE}]
+            return self._complete(nudged, tools)
+
+    def _complete(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
@@ -306,11 +326,13 @@ def model_ids_from_payload(payload: object) -> list[str]:
     return names
 
 
-def _parse_arguments(raw: str | None) -> dict[str, Any]:
+def _parse_arguments(raw: object) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
     if not raw:
         return {}
-    import json
-
+    if not isinstance(raw, str):
+        return {"_raw": str(raw)}
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:

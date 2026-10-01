@@ -1,3 +1,23 @@
+from __future__ import annotations
+
+import re
+
+from agent_loco.llm.glimmer import uses_atem_tools
+
+_GENERIC_TOOL_FORMAT = re.compile(
+    r"- Prefer native tool calls\..*?then wait\.",
+    re.DOTALL,
+)
+ATEM_TOOL_FORMAT = (
+    "- Muse Glimmer tools use ATEM, not JSON or Qwen XML. Address the tool "
+    "(to=read_file) and wrap every invoke:\n"
+    "  <atem:function_calls>\n"
+    '  <atem:invoke name="read_file">\n'
+    '  <atem:parameter name="path">src/app.py</atem:parameter>\n'
+    "  </atem:invoke>\n"
+    "  </atem:function_calls>\n"
+    "  An invoke outside the function_calls wrapper is invalid."
+)
 SYSTEM_PROMPT = """You are loco, an unattended software-engineering agent running in a home lab.
 
 You write, test, and commit code inside a single workspace. You do not have a
@@ -75,6 +95,18 @@ Rules:
   state (config, skills, run logs, screenshots), not project source.
 - Always read AGENTS.md if it exists in the workspace root and follow its instructions.
 """
+
+
+def adapt_system_prompt(prompt: str, model: str) -> str:
+    """Swap JSON/Qwen tool syntax for ATEM when the server is Muse Glimmer."""
+    text = (prompt or "").strip()
+    if not uses_atem_tools(model):
+        return text
+    if _GENERIC_TOOL_FORMAT.search(text):
+        return _GENERIC_TOOL_FORMAT.sub(ATEM_TOOL_FORMAT, text, count=1)
+    if "<atem:function_calls>" in text:
+        return text
+    return f"{text}\n\n{ATEM_TOOL_FORMAT}"
 
 
 def user_prompt(goal: str, context: str) -> str:
