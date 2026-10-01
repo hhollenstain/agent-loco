@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 import httpx
 from openai import OpenAI
+
+_WINDOW_CACHE: dict[tuple[str, str], int | None] = {}
+_CONTEXT_KEYS = (
+    "context_length",
+    "max_model_len",
+    "max_tokens",
+    "context_window",
+    "max_context_length",
+)
+_NUM_CTX_RE = re.compile(r"num_ctx\s+(\d+)", re.IGNORECASE)
 
 
 @dataclass
@@ -19,6 +31,9 @@ class ToolCall:
 class AssistantTurn:
     text: str | None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 class LLMClient(Protocol):
@@ -59,7 +74,14 @@ class OpenAICompatClient:
                     arguments=_parse_arguments(call.function.arguments),
                 )
             )
-        return AssistantTurn(text=choice.content, tool_calls=calls)
+        prompt_tokens, completion_tokens, total_tokens = completion_usage(response)
+        return AssistantTurn(
+            text=choice.content,
+            tool_calls=calls,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
 
 
 class ScriptedClient:
@@ -132,6 +154,136 @@ def normalize_model_base_url(url: str) -> str:
     if parsed.endswith("/v1"):
         return parsed
     return parsed + "/v1"
+
+
+def completion_usage(response: object) -> tuple[int | None, int | None, int | None]:
+    """Read prompt/completion/total tokens from an OpenAI-compatible response."""
+    usage = getattr(response, "usage", None)
+    if usage is None and isinstance(response, dict):
+        usage = response.get("usage")
+    if usage is None:
+        return None, None, None
+    return (
+        _usage_int(usage, "prompt_tokens"),
+        _usage_int(usage, "completion_tokens"),
+        _usage_int(usage, "total_tokens"),
+    )
+
+
+def lookup_context_window(
+    base_url: str,
+    api_key: str,
+    model: str,
+    *,
+    timeout: float = 2.0,
+) -> int | None:
+    """Best-effort context length for a model on an OpenAI-compatible host."""
+    name = (model or "").strip()
+    if not name:
+        return None
+    try:
+        url = normalize_model_base_url(base_url)
+    except ValueError:
+        return None
+    cache_key = (url, name)
+    if cache_key in _WINDOW_CACHE:
+        return _WINDOW_CACHE[cache_key]
+    window = _fetch_context_window(url, api_key, name, timeout=timeout)
+    if window is not None:
+        _WINDOW_CACHE[cache_key] = window
+    return window
+
+
+def context_window_from_ollama_show(payload: object) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    info = payload.get("model_info") or payload.get("modelinfo") or {}
+    if isinstance(info, dict):
+        for key, value in info.items():
+            text = str(key).lower()
+            if text.endswith(".context_length") or text in _CONTEXT_KEYS:
+                parsed = _positive_int(value)
+                if parsed is not None:
+                    return parsed
+    params = payload.get("parameters")
+    if isinstance(params, str):
+        match = _NUM_CTX_RE.search(params)
+        if match:
+            return _positive_int(match.group(1))
+    return None
+
+
+def context_window_from_models_payload(payload: object, model: str) -> int | None:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        return None
+    wanted = (model or "").strip().lower()
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("id") or item.get("name") or "").strip()
+        if wanted and name.lower() != wanted:
+            continue
+        for key in _CONTEXT_KEYS:
+            parsed = _positive_int(item.get(key))
+            if parsed is not None:
+                return parsed
+        extra = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+        for key in _CONTEXT_KEYS:
+            parsed = _positive_int(extra.get(key))
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _fetch_context_window(
+    base_url: str,
+    api_key: str,
+    model: str,
+    *,
+    timeout: float,
+) -> int | None:
+    headers = {"Authorization": f"Bearer {api_key}"}
+    parsed = urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    try:
+        response = httpx.post(
+            f"{origin}/api/show",
+            json={"name": model},
+            headers=headers,
+            timeout=timeout,
+        )
+        if response.status_code < 400:
+            window = context_window_from_ollama_show(response.json())
+            if window is not None:
+                return window
+    except (httpx.HTTPError, ValueError):
+        pass
+    try:
+        response = httpx.get(
+            f"{base_url.rstrip('/')}/models",
+            headers=headers,
+            timeout=timeout,
+        )
+        if response.status_code < 400:
+            return context_window_from_models_payload(response.json(), model)
+    except (httpx.HTTPError, ValueError):
+        pass
+    return None
+
+
+def _usage_int(usage: object, key: str) -> int | None:
+    if isinstance(usage, dict):
+        return _positive_int(usage.get(key))
+    return _positive_int(getattr(usage, key, None))
+
+
+def _positive_int(value: object) -> int | None:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def model_ids_from_payload(payload: object) -> list[str]:

@@ -13,10 +13,11 @@ from agent_loco.llm.client import (
     LLMClient,
     OpenAICompatClient,
     list_remote_models,
+    lookup_context_window,
     normalize_model_base_url,
 )
 from agent_loco.logging import UtcFormatter, utcnow_iso
-from agent_loco.progress import bind_progress, record_event, reset_progress
+from agent_loco.progress import bind_progress, record_event, reset_progress, token_usage_from_events
 from agent_loco.runtime.improve import CycleResult, run_cycle
 
 log = logging.getLogger("loco")
@@ -64,6 +65,7 @@ class Task:
     branch: str | None = None
     resume_branch: str | None = None
     resume_sha: str | None = None
+    context_window: int | None = None
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -89,6 +91,8 @@ class Task:
             "sha_before": self.sha_before,
             "branch": self.branch,
             "events": list(self.events),
+            **token_usage_from_events(self.events),
+            "context_window": self.context_window,
         }
         if include_logs:
             payload["logs"] = list(self.logs)
@@ -280,6 +284,12 @@ class TaskManager:
     def _run(self, task: Task) -> None:
         task.status = "running"
         task.started_at = _utcnow()
+        if self._runner is None and task.context_window is None:
+            task.context_window = lookup_context_window(
+                task.model_base_url,
+                task.model_api_key,
+                task.model_name,
+            )
         handler = _TaskLogHandler(task, threading.get_ident())
         loco_log = logging.getLogger("loco")
         loco_log.setLevel(logging.INFO)

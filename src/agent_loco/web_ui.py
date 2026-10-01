@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
+from agent_loco.progress import attach_token_usage
 from agent_loco.runtime.importer import load_goals_from_workspace
 from agent_loco.runtime.project import (
     default_guidelines,
@@ -369,7 +370,7 @@ class UiState:
 
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
-        items = all_items[start_idx:end_idx]
+        items = [attach_token_usage(item) for item in all_items[start_idx:end_idx]]
 
         return {
             "items": items,

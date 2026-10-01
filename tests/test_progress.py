@@ -40,7 +40,16 @@ def test_timed_complete_records_latency() -> None:
     token = bind_progress()
     try:
         turn = timed_complete(
-            ScriptedClient([AssistantTurn(text="ok")]),
+            ScriptedClient(
+                [
+                    AssistantTurn(
+                        text="ok",
+                        prompt_tokens=1200,
+                        completion_tokens=80,
+                        total_tokens=1280,
+                    )
+                ]
+            ),
             [{"role": "user", "content": "hi"}],
             [],
             purpose="agent",
@@ -53,6 +62,9 @@ def test_timed_complete_records_latency() -> None:
     assert events[0]["purpose"] == "agent"
     assert events[0]["ok"] is True
     assert events[0]["elapsed_ms"] >= 0
+    assert events[0]["prompt_tokens"] == 1200
+    assert events[0]["completion_tokens"] == 80
+    assert events[0]["total_tokens"] == 1280
 
 
 def test_record_test_run_keeps_failure_tail() -> None:

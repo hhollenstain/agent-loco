@@ -4079,8 +4079,66 @@
       const heading = root.querySelector(".progress-heading");
       if (!heading) return;
       const hen = heading.querySelector("#running-chicken");
-      if (running && !hen) heading.insertAdjacentHTML("beforeend", runningChickenHtml());
-      else if (!running && hen) hen.remove();
+      const tokens = heading.querySelector("[data-task-tokens]");
+      if (running && !hen) {
+        if (tokens) tokens.insertAdjacentHTML("beforebegin", runningChickenHtml());
+        else heading.insertAdjacentHTML("beforeend", runningChickenHtml());
+      } else if (!running && hen) hen.remove();
+    }
+
+    function parseTokenValue(value) {
+      if (value == null || value === "") return null;
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 0) return null;
+      return number;
+    }
+
+    function formatTokenCount(value) {
+      const number = parseTokenValue(value);
+      if (number == null) return "—";
+      return Math.round(number).toLocaleString("en-US");
+    }
+
+    function tokenUsageFromItem(item) {
+      let used = parseTokenValue(item && item.tokens_used);
+      const windowSize = parseTokenValue(item && item.context_window);
+      if (used == null) {
+        const events = (item && item.events) || [];
+        for (let i = events.length - 1; i >= 0; i--) {
+          const event = events[i];
+          if (!event || event.kind !== "llm" || event.ok === false) continue;
+          const prompt = parseTokenValue(event.prompt_tokens);
+          if (prompt != null) {
+            used = prompt;
+            break;
+          }
+        }
+      }
+      return {
+        used: used,
+        window: windowSize != null && windowSize > 0 ? windowSize : null,
+      };
+    }
+
+    function taskTokensLabel(item) {
+      const usage = tokenUsageFromItem(item || {});
+      return formatTokenCount(usage.used) + " / " + formatTokenCount(usage.window);
+    }
+
+    function taskTokensTitle(item) {
+      const usage = tokenUsageFromItem(item || {});
+      const used = usage.used == null ? "unknown" : formatTokenCount(usage.used);
+      const windowSize = usage.window == null ? "unknown" : formatTokenCount(usage.window);
+      return used + " tokens in the current context · " + windowSize + " context window";
+    }
+
+    function syncTaskTokens(root, item) {
+      if (!root) return;
+      const el = root.querySelector("[data-task-tokens]");
+      if (!el) return;
+      el.textContent = taskTokensLabel(item) + " tokens";
+      el.title = taskTokensTitle(item);
+      el.setAttribute("aria-label", taskTokensTitle(item));
     }
 
     function renderProgress(item, { running = false } = {}) {
@@ -4355,12 +4413,14 @@
           body.innerHTML = progressHtml;
         }
         syncRunningChicken(root, live);
+        syncTaskTokens(root, selected || selectedHistory);
       } else {
         target.innerHTML = `
           <div data-progress-root data-item-key="${escapeHtml(itemKey)}">
             <div class="progress-heading">
               <label>Progress</label>
               ${live ? runningChickenHtml() : ""}
+              <p class="task-tokens" id="task-tokens" data-task-tokens title="${escapeHtml(taskTokensTitle(selected || selectedHistory))}" aria-label="${escapeHtml(taskTokensTitle(selected || selectedHistory))}">${escapeHtml(taskTokensLabel(selected || selectedHistory))} tokens</p>
             </div>
             <p class="meta" data-progress-meta>${escapeHtml(metaText)}</p>
             <div class="progress-pr" data-progress-pr>${prHtml}</div>

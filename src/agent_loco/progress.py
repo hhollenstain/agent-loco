@@ -192,6 +192,54 @@ def timed_complete(
         elapsed_ms=elapsed_ms,
         messages=messages,  # All messages sent to LLM
         response=turn.text or "",  # LLM's response text
+        prompt_tokens=turn.prompt_tokens,
+        completion_tokens=turn.completion_tokens,
+        total_tokens=turn.total_tokens,
     )
     log.info("llm %s response in %s", purpose, format_elapsed(elapsed))
     return turn
+
+
+def token_usage_from_events(events: list[dict[str, Any]] | None) -> dict[str, int | None]:
+    """Current context fill and billed total from recorded LLM turns."""
+    used: int | None = None
+    billed = 0
+    saw_billed = False
+    for event in events or []:
+        if event.get("kind") != "llm" or event.get("ok") is False:
+            continue
+        prompt = _token_int(event.get("prompt_tokens"))
+        completion = _token_int(event.get("completion_tokens"))
+        total = _token_int(event.get("total_tokens"))
+        if total is None and (prompt is not None or completion is not None):
+            total = (prompt or 0) + (completion or 0)
+        if total is not None:
+            billed += total
+            saw_billed = True
+        if prompt is not None:
+            used = prompt
+        elif total is not None:
+            used = total
+    return {
+        "tokens_used": used,
+        "tokens_total": billed if saw_billed else None,
+    }
+
+
+def attach_token_usage(item: dict[str, Any]) -> dict[str, Any]:
+    """Fill tokens_used / tokens_total on a task or history payload."""
+    usage = token_usage_from_events(item.get("events") if isinstance(item, dict) else None)
+    if item.get("tokens_used") is None:
+        item["tokens_used"] = usage["tokens_used"]
+    if item.get("tokens_total") is None:
+        item["tokens_total"] = usage["tokens_total"]
+    item.setdefault("context_window", None)
+    return item
+
+
+def _token_int(value: object) -> int | None:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None

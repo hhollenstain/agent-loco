@@ -214,6 +214,12 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'id="running-chicken"' in home.content
         assert b"function runningChickenHtml(" in home.content
         assert b"function syncRunningChicken(" in home.content
+        assert b'id="task-tokens"' in home.content
+        assert b"data-task-tokens" in home.content
+        assert b"function syncTaskTokens(" in home.content
+        assert b"function tokenUsageFromItem(" in home.content
+        assert b"function parseTokenValue(" in home.content
+        assert b"context window" in home.content
         assert b'id="past-runs"' in home.content
         assert b'id="history-detail"' in home.content
         assert b'id="history-picker"' in home.content
@@ -254,9 +260,27 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert body[0]["model"] == settings.model_name
         assert body[0]["base_url"] == settings.model_base_url
         assert body[0]["status"] in {"queued", "running"}
+        assert "tokens_used" in body[0]
+        assert "context_window" in body[0]
         if body[0]["status"] == "running":
             assert body[0]["started_at"]
             assert body[0]["finished_at"] is None
+        live = manager.get(task_id)
+        assert live is not None
+        live.events.append(
+            {
+                "kind": "llm",
+                "ok": True,
+                "prompt_tokens": 1200,
+                "completion_tokens": 80,
+                "total_tokens": 1280,
+            }
+        )
+        live.context_window = 32768
+        usage = client.get(f"/api/tasks/{task_id}").json()
+        assert usage["tokens_used"] == 1200
+        assert usage["tokens_total"] == 1280
+        assert usage["context_window"] == 32768
 
         missing = client.get("/api/tasks/nope")
         assert missing.status_code == 404
