@@ -202,6 +202,7 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "skills:\n"
                 "  enabled:\n"
                 "    - implement\n"
+                "    - research\n"
                 "    - tdd\n"
                 "    - ui\n"
             ),

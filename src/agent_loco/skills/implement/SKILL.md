@@ -17,6 +17,12 @@ Before any tool call, restate the goal in one sentence. This ensures alignment a
 
 Identify 1–5 files that will be edited. Prefer `str_replace` on existing files rather than creating new ones. List these files explicitly before any edit.
 
+## Look up unknowns
+
+When the API, architecture, or a best practice is not already in this repo,
+call `web_search` and then `fetch_url` on an official docs page before
+inventing one. Do not guess library APIs or current recommendations.
+
 ## Edit files
 
 - Use `str_replace` for precision. Provide the exact `old_string` from the file.

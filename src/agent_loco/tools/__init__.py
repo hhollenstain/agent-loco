@@ -9,6 +9,7 @@ from agent_loco.tools.issues import issues_tools
 from agent_loco.tools.lint import lint_tools
 from agent_loco.tools.shell import shell_tools
 from agent_loco.tools.tests import test_tools
+from agent_loco.tools.web import web_tools
 
 
 def build_tools(
@@ -24,6 +25,7 @@ def build_tools(
 ) -> list[ToolSpec]:
     return [
         *file_tools(workspace),
+        *web_tools(workspace),
         *browser_tools(workspace, goal=goal),
         *shell_tools(workspace, command_timeout_seconds, allow_publish=allow_publish),
         *test_tools(workspace, test_command, command_timeout_seconds),

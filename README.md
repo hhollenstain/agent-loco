@@ -13,6 +13,7 @@ The agent process is the same on an Apple Silicon MacBook and on a Linux box wit
   loco run / watch
         │
         ├─ read / write files in one workspace
+        ├─ search the web and read public docs
         ├─ run the project's own tests
         ├─ review the diff against the stated goal
         ├─ commit only when tests are green and the goal is met
@@ -158,6 +159,8 @@ A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LOCO_MODEL_NAME
 ## Safety
 
 - All file and shell tools are rooted in `--workspace`. Path escape is rejected.
+- `web_search` and `fetch_url` only reach public http(s) URLs. Private,
+  loopback, and link-local addresses are rejected.
 - Likely secrets (`.env`, keys, `credentials.json`) cannot be committed.
 - Force-push and `--no-verify` are not available.
 - Auto-commit is skipped when tests fail and `LOCO_REQUIRE_TESTS` is on.

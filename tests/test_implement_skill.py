@@ -19,6 +19,7 @@ def test_init_enables_implement_skill(tmp_path: Path) -> None:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     enabled = config.get("skills", {}).get("enabled", [])
     assert "implement" in enabled
+    assert "research" in enabled
     assert "tdd" in enabled
     assert "ui" in enabled
 
@@ -31,6 +32,8 @@ def test_implement_skill_is_bundled_and_injected(tmp_path: Path) -> None:
     assert "implement" in skills
     assert skills["implement"].origin == "bundled"
     assert "Implementation Process" in skills["implement"].body
+    assert "web_search" in skills["implement"].body
+    assert "fetch_url" in skills["implement"].body
 
     write_default_project_files(tmp_path)
 
