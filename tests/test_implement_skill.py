@@ -20,6 +20,10 @@ def test_init_enables_implement_skill(tmp_path: Path) -> None:
     enabled = config.get("skills", {}).get("enabled", [])
     assert "implement" in enabled
     assert "research" in enabled
+    assert "debug" in enabled
+    assert "explore" in enabled
+    assert "review" in enabled
+    assert "security" in enabled
     assert "tdd" in enabled
     assert "ui" in enabled
 

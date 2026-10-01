@@ -91,6 +91,10 @@ That writes:
 
 If `test_command` is omitted, loco infers one (`pytest`, `npm test`, `make test`, `cargo test`, `go test`).
 
+New workspaces enable the bundled process skills: debug, explore, implement,
+research, review, security, tdd, and ui. Turn them on or off in the Skills
+panel. They are the agent's process; they do not add extra tools.
+
 Publish/create-PR is off until you turn it on in `.loco/config.yaml` or pass `--create-pr`. That option opens a feature branch and pull request; it never pushes to `main`. Commits still require a green test run when `LOCO_REQUIRE_TESTS=true`.
 
 ## Containerized

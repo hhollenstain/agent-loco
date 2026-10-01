@@ -23,6 +23,10 @@ When the API, architecture, or a best practice is not already in this repo,
 call `web_search` and then `fetch_url` on an official docs page before
 inventing one. Do not guess library APIs or current recommendations.
 
+Follow the other enabled process skills: **explore** before adding structure,
+**debug** when the goal is a failure, **security** on input or secrets,
+and **review** before you stop.
+
 ## Edit files
 
 - Use `str_replace` for precision. Provide the exact `old_string` from the file.

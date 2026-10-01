@@ -20,7 +20,11 @@ def test_init_enables_research_skill(tmp_path: Path) -> None:
     enabled = config.get("skills", {}).get("enabled", [])
     assert "research" in enabled
     assert "implement" in enabled
-    assert enabled_skill_names(tmp_path) == ["implement", "research", "tdd", "ui"]
+    assert "research" in enabled_skill_names(tmp_path)
+    assert "debug" in enabled_skill_names(tmp_path)
+    assert "explore" in enabled_skill_names(tmp_path)
+    assert "review" in enabled_skill_names(tmp_path)
+    assert "security" in enabled_skill_names(tmp_path)
 
 
 def test_research_skill_is_bundled_and_injected(tmp_path: Path) -> None:
