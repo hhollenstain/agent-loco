@@ -1099,6 +1099,7 @@ def serve(
         port=port,
         log_level="info",
         timeout_graceful_shutdown=1,
+        access_log=False,
     )
     server = uvicorn.Server(config)
     try:
