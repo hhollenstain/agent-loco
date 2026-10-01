@@ -20,10 +20,18 @@ _ARG_PAIR = re.compile(
     r"<arg_key>\s*(.*?)\s*</arg_key>\s*<arg_value>(.*?)</arg_value>",
     re.DOTALL | re.IGNORECASE,
 )
+_ATEM_INVOKE = re.compile(
+    r'<atem:invoke\s+name="([^"]+)">(.*?)</atem:invoke>',
+    re.DOTALL | re.IGNORECASE,
+)
+_ATEM_PARAM = re.compile(
+    r'<atem:parameter\s+name="([^"]+)">(.*?)</atem:parameter>',
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 def parse_tool_calls(text: str | None, known_names: set[str]) -> list[ToolCall]:
-    """Recover tool calls from models that emit JSON or Qwen XML instead of native tool_calls."""
+    """Recover tool calls from JSON, Qwen XML, or Muse Glimmer ATEM markup."""
     if not text:
         return []
     calls: list[ToolCall] = []
@@ -38,6 +46,8 @@ def parse_tool_calls(text: str | None, known_names: set[str]) -> list[ToolCall]:
         seen.add(key)
         calls.append(call)
 
+    for call in _atem_function_calls(text, known_names):
+        add(call)
     for call in _xml_function_calls(text, known_names):
         add(call)
     for index, blob in enumerate(_XML.finditer(text)):
@@ -50,6 +60,41 @@ def parse_tool_calls(text: str | None, known_names: set[str]) -> list[ToolCall]:
         for item in items:
             add(_to_tool_call(item, known_names, f"parsed-{index}-{len(calls)}"))
     return calls
+
+
+def _atem_function_calls(text: str, known_names: set[str]) -> list[ToolCall]:
+    """Parse ATEM invokes, with or without the function_calls wrapper."""
+    calls: list[ToolCall] = []
+    for index, match in enumerate(_ATEM_INVOKE.finditer(text)):
+        name = _known_tool_name(match.group(1), known_names)
+        if not name:
+            continue
+        arguments: dict[str, Any] = {}
+        for param in _ATEM_PARAM.finditer(match.group(2)):
+            arguments[param.group(1)] = _atem_value(param.group(2))
+        calls.append(ToolCall(id=f"atem-{index}", name=name, arguments=arguments))
+    return calls
+
+
+def _known_tool_name(name: str, known_names: set[str]) -> str | None:
+    if name in known_names:
+        return name
+    if "." in name:
+        suffix = name.rsplit(".", 1)[-1]
+        if suffix in known_names:
+            return suffix
+    return None
+
+
+def _atem_value(value: str) -> Any:
+    text = _xml_text(value)
+    stripped = text.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return text
+    return text
 
 
 def _xml_function_calls(text: str, known_names: set[str]) -> list[ToolCall]:
