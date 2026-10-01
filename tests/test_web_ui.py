@@ -70,6 +70,47 @@ def test_queue_runs_one_at_a_time(settings: Settings, tmp_path: Path) -> None:
         manager.shutdown(wait=False)
 
 
+def test_continuous_queues_next_until_stopped(settings: Settings, tmp_path: Path) -> None:
+    holder: list[TaskManager] = []
+    runs: list[str] = []
+
+    def runner(task: Task) -> CycleResult:
+        runs.append(task.id)
+        if len(runs) >= 2:
+            holder[0].stop_continuous(tmp_path)
+        return CycleResult(
+            status="success",
+            goal=task.goal or "picked",
+            summary="done",
+            tests_passed=True,
+            committed=True,
+            published=True,
+            commit_sha="abc",
+            reason="completed",
+            pr_url="https://example.test/pull/1",
+            merged=True,
+        )
+
+    manager = TaskManager(settings, max_concurrent=1, runner=runner)
+    holder.append(manager)
+    try:
+        first = manager.submit(tmp_path, None, continuous=True)
+        assert first.continuous is True
+        assert first.create_pr is True
+        deadline = time.time() + 3
+        while time.time() < deadline and len(runs) < 2:
+            time.sleep(0.05)
+        assert len(runs) == 2
+        manager.stop_continuous(tmp_path)
+        manager.shutdown(wait=True, cancel_futures=False)
+        assert manager.is_continuous_active(tmp_path) is False
+        listed = manager.list()
+        assert all(item.continuous for item in listed)
+        assert any(item.merged for item in listed)
+    finally:
+        manager.shutdown(wait=False)
+
+
 def test_live_task_logs_follow_the_running_task(settings: Settings, tmp_path: Path) -> None:
     from agent_loco.web_ui import _live_task_logs
 
@@ -860,6 +901,39 @@ def test_web_ui_defaults_create_pr_on_for_a_git_workspace(
         home = client.get("/")
         assert b'id="create-pr"' in home.content
         assert b'id="create-pr" type="checkbox" checked' in home.content
+        assert b'id="keep-improving"' in home.content
+        assert b'id="stop-improving"' in home.content
+        assert b"/api/continuous/stop" in home.content
+        assert b'getElementById("keep-improving")' in home.content
+        assert b'getElementById("stop-improving")' in home.content
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_queues_and_stops_keep_improving(
+    settings: Settings, tmp_path: Path
+) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        queued = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "continuous": True},
+        )
+        assert queued.status_code == 201
+        body = queued.json()
+        assert body["continuous"] is True
+        assert body["create_pr"] is True
+        meta = client.get("/api/meta").json()
+        assert "continuous_active" in meta
+        stopped = client.post(
+            "/api/continuous/stop",
+            json={"workspace": str(tmp_path)},
+        )
+        assert stopped.status_code == 200
+        assert stopped.json()["ok"] is True
+        assert manager.is_continuous_active(tmp_path) is False
     finally:
         manager.shutdown(wait=False)
 

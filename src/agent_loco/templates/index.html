@@ -2026,7 +2026,7 @@
       </div>
 
       <label for="goal">Goal</label>
-      <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md or failing tests">{{ default_goal }}</textarea>
+      <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md, failing tests, or keep improving">{{ default_goal }}</textarea>
       <p class="hint" id="enabled-skills-hint"></p>
 
       <div class="llm-block">
@@ -2056,8 +2056,18 @@
         <label>
           <input id="create-pr" type="checkbox" {% if default_create_pr %}checked{% endif %}> create pull request
         </label>
+        <label>
+          <input id="keep-improving" type="checkbox"> keep improving
+        </label>
       </div>
-      <button type="submit" id="submit">Queue task</button>
+      <p class="hint" id="keep-improving-status" hidden>
+        Loco reviews the repo, picks one best-practice or UX change, opens a PR,
+        merges it when tests and review pass, then continues until you stop.
+      </p>
+      <div class="form-actions">
+        <button type="submit" id="submit">Queue task</button>
+        <button type="button" class="secondary" id="stop-improving" hidden>Stop improving</button>
+      </div>
       <div class="notice-slot" id="form-error"></div>
     </form>
       <div class="sidebar-overlay" id="skills-panel" hidden>
@@ -4494,6 +4504,7 @@
       }
 
       render();
+      syncKeepImproving();
       refreshPullStates(state.tasks.concat(historyItems())).then((changed) => {
         if (changed) render();
       });
@@ -4847,6 +4858,24 @@
       }
     }
 
+    function syncKeepImproving() {
+      const keepEl = document.getElementById("keep-improving");
+      const createPrEl = document.getElementById("create-pr");
+      const stopEl = document.getElementById("stop-improving");
+      const hintEl = document.getElementById("keep-improving-status");
+      const keepOn = Boolean(keepEl && keepEl.checked);
+      if (keepOn && createPrEl) createPrEl.checked = true;
+      if (hintEl) hintEl.hidden = !keepOn;
+      if (submitEl) submitEl.textContent = keepOn ? "Keep improving" : "Queue task";
+      const workspace = (document.getElementById("workspace") || {}).value || "";
+      const active = (state.tasks || []).some(function (task) {
+        return task.continuous
+          && (task.status === "queued" || task.status === "running")
+          && String(task.workspace || "") === String(workspace);
+      });
+      if (stopEl) stopEl.hidden = !active;
+    }
+
     document.getElementById("task-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       clearNotice(errorEl);
@@ -4858,13 +4887,42 @@
           base_url: document.getElementById("base-url").value,
           model: document.getElementById("model").value,
           auto_commit: document.getElementById("auto-commit").checked,
-          create_pr: document.getElementById("create-pr").checked,
+          create_pr: document.getElementById("create-pr").checked
+            || document.getElementById("keep-improving").checked,
+          continuous: document.getElementById("keep-improving").checked,
         });
       } catch (err) {
         showNotice(errorEl, "error", err.message);
         notify("error", err.message, { title: "Could not queue task" });
       } finally {
         submitEl.disabled = false;
+      }
+    });
+
+    document.getElementById("keep-improving").addEventListener("change", function () {
+      syncKeepImproving();
+    });
+    document.getElementById("stop-improving").addEventListener("click", async function () {
+      const stopEl = document.getElementById("stop-improving");
+      try {
+        if (stopEl) stopEl.disabled = true;
+        const res = await fetch("/api/continuous/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspace: document.getElementById("workspace").value,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Could not stop");
+        document.getElementById("keep-improving").checked = false;
+        notify("queued", "Stopped keep improving", { title: "Stopped" });
+        await refresh();
+      } catch (err) {
+        showNotice(errorEl, "error", err.message);
+      } finally {
+        if (stopEl) stopEl.disabled = false;
+        syncKeepImproving();
       }
     });
 
@@ -5060,6 +5118,7 @@
     });
 
     renderNotificationHistory();
+    syncKeepImproving();
     refresh();
     loadRecentWorkspaces().catch(() => {});
     loadModels(false);

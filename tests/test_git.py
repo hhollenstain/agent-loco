@@ -20,6 +20,7 @@ from agent_loco.tools.git import (
     has_changes,
     is_runtime_artifact,
     is_tracked,
+    merge_pull_request,
     parse_github_remote,
     pull_request_state,
     push_changes,
@@ -448,4 +449,23 @@ def test_resume_workspace_checks_out_feature_branch(tmp_path: Path) -> None:
     result = resume_workspace(workspace, branch="loco/feature")
     assert result.ok
     assert current_branch(workspace) == "loco/feature"
+
+
+def test_merge_pull_request_calls_gh_squash(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    seen: dict[str, list[str]] = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = list(args)
+        return subprocess.CompletedProcess(args, 0, stdout="merged\n", stderr="")
+
+    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    result = merge_pull_request(workspace, "https://github.com/acme/repo/pull/4")
+    assert result.ok
+    assert seen["args"][:3] == ["gh", "pr", "merge"]
+    assert "https://github.com/acme/repo/pull/4" in seen["args"]
+    assert "--squash" in seen["args"]
+    assert "--delete-branch" in seen["args"]
 

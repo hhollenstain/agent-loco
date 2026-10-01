@@ -505,7 +505,18 @@ textarea {
 
 .modal-error { color: var(--bad); min-height: 1.2rem; margin: 0.45rem 0 0; font-size: 0.86rem; }
 
-.checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
+.checks { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+#keep-improving-status {
+  margin: 0.35rem 0 0.85rem;
+}
 
 /* Sidebar controls */
 .sidebar-tools {

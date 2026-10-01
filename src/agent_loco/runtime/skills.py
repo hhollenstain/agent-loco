@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
@@ -222,16 +223,21 @@ def sync_skill_source(root: Path, slug: str, *, ref: str | None = None) -> Skill
     return replace(source, path=str(dest))
 
 
-def format_enabled_skills(root: Path) -> str:
-    enabled = [skill for skill in list_skills(root) if skill.enabled]
-    if not enabled:
+def format_enabled_skills(root: Path, extra_names: Sequence[str] = ()) -> str:
+    extra = {name for name in extra_names if name}
+    selected = [
+        skill
+        for skill in list_skills(root)
+        if skill.enabled or skill.name in extra
+    ]
+    if not selected:
         return ""
     parts = [
         "## Enabled skills",
         "",
         "Follow these skills for this workspace. They are the process for this run.",
     ]
-    for skill in enabled:
+    for skill in selected:
         parts.extend(["", f"### {skill.name}"])
         if skill.description:
             parts.append(skill.description)
@@ -243,11 +249,11 @@ def format_enabled_skills(root: Path) -> str:
     return "\n".join(parts).strip()
 
 
-def compose_system_prompt(root: Path) -> str:
+def compose_system_prompt(root: Path, extra_names: Sequence[str] = ()) -> str:
     from agent_loco.runtime.project import load_guidelines
 
     base = load_guidelines(root).rstrip()
-    skills = format_enabled_skills(root)
+    skills = format_enabled_skills(root, extra_names)
     if not skills:
         return f"{base}\n"
     return f"{base}\n\n{skills}\n"

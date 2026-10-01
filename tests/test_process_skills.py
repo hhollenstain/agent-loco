@@ -54,3 +54,12 @@ def test_process_skills_are_bundled_and_injected(tmp_path: Path) -> None:
         prompt = compose_system_prompt(tmp_path)
         assert f"### {name}" in prompt
         assert phrases[0] in prompt or phrases[0].lower() in prompt.lower()
+    steward = bundled_skills_root() / "steward" / "SKILL.md"
+    assert steward.is_file()
+    save_enabled_skills(tmp_path, ["steward"])
+    prompt = compose_system_prompt(tmp_path)
+    assert "### steward" in prompt
+    assert "Keep the product closer" in prompt
+    save_enabled_skills(tmp_path, [])
+    forced = compose_system_prompt(tmp_path, extra_names=("steward",))
+    assert "### steward" in forced

@@ -66,6 +66,8 @@ class Task:
     resume_branch: str | None = None
     resume_sha: str | None = None
     context_window: int | None = None
+    continuous: bool = False
+    merged: bool = False
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -93,6 +95,8 @@ class Task:
             "events": list(self.events),
             **token_usage_from_events(self.events),
             "context_window": self.context_window,
+            "continuous": self.continuous,
+            "merged": self.merged,
         }
         if include_logs:
             payload["logs"] = list(self.logs)
@@ -138,6 +142,7 @@ class TaskManager:
         self._models_fn = models_fn
         self._lock = threading.Lock()
         self._tasks: dict[str, Task] = {}
+        self._continuous_stopped: set[str] = set()
         self._executor = ThreadPoolExecutor(
             max_workers=max_concurrent,
             thread_name_prefix="loco-task",
@@ -155,6 +160,7 @@ class TaskManager:
         model_api_key: str | None = None,
         resume_branch: str | None = None,
         resume_sha: str | None = None,
+        continuous: bool = False,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
@@ -166,18 +172,22 @@ class TaskManager:
         selected_key = (
             model_api_key if model_api_key is not None else self.settings.model_api_key
         )
+        if continuous:
+            with self._lock:
+                self._continuous_stopped.discard(str(workspace))
         task = Task(
             id=uuid4().hex,
             workspace=str(workspace),
             goal=(goal.strip() if goal and goal.strip() else None),
             auto_commit=self.settings.auto_commit if auto_commit is None else auto_commit,
-            create_pr=create_pr,
+            create_pr=True if continuous and create_pr is None else create_pr,
             model_name=selected_model,
             model_base_url=selected_url,
             model_api_key=selected_key,
             resume_branch=(resume_branch or "").strip() or None,
             resume_sha=(resume_sha or "").strip() or None,
             branch=(resume_branch or "").strip() or None,
+            continuous=continuous,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -255,7 +265,27 @@ class TaskManager:
             model_api_key=old_task.model_api_key,
             resume_branch=resume_branch,
             resume_sha=resume_sha,
+            continuous=old_task.continuous,
         )
+
+    def stop_continuous(self, workspace: str | Path) -> None:
+        """Stop auto-queuing keep-improving cycles for this workspace."""
+        key = str(Path(workspace).expanduser().resolve())
+        with self._lock:
+            self._continuous_stopped.add(key)
+
+    def is_continuous_active(self, workspace: str | Path) -> bool:
+        path = Path(workspace).expanduser().resolve()
+        key = str(path)
+        with self._lock:
+            if key in self._continuous_stopped:
+                return False
+            return any(
+                task.continuous
+                and task.status in {"queued", "running"}
+                and Path(task.workspace).resolve() == path
+                for task in self._tasks.values()
+            )
 
     def list_models(
         self,
@@ -308,6 +338,7 @@ class TaskManager:
             task.published = result.published
             task.commit_sha = result.commit_sha
             task.pr_url = result.pr_url
+            task.merged = bool(getattr(result, "merged", False))
             if getattr(result, "branch", None):
                 task.branch = result.branch
             self._refresh_git_state(task)
@@ -324,6 +355,7 @@ class TaskManager:
             loco_log.removeHandler(handler)
             for exchange_log in exchange_logs:
                 exchange_log.removeHandler(handler)
+        self._maybe_continue(task)
 
     def _execute(self, task: Task) -> CycleResult:
         self._resume_workspace(task)
@@ -344,7 +376,32 @@ class TaskManager:
             llm,
             task.goal,
             cli_create_pr=task.create_pr,
+            continuous=task.continuous,
         )
+
+    def _maybe_continue(self, task: Task) -> None:
+        if not task.continuous or task.status != "success":
+            return
+        if not (task.committed or task.published or task.merged):
+            return
+        workspace = Path(task.workspace)
+        with self._lock:
+            if str(workspace.resolve()) in self._continuous_stopped:
+                return
+        log.info("keep improving: queueing the next cycle for %s", workspace)
+        try:
+            self.submit(
+                workspace,
+                None,
+                auto_commit=task.auto_commit,
+                create_pr=task.create_pr,
+                model_name=task.model_name,
+                model_base_url=task.model_base_url,
+                model_api_key=task.model_api_key,
+                continuous=True,
+            )
+        except RuntimeError as exc:
+            log.warning("could not queue next keep-improving cycle: %s", exc)
 
     def _resume_workspace(self, task: Task) -> None:
         from agent_loco.sandbox import SandboxError, Workspace

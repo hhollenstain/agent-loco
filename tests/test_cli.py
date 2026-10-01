@@ -31,7 +31,18 @@ def test_version() -> None:
     assert __version__ in _help_text(result)
 
 
-def test_run_help_includes_web_ui() -> None:
+def test_watch_help_includes_continuous() -> None:
+    result = runner.invoke(app, ["watch", "--help"])
+    assert result.exit_code == 0
+    text = _help_text(result)
+    assert "--continuous" in text
+    assert "--create-pr" in text
+
+
+def test_run_help_includes_continuous() -> None:
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    assert "--continuous" in _help_text(result)
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     assert "--web-ui" in _help_text(result)

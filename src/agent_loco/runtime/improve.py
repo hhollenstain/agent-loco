@@ -32,6 +32,7 @@ from agent_loco.runtime.review import (
     unwired_ui_markers,
 )
 from agent_loco.runtime.skills import compose_system_prompt
+from agent_loco.runtime.steward import propose_improvement_goal
 from agent_loco.runtime.uireview import (
     UiEvidence,
     collect_ui_evidence,
@@ -45,6 +46,7 @@ from agent_loco.sandbox import SandboxError, Workspace
 from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
     CO_AUTHORED_BY,
+    checkout_base_branch,
     commit_changes,
     commits_ahead_of_base,
     create_pull_request,
@@ -58,6 +60,7 @@ from agent_loco.tools.git import (
     has_changes,
     is_protected_branch,
     is_tracked,
+    merge_pull_request,
     push_changes,
     update_pull_request,
     upstream_state,
@@ -184,6 +187,7 @@ class CycleResult:
     reason: str | None
     pr_url: str | None = None
     branch: str | None = None
+    merged: bool = False
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -218,6 +222,7 @@ def run_cycle(
     *,
     mark_checkbox: bool = True,
     cli_create_pr: bool | None = None,
+    continuous: bool = False,
 ) -> CycleResult:
     progress = bind_progress()
     try:
@@ -228,6 +233,7 @@ def run_cycle(
             goal,
             mark_checkbox=mark_checkbox,
             cli_create_pr=cli_create_pr,
+            continuous=continuous,
         )
     finally:
         reset_progress(progress)
@@ -241,6 +247,7 @@ def _run_cycle(
     *,
     mark_checkbox: bool = True,
     cli_create_pr: bool | None = None,
+    continuous: bool = False,
 ) -> CycleResult:
     log_progress("Initializing workspace...")
     workspace = Workspace(workspace_path)
@@ -252,6 +259,16 @@ def _run_cycle(
         log_progress("Running before tests...")
         tests_before = _maybe_test(workspace, project, settings, phase="before")
     selected_goal = goal or _choose_goal(project, tests_before)
+    if not selected_goal and continuous:
+        log_progress("Reviewing the codebase for the next best-practice or UX change...")
+        selected_goal = propose_improvement_goal(
+            llm,
+            workspace,
+            project,
+            allow_publish=allow_create_pr,
+        )
+        if selected_goal:
+            log_progress(f"Proposed improvement: {goal_headline(selected_goal)}")
     if not selected_goal:
         log_progress("No pending goals and tests are green.")
         result = CycleResult(
@@ -283,11 +300,12 @@ def _run_cycle(
     log_progress("Fetching current SHA...")
     sha_before = current_sha(workspace)
     log_progress("Initializing coding agent...")
+    extra_skills = ("steward",) if continuous else ()
     agent = CodingAgent(
         llm,
         tools,
         max_iterations=settings.max_iterations,
-        system_prompt=compose_system_prompt(workspace.root),
+        system_prompt=compose_system_prompt(workspace.root, extra_skills),
     )
     log_progress("Running coding agent...")
     agent_result = agent.run(
@@ -514,6 +532,18 @@ def _run_cycle(
         mark_goal_done(workspace.root, project.goals_file, selected_goal)
 
     log_progress("Generating cycle result...")
+    merged = False
+    if continuous and pr_url and tests_passed is not False:
+        log_progress(f"Merging pull request {pr_url}...")
+        merged_pr = merge_pull_request(workspace, pr_url)
+        if merged_pr.ok:
+            merged = True
+            log_progress(merged_pr.output or f"merged {pr_url}")
+            base = default_base_branch(workspace, project.publish_branch)
+            returned = checkout_base_branch(workspace, base, project.publish_remote)
+            log_progress(returned.output)
+        else:
+            log_progress(f"Could not merge pull request: {merged_pr.output}")
     result = CycleResult(
         status="success",
         goal=selected_goal,
@@ -524,6 +554,7 @@ def _run_cycle(
         commit_sha=sha,
         reason=agent_result.stopped_reason,
         pr_url=pr_url,
+        merged=merged,
     )
     _write_run_log(workspace.root, result)
     _append_to_history(workspace.root, result)

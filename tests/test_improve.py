@@ -457,11 +457,122 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert "## Why This Update" in str(captured["body"])
     assert "## Test plan" in str(captured["body"])
     assert CO_AUTHORED_BY in str(captured["body"])
+    assert result.merged is False
     log = run_git(workspace, ["log", "-1", "--format=%B"]).stdout
     assert CO_AUTHORED_BY in log
     assert current_branch(workspace).startswith("loco/")
     assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == initial
     assert "Goal review confirmed the requested outcome" in str(captured["body"])
+
+
+def test_cycle_continuous_proposes_when_goals_are_empty(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    (tmp_path / ".loco" / "goals.md").write_text("- [x] Already done\n", encoding="utf-8")
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=(
+                    "GOAL: Add a module docstring to app.py\n\n"
+                    "Document add()."
+                )
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="str_replace",
+                        arguments={
+                            "path": "app.py",
+                            "old_string": "def add(left, right):\n    return left + right\n",
+                            "new_string": (
+                                '"""Tiny adder used by the fixture tests."""\n'
+                                "def add(left, right):\n    return left + right\n"
+                            ),
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Added a module docstring."),
+            _review_turn(True, "app.py has a module docstring"),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, continuous=True)
+    assert result.status == "success"
+    assert result.goal and "module docstring" in result.goal
+    assert result.committed is True
+    assert '"""Tiny adder' in (tmp_path / "app.py").read_text(encoding="utf-8")
+
+
+def test_cycle_continuous_skips_when_nothing_to_do(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    (tmp_path / ".loco" / "goals.md").write_text("- [x] Already done\n", encoding="utf-8")
+    llm = ScriptedClient([AssistantTurn(text="NOTHING_TO_DO")])
+    result = run_cycle(tmp_path, settings, llm, continuous=True)
+    assert result.status == "skipped"
+    assert result.merged is False
+
+
+def test_cycle_continuous_merges_after_review(
+    tmp_path: Path, settings: Settings, monkeypatch
+) -> None:
+    _broken_project(tmp_path)
+    captured: dict[str, str | None] = {}
+
+    def fake_push(ws, remote="origin", branch=None):
+        return ToolResult(True, "pushed")
+
+    def fake_pr(ws, title, body, *, base=None):
+        captured["pr"] = "https://example.test/pull/9"
+        return ToolResult(True, captured["pr"])
+
+    def fake_merge(ws, url=None, *, squash=True):
+        captured["merged"] = url
+        return ToolResult(True, "merged")
+
+    def fake_checkout(ws, base, remote="origin"):
+        captured["base"] = base
+        return ToolResult(True, f"checked out {base}")
+
+    monkeypatch.setattr("agent_loco.runtime.improve.push_changes", fake_push)
+    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_loco.runtime.improve.merge_pull_request", fake_merge)
+    monkeypatch.setattr("agent_loco.runtime.improve.checkout_base_branch", fake_checkout)
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add and verified with python3 check.py."),
+            _review_turn(True, "adder returns 5 and tests passed"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        cli_create_pr=True,
+        continuous=True,
+    )
+    assert result.status == "success"
+    assert result.published is True
+    assert result.merged is True
+    assert captured["merged"] == "https://example.test/pull/9"
+    assert captured["base"] in {"main", "master"}
 
 
 def test_cycle_pr_hosts_only_the_change_screenshot(

@@ -16,19 +16,32 @@ def watch(
     settings: Settings,
     llm: LLMClient,
     goal: str | None = None,
+    *,
+    continuous: bool = False,
+    cli_create_pr: bool | None = None,
 ) -> None:
     log.info(
-        "watching %s every %ss",
+        "watching %s every %ss%s",
         workspace_path,
         settings.watch_interval_seconds,
+        " (keep improving)" if continuous else "",
     )
     while True:
-        result = run_cycle(workspace_path, settings, llm, goal, mark_checkbox=goal is None)
+        result = run_cycle(
+            workspace_path,
+            settings,
+            llm,
+            goal,
+            mark_checkbox=goal is None,
+            cli_create_pr=cli_create_pr,
+            continuous=continuous,
+        )
         log.info(
-            "cycle status=%s committed=%s published=%s reason=%s",
+            "cycle status=%s committed=%s published=%s merged=%s reason=%s",
             result.status,
             result.committed,
             result.published,
+            result.merged,
             result.reason,
         )
         time.sleep(settings.watch_interval_seconds)

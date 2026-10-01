@@ -608,6 +608,48 @@ def create_pull_request(
     return ToolResult(False, output)
 
 
+def merge_pull_request(
+    workspace: Workspace,
+    url: str | None = None,
+    *,
+    squash: bool = True,
+) -> ToolResult:
+    """Squash-merge a GitHub pull request after cycle review. Does not push to main."""
+    args = ["gh", "pr", "merge"]
+    if url:
+        args.append(url)
+    args.append("--squash" if squash else "--merge")
+    args.append("--delete-branch")
+    try:
+        result = subprocess.run(
+            args,
+            cwd=workspace.root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return ToolResult(False, "gh not found")
+    output = (result.stdout or result.stderr).strip()
+    return ToolResult(result.returncode == 0, output or "merged pull request")
+
+
+def checkout_base_branch(
+    workspace: Workspace,
+    base: str,
+    remote: str = "origin",
+) -> ToolResult:
+    """Return HEAD to the default branch after a merge so the next cycle starts clean."""
+    target = (base or "").strip() or "main"
+    switched = run_git(workspace, ["checkout", target])
+    if switched.returncode != 0:
+        return ToolResult(False, _output(switched))
+    pulled = run_git(workspace, ["pull", "--ff-only", remote or "origin", target])
+    if pulled.returncode != 0:
+        return ToolResult(True, f"checked out {target}; pull: {_output(pulled)}")
+    return ToolResult(True, f"checked out {target}")
+
+
 def update_pull_request(
     workspace: Workspace,
     title: str,

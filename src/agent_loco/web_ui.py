@@ -97,6 +97,11 @@ class TaskCreate(BaseModel):
     resume_branch: str | None = None
     resume_sha: str | None = None
     pr_url: str | None = None
+    continuous: bool = False
+
+
+class ContinuousStop(BaseModel):
+    workspace: str | None = None
 
 
 class RerunPayload(BaseModel):
@@ -257,6 +262,7 @@ class UiState:
             or self.manager.settings.model_base_url,
             "known_servers": selected["servers"],
             "max_concurrent": self.manager.max_concurrent,
+            "continuous_active": self.manager.is_continuous_active(self.default_workspace),
         }
 
     def meta(self) -> dict[str, Any]:
@@ -274,6 +280,7 @@ class UiState:
             or self.manager.settings.model_base_url,
             "known_servers": selected["servers"],
             "max_concurrent": self.manager.max_concurrent,
+            "continuous_active": self.manager.is_continuous_active(self.default_workspace),
             **self.manager.counts(),
         }
 
@@ -790,12 +797,28 @@ def create_app(
                 model_api_key=body.api_key,
                 resume_branch=body.resume_branch,
                 resume_sha=body.resume_sha,
+                continuous=bool(body.continuous),
             )
             ui.remember_server(task.model_base_url, model=task.model_name)
             ui.set_workspace(task.workspace)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(task.to_dict(), status_code=201)
+
+    @app.post("/api/continuous/stop")
+    def stop_continuous(
+        request: Request,
+        payload: ContinuousStop | None = None,
+    ) -> dict[str, object]:
+        ui: UiState = request.app.state.ui
+        body = payload or ContinuousStop()
+        workspace = body.workspace or ui.default_workspace
+        ui.manager.stop_continuous(workspace)
+        return {
+            "ok": True,
+            "workspace": str(Path(workspace).expanduser().resolve()),
+            "continuous_active": False,
+        }
 
     @app.post("/api/pulls/status")
     def pull_status(payload: PullStatusQuery | None = None) -> dict[str, Any]:

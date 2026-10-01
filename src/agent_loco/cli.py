@@ -190,6 +190,13 @@ def run(
     ] = None,
     create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
+    continuous: Annotated[
+        bool,
+        typer.Option(
+            "--continuous",
+            help="If no goal, pick a best-practice or UX improvement and merge the PR.",
+        ),
+    ] = False,
     web_ui: Annotated[
         bool,
         typer.Option("--web-ui", help="Start the web UI instead of running one cycle."),
@@ -218,11 +225,12 @@ def run(
         settings,
         _llm(settings),
         goal,
-        cli_create_pr=create_pr,
+        cli_create_pr=True if continuous and create_pr is None else create_pr,
+        continuous=continuous,
     )
     console.print(
         f"[bold]{result.status}[/bold] committed={result.committed} "
-        f"published={result.published} tests={result.tests_passed}"
+        f"published={result.published} merged={result.merged} tests={result.tests_passed}"
     )
     if result.goal:
         console.print(f"goal: {result.goal.splitlines()[0]}")
@@ -258,15 +266,31 @@ def watch_command(
             help="OpenAI-compatible LLM server (host:port or /v1 URL).",
         ),
     ] = None,
+    create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
+    continuous: Annotated[
+        bool,
+        typer.Option(
+            "--continuous",
+            help="Keep picking best-practice and UX improvements, open PRs, and merge them.",
+        ),
+    ] = False,
 ) -> None:
     """Keep improving a project on an interval."""
     settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
         watch_interval_seconds=interval,
+        create_pr=True if continuous and create_pr is None else create_pr,
     )
     try:
-        watch_loop(workspace, settings, _llm(settings), goal)
+        watch_loop(
+            workspace,
+            settings,
+            _llm(settings),
+            goal,
+            continuous=continuous,
+            cli_create_pr=True if continuous and create_pr is None else create_pr,
+        )
     except KeyboardInterrupt:
         console.print("stopped")
 
