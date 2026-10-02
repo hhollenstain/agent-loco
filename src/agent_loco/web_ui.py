@@ -23,7 +23,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from agent_loco.config import Settings
-from agent_loco.llm.client import normalize_model_base_url
+from agent_loco.llm.client import lookup_context_window, normalize_model_base_url
 from agent_loco.progress import attach_token_usage, clip_text, llm_turn_snippets, public_run_item
 from agent_loco.runtime.importer import load_goals_from_workspace
 from agent_loco.runtime.project import (
@@ -235,6 +235,15 @@ class UiState:
             default=self.manager.settings.model_base_url,
         )
 
+    def selection_context_window(self) -> int | None:
+        selected = self.selection()
+        return lookup_context_window(
+            selected["last_base_url"] or self.manager.settings.model_base_url,
+            self.manager.settings.model_api_key,
+            selected["last_model"] or self.manager.settings.model_name,
+            timeout=0.5,
+        )
+
     def template_vars(self) -> dict[str, Any]:
         selected = self.selection()
         workspaces = self.remember_current_workspace()
@@ -385,7 +394,10 @@ class UiState:
 
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
-        items = [attach_token_usage(item) for item in all_items[start_idx:end_idx]]
+        items = [
+            attach_token_usage(item, default_window=self.selection_context_window())
+            for item in all_items[start_idx:end_idx]
+        ]
 
         return {
             "items": items,
@@ -683,12 +695,23 @@ def create_app(
         else:
             servers = ui.known_servers()
         selected = ui.selection()
+        chosen = (
+            model
+            or selected["last_model"]
+            or (names[0] if names else ui.manager.settings.model_name)
+        )
         return {
             "default": ui.manager.settings.model_name,
             "last_model": selected["last_model"],
             "base_url": resolved,
             "models": names,
             "servers": servers,
+            "context_window": lookup_context_window(
+                resolved,
+                api_key or ui.manager.settings.model_api_key,
+                chosen,
+                timeout=0.5,
+            ),
         }
 
     @app.get("/api/models", response_model=None)

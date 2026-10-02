@@ -260,7 +260,16 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function syncTaskTokens(" in home.content
         assert b"function tokenUsageFromItem(" in home.content
         assert b"function parseTokenValue(" in home.content
-        assert b"context window" in home.content
+        assert b"function taskTokensHover(" in home.content
+        assert b"function renderTokenBar(" in home.content
+        assert b"function rememberContextWindow(" in home.content
+        assert b"percentLabel + " in home.content
+        assert b'winFmt + " tokens"' in home.content
+        assert b'id="llm-server-toggle"' in home.content
+        assert b"llm-toggle-icon" in home.content
+        assert b"Show server" not in home.content
+        assert b"Hide server" not in home.content
+        assert b'aria-label="Server settings"' in home.content
         assert b'id="past-runs"' in home.content
         assert b'id="history-detail"' in home.content
         assert b'id="history-picker"' in home.content
@@ -498,6 +507,7 @@ def test_web_ui_lists_models_and_queues_with_selection(settings: Settings, tmp_p
         assert body["models"][0] == settings.model_name
         assert "alpha-coder" in body["models"]
         assert "beta-coder" in body["models"]
+        assert "context_window" in body
 
         created = client.post(
             "/api/tasks",
@@ -616,10 +626,41 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
         assert body["items"][0]["id"] == "20260919T180000Z"
         assert body["items"][0]["created_at"] == "2026-09-19T18:00:00Z"
         assert body["items"][0]["goal"] == "Past goal"
+        assert "tokens_used" in body["items"][0]
+        assert "context_window" in body["items"][0]
         assert body["page"] == 1
         assert body["page_size"] == 10
         assert body["total"] == 1
         assert body["total_pages"] == 1
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_history_fills_token_window_from_current_model(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("agent_loco.web_ui.lookup_context_window", lambda *args, **kwargs: 32768)
+    runs = tmp_path / ".loco" / "runs"
+    runs.mkdir(parents=True)
+    (runs / "20260919T180000Z.json").write_text(
+        json.dumps(
+            {
+                "status": "success",
+                "goal": "Past goal",
+                "events": [
+                    {"kind": "llm", "ok": True, "prompt_tokens": 6768, "total_tokens": 7000},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        item = client.get("/api/history").json()["items"][0]
+        assert item["tokens_used"] == 6768
+        assert item["context_window"] == 32768
     finally:
         manager.shutdown(wait=False)
 

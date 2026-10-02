@@ -71,7 +71,13 @@ class OpenAICompatClient:
                 raise
             log.warning("server rejected Glimmer tool call without ATEM wrapper; retrying")
             nudged = [*messages, {"role": "user", "content": ATEM_RETRY_NUDGE}]
-            return self._complete(nudged, tools)
+            try:
+                return self._complete(nudged, tools)
+            except Exception as retry_exc:
+                if not is_atem_parse_error(retry_exc):
+                    raise
+                log.warning("Glimmer ATEM retry still rejected; completing without native tools")
+                return self._complete(nudged, [])
 
     def _complete(
         self,
@@ -209,8 +215,7 @@ def lookup_context_window(
     if cache_key in _WINDOW_CACHE:
         return _WINDOW_CACHE[cache_key]
     window = _fetch_context_window(url, api_key, name, timeout=timeout)
-    if window is not None:
-        _WINDOW_CACHE[cache_key] = window
+    _WINDOW_CACHE[cache_key] = window
     return window
 
 

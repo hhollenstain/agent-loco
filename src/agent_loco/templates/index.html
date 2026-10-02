@@ -135,6 +135,10 @@
       font-size: 0.78rem;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
     }
     .llm-block label { margin-top: 0.9rem; }
     .llm-block > label:first-of-type { margin-top: 0; }
@@ -2030,19 +2034,26 @@
       <p class="hint" id="enabled-skills-hint"></p>
 
       <div class="llm-block">
-        <p class="llm-heading">LLM</p>
-        <label for="server-history">Saved server</label>
-        <select id="server-history" aria-label="Remembered LLM servers">
-          {% for server in known_servers %}
-          {% set server_url = server.url if server is mapping else server %}
-          {% set server_alias = server.alias if server is mapping else None %}
-          <option value="{{ server_url }}" title="{{ server_url }}" {% if server_url == default_base_url %}selected{% endif %}>{{ server_alias or server_url }}</option>
-          {% endfor %}
-        </select>
-        <label for="base-url">Server URL</label>
-        <input id="base-url" name="base_url" type="text" spellcheck="false" required value="{{ default_base_url }}" placeholder="http://127.0.0.1:11434/v1">
-        <p class="hint">Pick a saved host or type a new one (host:port or /v1 URL). Used servers are remembered after you load models.</p>
-        <button type="button" class="secondary llm-load" id="load-models">Load models</button>
+        <p class="llm-heading">
+          LLM
+          <button type="button" class="secondary llm-toggle" id="llm-server-toggle" aria-expanded="false" aria-controls="llm-server-fields" aria-label="Server settings" title="Server settings">
+            <span class="llm-toggle-icon" aria-hidden="true"></span>
+          </button>
+        </p>
+        <div id="llm-server-fields" hidden>
+          <label for="server-history">Saved server</label>
+          <select id="server-history" aria-label="Remembered LLM servers">
+            {% for server in known_servers %}
+            {% set server_url = server.url if server is mapping else server %}
+            {% set server_alias = server.alias if server is mapping else None %}
+            <option value="{{ server_url }}" title="{{ server_url }}" {% if server_url == default_base_url %}selected{% endif %}>{{ server_alias or server_url }}</option>
+            {% endfor %}
+          </select>
+          <label for="base-url">Server URL</label>
+          <input id="base-url" name="base_url" type="text" spellcheck="false" required value="{{ default_base_url }}" placeholder="http://127.0.0.1:11434/v1">
+          <p class="hint">Pick a saved host or type a new one (host:port or /v1 URL). Used servers are remembered after you load models.</p>
+          <button type="button" class="secondary llm-load" id="load-models">Load models</button>
+        </div>
         <label for="model">Model</label>
         <select id="model" name="model">
           <option value="{{ default_model }}" selected>{{ default_model }}</option>
@@ -4109,9 +4120,27 @@
       return Math.round(number).toLocaleString("en-US");
     }
 
+    const knownContextWindows = {};
+    let defaultContextWindow = null;
+
+    function rememberContextWindow(model, windowSize) {
+      const parsed = parseTokenValue(windowSize);
+      if (parsed == null || parsed <= 0) return;
+      defaultContextWindow = parsed;
+      if (model) knownContextWindows[model] = parsed;
+    }
+
     function tokenUsageFromItem(item) {
       let used = parseTokenValue(item && item.tokens_used);
-      const windowSize = parseTokenValue(item && item.context_window);
+      let windowSize = parseTokenValue(item && item.context_window);
+      const model = item && item.model;
+      if (windowSize != null && windowSize > 0) rememberContextWindow(model, windowSize);
+      if ((windowSize == null || windowSize <= 0) && model && knownContextWindows[model]) {
+        windowSize = knownContextWindows[model];
+      }
+      if ((windowSize == null || windowSize <= 0) && defaultContextWindow) {
+        windowSize = defaultContextWindow;
+      }
       if (used == null) {
         const events = (item && item.events) || [];
         for (let i = events.length - 1; i >= 0; i--) {
@@ -4130,25 +4159,47 @@
       };
     }
 
-    function taskTokensLabel(item) {
-      const usage = tokenUsageFromItem(item || {});
-      return formatTokenCount(usage.used) + " / " + formatTokenCount(usage.window);
+    function tokenUsagePercent(used, windowSize) {
+      if (used == null || windowSize == null || windowSize <= 0) return null;
+      return Math.max(0, Math.min(100, Math.round(used / windowSize * 100)));
     }
 
-    function taskTokensTitle(item) {
+    function taskTokensHover(item) {
       const usage = tokenUsageFromItem(item || {});
-      const used = usage.used == null ? "unknown" : formatTokenCount(usage.used);
-      const windowSize = usage.window == null ? "unknown" : formatTokenCount(usage.window);
-      return used + " tokens in the current context · " + windowSize + " context window";
+      const usedFmt = formatTokenCount(usage.used);
+      const winFmt = formatTokenCount(usage.window);
+      const percent = tokenUsagePercent(usage.used, usage.window);
+      const percentLabel = percent == null ? "—%" : percent + "%";
+      return percentLabel + " · " + usedFmt + " / " + winFmt + " tokens";
+    }
+
+    function renderTokenBar(used, windowSize) {
+      const usedFmt = formatTokenCount(used);
+      const winFmt = formatTokenCount(windowSize);
+      const percent = tokenUsagePercent(used, windowSize);
+      const percentLabel = percent == null ? "—%" : percent + "%";
+      const title = percentLabel + " · " + usedFmt + " / " + winFmt + " tokens";
+      const fill = percent == null ? 0 : percent;
+      const count = percent == null
+        ? usedFmt + " / " + winFmt
+        : percent + "% · " + usedFmt + " / " + winFmt;
+      return `<span class="token-usage" data-token-used="${used ?? ""}" data-window-size="${windowSize ?? ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
+        <span class="token-bar" aria-hidden="true">
+          <span class="token-fill" style="width:${fill}%"></span>
+        </span>
+        <span class="token-count">${escapeHtml(count)}</span>
+      </span>`;
     }
 
     function syncTaskTokens(root, item) {
       if (!root) return;
       const el = root.querySelector("[data-task-tokens]");
       if (!el) return;
-      el.textContent = taskTokensLabel(item) + " tokens";
-      el.title = taskTokensTitle(item);
-      el.setAttribute("aria-label", taskTokensTitle(item));
+      const usage = tokenUsageFromItem(item || {});
+      const hover = taskTokensHover(item);
+      el.innerHTML = renderTokenBar(usage.used, usage.window);
+      el.title = hover;
+      el.setAttribute("aria-label", hover);
     }
 
     function renderProgress(item, { running = false } = {}) {
@@ -4425,12 +4476,15 @@
         syncRunningChicken(root, live);
         syncTaskTokens(root, selected || selectedHistory);
       } else {
+        const tokenItem = selected || selectedHistory;
+        const tokenUsage = tokenUsageFromItem(tokenItem);
+        const tokenHover = taskTokensHover(tokenItem);
         target.innerHTML = `
           <div data-progress-root data-item-key="${escapeHtml(itemKey)}">
             <div class="progress-heading">
               <label>Progress</label>
               ${live ? runningChickenHtml() : ""}
-              <p class="task-tokens" id="task-tokens" data-task-tokens title="${escapeHtml(taskTokensTitle(selected || selectedHistory))}" aria-label="${escapeHtml(taskTokensTitle(selected || selectedHistory))}">${escapeHtml(taskTokensLabel(selected || selectedHistory))} tokens</p>
+              <p class="task-tokens" id="task-tokens" data-task-tokens title="${escapeHtml(tokenHover)}" aria-label="${escapeHtml(tokenHover)}">${renderTokenBar(tokenUsage.used, tokenUsage.window)}</p>
             </div>
             <p class="meta" data-progress-meta>${escapeHtml(metaText)}</p>
             <div class="progress-pr" data-progress-pr>${prHtml}</div>
@@ -4984,6 +5038,7 @@
           option.selected = true;
           select.append(option);
         }
+        rememberContextWindow(select.value || selected, body.context_window);
         if (!models.length && announceEmpty) {
           showNotice(errorEl, "warning", "No models returned from that LLM server.");
           notify("warning", "No models returned from that LLM server.");
@@ -5034,6 +5089,26 @@
     document.getElementById("load-models").addEventListener("click", () => loadModels(true));
     document.getElementById("base-url").addEventListener("change", () => loadModels(true));
     document.getElementById("model").addEventListener("change", () => loadModels(false));
+
+    const llmServerToggle = document.getElementById("llm-server-toggle");
+    const llmServerFields = document.getElementById("llm-server-fields");
+    if (llmServerToggle && llmServerFields) {
+      function syncServerToggle(expanded) {
+        llmServerToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+        llmServerToggle.title = expanded ? "Collapse server settings" : "Expand server settings";
+      }
+      syncServerToggle(!llmServerFields.hasAttribute("hidden"));
+      llmServerToggle.addEventListener("click", () => {
+        const hidden = llmServerFields.hasAttribute("hidden");
+        if (hidden) {
+          llmServerFields.removeAttribute("hidden");
+          syncServerToggle(true);
+        } else {
+          llmServerFields.setAttribute("hidden", "");
+          syncServerToggle(false);
+        }
+      });
+    }
 
     // GitHub issues for the current workspace remote
     const githubGoalsSection = document.getElementById("github-goals-section");

@@ -89,6 +89,48 @@ def test_glimmer_retries_after_missing_wrapper(monkeypatch) -> None:
     assert parsed[0].arguments == {"path": "cli.py"}
 
 
+def test_glimmer_completes_without_tools_after_atem_retry_fails(monkeypatch) -> None:
+    first = RuntimeError(
+        "Error code: 500 - {'error': {'message': "
+        "'parse Glimmer call to read_file: missing ATEM function_calls wrapper'}}"
+    )
+    second = RuntimeError(
+        "Error code: 500 - {'error': {'message': "
+        "'parse Glimmer call to read_file: missing ATEM function_calls wrapper'}}"
+    )
+    third = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=(
+                        "<atem:function_calls>\n"
+                        '<atem:invoke name="read_file">\n'
+                        '<atem:parameter name="path">cli.py</atem:parameter>\n'
+                        "</atem:invoke>\n"
+                        "</atem:function_calls>"
+                    ),
+                    tool_calls=None,
+                )
+            )
+        ],
+        usage=None,
+    )
+    fake = _FakeCompletions([first, second, third])
+    llm = OpenAICompatClient(
+        model="muse-glimmer:latest",
+        base_url="http://127.0.0.1:9/v1",
+        api_key="test",
+    )
+    monkeypatch.setattr(llm.client.chat, "completions", fake)
+
+    tools = [{"type": "function", "function": {"name": "read_file"}}]
+    turn = llm.complete([{"role": "user", "content": "read cli.py"}], tools)
+    assert len(fake.calls) == 3
+    assert fake.calls[2]["tools"] is None
+    parsed = parse_tool_calls(turn.text, {"read_file"})
+    assert parsed[0].arguments == {"path": "cli.py"}
+
+
 def test_glimmer_keeps_tool_arguments_as_json_string() -> None:
     llm = OpenAICompatClient(
         model="muse-glimmer:latest",

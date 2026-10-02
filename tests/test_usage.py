@@ -114,3 +114,12 @@ def test_task_dict_and_history_include_token_fields(
     assert history["tokens_used"] == 512
     assert history["tokens_total"] == 600
     assert history["context_window"] is None
+    with_window = attach_token_usage(
+        {
+            "events": [
+                {"kind": "llm", "ok": True, "prompt_tokens": 512, "total_tokens": 600},
+            ]
+        },
+        default_window=32768,
+    )
+    assert with_window["context_window"] == 32768

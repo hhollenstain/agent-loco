@@ -178,6 +178,37 @@ textarea {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.llm-toggle {
+  width: 1.55rem;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.llm-toggle-icon {
+  display: block;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  margin-left: 0.1rem;
+  transition: transform 120ms ease;
+}
+
+.llm-toggle[aria-expanded="true"] .llm-toggle-icon {
+  transform: rotate(45deg);
+  margin-left: 0;
+  margin-top: -0.12rem;
 }
 
 .llm-block label {
@@ -218,6 +249,10 @@ textarea {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .llm-block label { margin-top: 0.9rem; }
@@ -565,7 +600,10 @@ textarea {
 
 .task-tokens {
   margin: 0 0 0 auto;
-  padding: 0.15rem 0.45rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.15rem 0.5rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 0.75rem;
@@ -574,6 +612,41 @@ textarea {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex: 0 0 auto;
+}
+
+.token-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.token-bar {
+  width: 72px;
+  height: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.token-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2, var(--accent)) 100%);
+  opacity: 0.9;
+}
+
+.token-count {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-tokens,
+.token-usage {
+  cursor: help;
 }
 
 /* Inline style replacements */

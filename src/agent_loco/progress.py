@@ -274,14 +274,19 @@ def token_usage_from_events(events: list[dict[str, Any]] | None) -> dict[str, in
     }
 
 
-def attach_token_usage(item: dict[str, Any]) -> dict[str, Any]:
+def attach_token_usage(
+    item: dict[str, Any],
+    *,
+    default_window: int | None = None,
+) -> dict[str, Any]:
     """Fill tokens_used / tokens_total on a task or history payload."""
     usage = token_usage_from_events(item.get("events") if isinstance(item, dict) else None)
     if item.get("tokens_used") is None:
         item["tokens_used"] = usage["tokens_used"]
     if item.get("tokens_total") is None:
         item["tokens_total"] = usage["tokens_total"]
-    item.setdefault("context_window", None)
+    if item.get("context_window") is None:
+        item["context_window"] = default_window
     return item
 
 
