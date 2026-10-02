@@ -228,7 +228,7 @@ def format_enabled_skills(root: Path, extra_names: Sequence[str] = ()) -> str:
     selected = [
         skill
         for skill in list_skills(root)
-        if skill.enabled or skill.name in extra
+        if skill.enabled or skill.name in extra or skill.origin == "repo"
     ]
     if not selected:
         return ""
@@ -291,9 +291,7 @@ def _discover(
                 text = path.read_text(encoding="utf-8")
             except OSError:
                 continue
-            name, description, body = parse_skill_markdown(
-                text, fallback_name=path.parent.name
-            )
+            name, description, body = parse_skill_markdown(text, fallback_name=path.parent.name)
             if not name:
                 continue
             found.append(

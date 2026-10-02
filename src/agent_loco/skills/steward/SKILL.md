@@ -28,8 +28,9 @@ wrong, say so and stop.
 
 - Restate the one-line goal, then `str_replace` the files that implement it.
 - Look up current docs when the practice is not already in this repo.
-- Run tests after behavior changes. After UI edits, call `review_ui` and
-  click the new or changed control.
+- Run tests after behavior changes. After Python edits, format with ruff
+  then lint. After UI edits, call `review_ui` and click the new or changed
+  control.
 - Do not ship stubs, TODOs, unused fields, or "this enables X later".
 
 The cycle commits, opens a PR, and (when keep improving is on) merges after
