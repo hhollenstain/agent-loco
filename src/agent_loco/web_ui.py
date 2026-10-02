@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import normalize_model_base_url
-from agent_loco.progress import attach_token_usage
+from agent_loco.progress import attach_token_usage, clip_text, llm_turn_snippets, public_run_item
 from agent_loco.runtime.importer import load_goals_from_workspace
 from agent_loco.runtime.project import (
     default_guidelines,
@@ -180,11 +180,11 @@ class UiState:
     ) -> None:
         self.manager = manager
         self.store_root = str(default_workspace.expanduser().resolve())
-        self.default_workspace = last_workspace(
-            Path(self.store_root), default=self.store_root
-        )
+        self.default_workspace = last_workspace(Path(self.store_root), default=self.store_root)
         self.default_goal = default_goal or ""
         self.default_auto_commit = manager.settings.auto_commit
+        self._history_lock = threading.Lock()
+        self._history_cache: dict[str, tuple[object, list[dict[str, Any]]]] = {}
         if default_create_pr is not None:
             self.default_create_pr = bool(default_create_pr)
         else:
@@ -211,15 +211,11 @@ class UiState:
 
     def set_workspace(self, path: str) -> list[dict[str, str | bool]]:
         remembered = remember_workspace(Path(self.store_root), path)
-        self.default_workspace = last_workspace(
-            Path(self.store_root), default=path
-        )
+        self.default_workspace = last_workspace(Path(self.store_root), default=path)
         return remembered
 
     def _refresh_current_workspace(self) -> None:
-        self.default_workspace = last_workspace(
-            Path(self.store_root), default=self.store_root
-        )
+        self.default_workspace = last_workspace(Path(self.store_root), default=self.store_root)
 
     def archive_workspace_path(self, path: str) -> list[dict[str, str | bool]]:
         remembered = archive_workspace(Path(self.store_root), path)
@@ -258,8 +254,7 @@ class UiState:
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
             "default_model": selected["last_model"] or self.manager.settings.model_name,
-            "default_base_url": selected["last_base_url"]
-            or self.manager.settings.model_base_url,
+            "default_base_url": selected["last_base_url"] or self.manager.settings.model_base_url,
             "known_servers": selected["servers"],
             "max_concurrent": self.manager.max_concurrent,
             "continuous_active": self.manager.is_continuous_active(self.default_workspace),
@@ -276,8 +271,7 @@ class UiState:
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
             "default_model": selected["last_model"] or self.manager.settings.model_name,
-            "default_base_url": selected["last_base_url"]
-            or self.manager.settings.model_base_url,
+            "default_base_url": selected["last_base_url"] or self.manager.settings.model_base_url,
             "known_servers": selected["servers"],
             "max_concurrent": self.manager.max_concurrent,
             "continuous_active": self.manager.is_continuous_active(self.default_workspace),
@@ -286,6 +280,19 @@ class UiState:
 
     def load_history(self, workspace_root: Path) -> list[dict[str, Any]]:
         """Load cycle logs from `.loco/runs/` and history.json, newest first."""
+        root = Path(workspace_root).expanduser().resolve()
+        key = str(root)
+        fingerprint = _history_fingerprint(root)
+        with self._history_lock:
+            cached = self._history_cache.get(key)
+            if cached is not None and cached[0] == fingerprint:
+                return cached[1]
+            items = [public_run_item(item) for item in self._read_history(root)]
+            self._history_cache[key] = (fingerprint, items)
+            return items
+
+    def _read_history(self, workspace_root: Path) -> list[dict[str, Any]]:
+        """Read run files and history.json without caching or slimming."""
         runs_dir = Path(workspace_root) / ".loco" / "runs"
         results: list[dict[str, Any]] = []
 
@@ -344,7 +351,8 @@ class UiState:
         if search:
             search_lower = search.lower()
             all_items = [
-                item for item in all_items
+                item
+                for item in all_items
                 if any(
                     str(value).lower().find(search_lower) >= 0
                     for value in [
@@ -391,6 +399,30 @@ class UiState:
 _CONSOLE_SNIPPET = 400
 
 
+def _history_fingerprint(
+    root: Path,
+) -> tuple[tuple[tuple[str, int, int], ...], tuple[int, int]]:
+    """Cheap mtime/size signature so history polls can reuse a parsed cache."""
+    runs_dir = root / ".loco" / "runs"
+    entries: list[tuple[str, int, int]] = []
+    if runs_dir.is_dir():
+        for path in sorted(runs_dir.glob("*.json")):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            entries.append((path.name, stat.st_mtime_ns, stat.st_size))
+    history_file = root / "history.json"
+    hist = (0, 0)
+    try:
+        if history_file.exists():
+            stat = history_file.stat()
+            hist = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        pass
+    return (tuple(entries), hist)
+
+
 def _live_task(manager: TaskManager) -> Task | None:
     """Newest running or queued task, else the newest task."""
     tasks = manager.list()
@@ -399,26 +431,16 @@ def _live_task(manager: TaskManager) -> Task | None:
 
 
 def _console_snippet(text: object, limit: int = _CONSOLE_SNIPPET) -> str:
-    value = " ".join(str(text or "").split())
-    if len(value) <= limit:
-        return value
-    return value[: limit - 1] + "…"
+    return clip_text(text, limit)
 
 
 def _agent_model_snippets(event: dict[str, Any]) -> tuple[str, str]:
     """Last non-assistant prompt and the model reply, clipped for the live console."""
-    agent = ""
-    messages = event.get("messages")
-    if isinstance(messages, list):
-        for message in reversed(messages):
-            if not isinstance(message, dict):
-                continue
-            if message.get("role") == "assistant":
-                continue
-            agent = _console_snippet(message.get("content"))
-            if agent:
-                break
-    return agent, _console_snippet(event.get("response"))
+    agent = str(event.get("agent") or "")
+    model = str(event.get("model") or "")
+    if agent or model:
+        return agent, model or _console_snippet(event.get("response"))
+    return llm_turn_snippets(event.get("messages"), event.get("response"))
 
 
 def _console_event_payload(event: dict[str, Any]) -> dict[str, Any]:
@@ -453,12 +475,12 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
     task = _live_task(manager)
     if task is None:
         return "", []
-    
+
     # Build enriched log output: interleaved timestamps from original logs
     # plus detailed event logs showing LLM reasoning, file changes, tests, and PRs
     all_lines = []
     seen_logs = set()
-    
+
     # Process events in order to create rich console output
     for event in task.events:
         kind = event.get("kind", "")
@@ -474,18 +496,18 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
         phase = event.get("phase", "")
         message = event.get("message", "")
         url = event.get("url", "")
-        
+
         parts = [f"[{at}]"]
-        
+
         if kind == "llm":
             status = "✓" if ok else "✗"
             messages = event.get("messages")
             response = event.get("response")
             if elapsed:
-                time_str = format_elapsed(elapsed/1000)
+                time_str = format_elapsed(elapsed / 1000)
             else:
                 time_str = ""
-            
+
             # Show detailed LLM conversation when messages/response are available
             if messages and response:
                 # LLM interaction details
@@ -498,11 +520,11 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
                             role = str(msg.get("role", "unknown"))[:3]
                         else:
                             role = str(msg)[:20]
-                        parts.append(f"  → [{i+1}] {role}")
+                        parts.append(f"  → [{i + 1}] {role}")
                     if len(messages) > 3:
                         all_lines.append(" ".join(parts))
                         parts = [f"[{at}]"]
-                        parts.append(f"  · {len(messages)-3} more messages")
+                        parts.append(f"  · {len(messages) - 3} more messages")
                         all_lines.append(" ".join(parts))
                         parts = [f"[{at}] {status} LLM ({purpose})"]
                 parts.append(f"  ↑ Response: {response[:100]}{'…' if len(response) > 100 else ''}")
@@ -515,7 +537,7 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
                 else:
                     parts.append(f" {status} LLM ({purpose})")
                 all_lines.append(" ".join(parts))
-        
+
         elif kind == "file":
             if diff:
                 # Show a trimmed repr of the diff
@@ -526,7 +548,7 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
             else:
                 parts.append(f" {action} {path}")
             all_lines.append(" ".join(parts))
-        
+
         elif kind == "test":
             status = "✓" if test_ok else "✗"
             if command:
@@ -537,14 +559,14 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
             else:
                 parts.append(f" {status} test run")
             all_lines.append(" ".join(parts))
-        
+
         elif kind == "step":
             if message:
                 parts.append(f" → {message}")
             else:
                 parts.append(f" step at {at}")
             all_lines.append(" ".join(parts))
-        
+
         elif kind == "pr":
             status = "✓" if ok else "✗"
             if url:
@@ -554,18 +576,18 @@ def _live_task_logs(manager: TaskManager) -> tuple[str, list[str]]:
             else:
                 parts.append(f" {status} PR created")
             all_lines.append(" ".join(parts))
-        
+
         elif message:
             parts.append(f" {message}")
             all_lines.append(" ".join(parts))
-    
+
     # Also include original logs for background details (deduplicated)
     for log_line in task.logs:
         stripped = log_line.strip()
         if stripped and log_line not in seen_logs:
             all_lines.append(log_line)
             seen_logs.add(log_line)
-    
+
     return task.id, all_lines
 
 
@@ -652,9 +674,7 @@ def create_app(
         model: str | None = None,
     ) -> Any:
         try:
-            resolved = normalize_model_base_url(
-                base_url or ui.manager.settings.model_base_url
-            )
+            resolved = normalize_model_base_url(base_url or ui.manager.settings.model_base_url)
             names = ui.manager.list_models(base_url=resolved, api_key=api_key)
         except ValueError as exc:
             return JSONResponse({"error": str(exc), "models": []}, status_code=400)
@@ -714,14 +734,9 @@ def create_app(
         ui: UiState = request.app.state.ui
         result = ui.load_goals_from_github(workspace, state=state)
         if result.get("error"):
-            status = (
-                400
-                if result["error"] == "workspace is not a GitHub repository"
-                else 502
-            )
+            status = 400 if result["error"] == "workspace is not a GitHub repository" else 502
             return JSONResponse(result, status_code=status)
         return result
-
 
     @app.get("/api/tasks", response_model=None)
     def list_tasks(
@@ -730,16 +745,16 @@ def create_app(
         page_size: int | None = None,
     ) -> Any:
         ui: UiState = request.app.state.ui
-        tasks = [task.to_dict() for task in ui.manager.list()]
+        tasks = ui.manager.list()
         if page is None and page_size is None:
-            return tasks
+            return [task.to_dict() for task in tasks]
         size = max(1, min(page_size or 10, 100))
         total = len(tasks)
         total_pages = max(1, math.ceil(total / size) if size else 1)
         current = max(1, min(page or 1, total_pages))
         start = (current - 1) * size
         return {
-            "items": tasks[start : start + size],
+            "items": [task.to_dict() for task in tasks[start : start + size]],
             "page": current,
             "page_size": size,
             "total": total,
@@ -905,9 +920,7 @@ def create_app(
         }
 
     def _workspace_payload(ui: UiState) -> dict[str, Any]:
-        workspaces = load_workspaces(
-            Path(ui.store_root), default=ui.default_workspace
-        )
+        workspaces = load_workspaces(Path(ui.store_root), default=ui.default_workspace)
         current = next(
             (item for item in workspaces if item["path"] == ui.default_workspace),
             None,
@@ -1003,9 +1016,7 @@ def create_app(
             return JSONResponse({"error": str(exc)}, status_code=400)
 
     @app.get("/api/workspaces/skills/detail")
-    def workspace_skill_detail(
-        request: Request, name: str, path: str | None = None
-    ) -> Any:
+    def workspace_skill_detail(request: Request, name: str, path: str | None = None) -> Any:
         ui: UiState = request.app.state.ui
         try:
             root = _workspace_root(ui, path)
@@ -1034,9 +1045,7 @@ def create_app(
             return JSONResponse({"error": str(exc)}, status_code=400)
 
     @app.post("/api/workspaces/skills/sources")
-    def add_workspace_skill_source(
-        request: Request, payload: WorkspaceSkillSource
-    ) -> Any:
+    def add_workspace_skill_source(request: Request, payload: WorkspaceSkillSource) -> Any:
         ui: UiState = request.app.state.ui
         try:
             root = _workspace_root(ui, payload.path)
@@ -1048,9 +1057,7 @@ def create_app(
             return JSONResponse({"error": str(exc)}, status_code=400)
 
     @app.post("/api/workspaces/skills/sources/sync")
-    def sync_workspace_skill_source(
-        request: Request, payload: WorkspaceSkillSync
-    ) -> Any:
+    def sync_workspace_skill_source(request: Request, payload: WorkspaceSkillSync) -> Any:
         ui: UiState = request.app.state.ui
         try:
             root = _workspace_root(ui, payload.path)

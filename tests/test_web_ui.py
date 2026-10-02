@@ -214,7 +214,7 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"notice-warning" in home.content
         assert b"notice-skipped" in home.content
         assert b"function notify(" in home.content
-        assert b"class=\"pr-link\"" in home.content
+        assert b'class="pr-link"' in home.content
         assert b"function prLinkHtml(" in home.content
         assert b"function rerunFailedTask(" in home.content
         assert b"data-rerun-id" in home.content
@@ -335,9 +335,7 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         manager.shutdown(wait=False)
 
 
-def test_web_ui_paginates_tasks_and_serves_favicon(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_paginates_tasks_and_serves_favicon(settings: Settings, tmp_path: Path) -> None:
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -383,9 +381,7 @@ def test_web_ui_paginates_tasks_and_serves_favicon(
         manager.shutdown(wait=False)
 
 
-def test_finished_task_records_start_and_finish_times(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_finished_task_records_start_and_finish_times(settings: Settings, tmp_path: Path) -> None:
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -400,11 +396,7 @@ def test_finished_task_records_start_and_finish_times(
         for _ in range(50):
             listed = client.get("/api/tasks").json()
             match = next((item for item in listed if item["id"] == task_id), None)
-            if (
-                match
-                and match["status"] not in {"queued", "running"}
-                and match["finished_at"]
-            ):
+            if match and match["status"] not in {"queued", "running"} and match["finished_at"]:
                 body = match
                 break
             time.sleep(0.05)
@@ -477,9 +469,7 @@ def test_submit_uses_requested_model(settings: Settings, tmp_path: Path) -> None
         manager.shutdown(wait=False)
 
 
-def test_web_ui_lists_models_and_queues_with_selection(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_lists_models_and_queues_with_selection(settings: Settings, tmp_path: Path) -> None:
     gate = threading.Event()
 
     def runner(task: Task) -> CycleResult:
@@ -526,9 +516,7 @@ def test_web_ui_lists_models_and_queues_with_selection(
         manager.shutdown(wait=False)
 
 
-def test_web_ui_lists_models_from_requested_host(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_lists_models_from_requested_host(settings: Settings, tmp_path: Path) -> None:
     gate = threading.Event()
 
     def runner(task: Task) -> CycleResult:
@@ -666,6 +654,106 @@ def test_history_search_matches_pr_url(settings: Settings, tmp_path: Path) -> No
         manager.shutdown(wait=False)
 
 
+def test_task_and_history_polls_omit_llm_transcripts(settings: Settings, tmp_path: Path) -> None:
+    blob = ("x" * 800) + "SECRET_TRANSCRIPT"
+    (tmp_path / "history.json").write_text(
+        json.dumps(
+            [
+                {
+                    "status": "success",
+                    "goal": "Past run",
+                    "events": [
+                        {
+                            "kind": "llm",
+                            "ok": True,
+                            "messages": [{"role": "system", "content": blob}],
+                            "response": blob,
+                        }
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    gate = threading.Event()
+
+    def runner(task: Task) -> CycleResult:
+        task.events.append(
+            {
+                "kind": "llm",
+                "ok": True,
+                "messages": [{"role": "user", "content": blob}],
+                "response": blob,
+                "prompt_tokens": 9,
+            }
+        )
+        gate.wait(timeout=2)
+        return _ok_result(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert b"refreshQueued" in home.content
+        assert b"async function refreshNow(" in home.content
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "stay responsive"},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        body = None
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            match = next((item for item in listed if item["id"] == task_id), None)
+            if match and match.get("events"):
+                body = match
+                break
+            time.sleep(0.05)
+        assert body is not None
+        dumped = json.dumps(body)
+        assert "SECRET_TRANSCRIPT" not in dumped
+        assert "messages" not in body["events"][0]
+        history = client.get("/api/history").json()
+        assert "SECRET_TRANSCRIPT" not in json.dumps(history)
+        assert "messages" not in history["items"][0]["events"][0]
+    finally:
+        gate.set()
+        manager.shutdown(wait=False)
+
+
+def test_history_load_reuses_unchanged_files(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent_loco.web_ui import UiState
+
+    (tmp_path / "history.json").write_text(
+        json.dumps([{"status": "success", "goal": "cached"}]),
+        encoding="utf-8",
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    try:
+        ui = UiState(
+            manager,
+            default_workspace=tmp_path,
+            default_goal=None,
+            default_create_pr=False,
+        )
+        first = ui.load_history(tmp_path)
+        assert first[0]["goal"] == "cached"
+
+        def boom(*_args: object, **_kwargs: object) -> object:
+            raise AssertionError("history should be cached")
+
+        monkeypatch.setattr("agent_loco.web_ui.json.loads", boom)
+        monkeypatch.setattr("agent_loco.web_ui.json.load", boom)
+        second = ui.load_history(tmp_path)
+        assert second is first
+    finally:
+        manager.shutdown(wait=False)
+
+
 def test_remember_server_dedupes_and_keeps_newest_first(tmp_path: Path) -> None:
     first = remember_server(tmp_path, "10.0.0.8:8000", default="http://127.0.0.1:11434/v1")
     assert first[0]["url"] == "http://10.0.0.8:8000/v1"
@@ -694,18 +782,10 @@ def test_model_ids_from_openai_payload() -> None:
 
 
 def test_normalize_model_base_url() -> None:
-    assert (
-        normalize_model_base_url("http://127.0.0.1:11434/v1")
-        == "http://127.0.0.1:11434/v1"
-    )
-    assert (
-        normalize_model_base_url("http://10.0.0.5:11434") == "http://10.0.0.5:11434/v1"
-    )
+    assert normalize_model_base_url("http://127.0.0.1:11434/v1") == "http://127.0.0.1:11434/v1"
+    assert normalize_model_base_url("http://10.0.0.5:11434") == "http://10.0.0.5:11434/v1"
     assert normalize_model_base_url("10.0.0.5:8000") == "http://10.0.0.5:8000/v1"
-    assert (
-        normalize_model_base_url("https://llm.example.com/v1/")
-        == "https://llm.example.com/v1"
-    )
+    assert normalize_model_base_url("https://llm.example.com/v1/") == "https://llm.example.com/v1"
     try:
         normalize_model_base_url("  ")
     except ValueError as exc:
@@ -714,9 +794,7 @@ def test_normalize_model_base_url() -> None:
         raise AssertionError("expected ValueError")
 
 
-def test_web_ui_workspace_picker_browse_select_create(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_path: Path) -> None:
     other = tmp_path / "other-app"
     other.mkdir()
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
@@ -799,9 +877,7 @@ def test_web_ui_workspace_picker_browse_select_create(
         manager.shutdown(wait=False)
 
 
-def test_web_ui_workspace_guidelines_and_tabs(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_workspace_guidelines_and_tabs(settings: Settings, tmp_path: Path) -> None:
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -839,9 +915,7 @@ def test_web_ui_workspace_guidelines_and_tabs(
         paths = [item["path"] for item in payload["workspaces"]]
         assert paths[0] == str(tmp_path.resolve())
         assert str(fresh.resolve()) in paths
-        switched = client.post(
-            "/api/workspaces/select", json={"path": str(tmp_path)}
-        )
+        switched = client.post("/api/workspaces/select", json={"path": str(tmp_path)})
         assert switched.status_code == 200
         assert switched.json()["current"] == str(tmp_path.resolve())
         assert [item["path"] for item in switched.json()["workspaces"]][:2] == [
@@ -910,9 +984,7 @@ def test_web_ui_defaults_create_pr_on_for_a_git_workspace(
         manager.shutdown(wait=False)
 
 
-def test_web_ui_queues_and_stops_keep_improving(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_queues_and_stops_keep_improving(settings: Settings, tmp_path: Path) -> None:
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -938,9 +1010,7 @@ def test_web_ui_queues_and_stops_keep_improving(
         manager.shutdown(wait=False)
 
 
-def test_web_ui_archives_and_forgets_workspaces(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_archives_and_forgets_workspaces(settings: Settings, tmp_path: Path) -> None:
     extra = tmp_path / "extra-app"
     extra.mkdir()
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
@@ -975,9 +1045,7 @@ def test_web_ui_archives_and_forgets_workspaces(
         manager.shutdown(wait=False)
 
 
-def test_web_ui_clones_repository_into_local_workspace(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_clones_repository_into_local_workspace(settings: Settings, tmp_path: Path) -> None:
     from tests.support import init_git_repo
 
     source = tmp_path / "upstream"
@@ -1183,9 +1251,7 @@ def _github_workspace(root: Path) -> None:
     run_git(Workspace(root), ["remote", "add", "origin", "git@github.com:acme/demo.git"])
 
 
-def test_web_ui_hides_github_issues_for_local_folders(
-    settings: Settings, tmp_path: Path
-) -> None:
+def test_web_ui_hides_github_issues_for_local_folders(settings: Settings, tmp_path: Path) -> None:
     manager = TaskManager(settings, runner=lambda task: _ok_result())
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -1234,9 +1300,7 @@ def test_web_ui_loads_github_issues_from_workspace_remote(
             "state": state,
         }
 
-    monkeypatch.setattr(
-        "agent_loco.runtime.importer.load_goals_from_issues", fake_load
-    )
+    monkeypatch.setattr("agent_loco.runtime.importer.load_goals_from_issues", fake_load)
     manager = TaskManager(settings, runner=lambda task: _ok_result())
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -1502,4 +1566,3 @@ def test_submit_accepts_resume_branch(settings: Settings, tmp_path: Path) -> Non
         assert seen == ["loco/feature"]
     finally:
         manager.shutdown(wait=False)
-
