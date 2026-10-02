@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
 from rich.table import Table
+from ruamel.yaml import YAML
 
 from agent_loco import __version__
 from agent_loco.config import Settings
@@ -20,6 +22,9 @@ from agent_loco.runtime.improve import run_cycle
 from agent_loco.runtime.project import write_default_project_files
 from agent_loco.runtime.watch import watch as watch_loop
 
+REQUIRED_ENV_VARS = ["LOCO_MODEL_NAME", "LOCO_MODEL_BASE_URL"]
+
+
 app = typer.Typer(
     name="loco",
     help="Home-lab coding agent: improve a project, test locally, commit when green.",
@@ -28,7 +33,73 @@ app = typer.Typer(
 console = Console()
 
 
+def _load_config_file() -> None:
+    """Load environment variables from a config file if it exists.
+
+    Supports .env, config.yaml, and config.yml in the current directory.
+    """
+    yaml = YAML()
+    config_paths = [
+        Path.cwd() / ".env",
+        Path.cwd() / "config.yaml",
+        Path.cwd() / "config.yml",
+    ]
+
+    for config_path in config_paths:
+        if config_path.exists():
+            try:
+                if config_path.name == ".env":
+                    with open(config_path) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#") and "=" in line:
+                                key, _, value = line.partition("=")
+                                os.environ[key.strip()] = value.strip()
+                else:
+                    with open(config_path) as f:
+                        data = yaml.load(f)
+                        if isinstance(data, dict):
+                            for key, value in data.items():
+                                if isinstance(value, (str, int, float, bool)):
+                                    os.environ.setdefault(f"LOCO_{key.upper()}", str(value))
+                console.print(f"[green]Loaded config from {config_path}[/green]")
+                return
+            except Exception:
+                console.print(f"[yellow]Warning: Could not load config from {config_path}[/yellow]")
+
+
+def _validate_env(require: bool = True) -> None:
+    """Check required environment variables and exit with a helpful message if missing.
+
+    Args:
+        require: If False, skip validation to allow UI mode without env vars.
+    """
+    if not require:
+        return
+
+    # Try to load config file first
+    _load_config_file()
+
+    missing = [var for var in REQUIRED_ENV_VARS if var not in os.environ]
+    if missing:
+        console.print("[red]ERROR:[/red] Required environment variables not set:")
+        for var in missing:
+            console.print(f"  - {var}")
+        console.print("\nPlease create a .env file from .env.example or export these variables.")
+        console.print("\nYou may also create config.yaml or config.yml in the current directory.")
+        raise SystemExit(1)
+
+
 def _settings(**overrides: object) -> Settings:
+    """Create settings with optional overrides.
+
+    Args:
+        **overrides: Settings to override. Can include model_name, model_base_url,
+            create_pr, auto_commit, and any other Settings field.
+
+    Returns:
+        A Settings instance with the overrides applied.
+    """
     settings = Settings()
     for key, value in overrides.items():
         if value is not None:
@@ -65,11 +136,14 @@ def _root(
     ] = False,
 ) -> None:
     """Home-lab coding agent."""
+    pass
 
 
 @app.command()
 def doctor() -> None:
     """Report hardware, tooling, and model-endpoint health."""
+    _load_config_file()
+    _validate_env()
     settings = _settings()
     hw = detect_hardware()
 
@@ -104,6 +178,7 @@ def init(
     ] = Path("."),
 ) -> None:
     """Create .loco/config.yaml and .loco/goals.md in a project."""
+    _validate_env()
     created = write_default_project_files(workspace)
     if created:
         for path in created:
@@ -121,6 +196,7 @@ def clone(
     ] = None,
 ) -> None:
     """Clone a git repo into the workspace volume and write .loco scaffolding."""
+    _validate_env()
     from agent_loco.runtime.workspaces import clone_workspace
 
     if dest is None:
@@ -203,6 +279,7 @@ def run(
     ] = False,
 ) -> None:
     """Run one improve → test → commit cycle against a project."""
+    _validate_env(require=not web_ui)
     settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
@@ -326,7 +403,12 @@ def ui_command(
     create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
 ) -> None:
-    """Start a local web UI to queue and run tasks."""
+    """Start a local web UI to queue and run tasks.
+
+    The UI does not require environment variables set; it will load them from
+    a .env, config.yaml, or config.yml file if present, but does not fail if
+    they are missing. Users can configure settings via the UI.
+    """
     settings = _settings(
         model_name=model_name,
         model_base_url=base_url,

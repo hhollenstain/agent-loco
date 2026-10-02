@@ -54,10 +54,7 @@ def propose_improvement_goal(
             {"role": "system", "content": PROPOSE_SYSTEM},
             {
                 "role": "user",
-                "content": (
-                    f"{context}\n\n"
-                    "Pick the next improvement. One change only."
-                ),
+                "content": (f"{context}\n\nPick the next improvement. One change only."),
             },
         ],
         [],

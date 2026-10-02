@@ -1,12 +1,44 @@
-.git
-.venv
-workspaces
+# Build and cache artifacts
+build
+dist
+*.egg-info
+uv.lock
+
+# Python cache
+__pycache__
 **/__pycache__
+*.pyc
 **/*.pyc
+
+# Virtual environments
+.venv
+.workspaces
+
+# Environment files
+.env
+.env*
+
+# IDEs and editors
+.idea
+.vscode
+
+# Version control
+.git
+
+# Testing
+tests/
+
+# Examples
+examples/
+
+# Logs and history
+*.log
+history.json
+
+# Python cache
 .pytest_cache
 .ruff_cache
 .mypy_cache
-.env
-dist
-build
-*.egg-info
+
+# Compiled extensions
+*.so

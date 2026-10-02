@@ -13,9 +13,7 @@ class UtcFormatter(logging.Formatter):
     """UTC ISO-8601 timestamps on every loco log line."""
 
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
-        return datetime.fromtimestamp(record.created, tz=UTC).strftime(
-            datefmt or LOG_TIME_FORMAT
-        )
+        return datetime.fromtimestamp(record.created, tz=UTC).strftime(datefmt or LOG_TIME_FORMAT)
 
 
 def utcnow_iso() -> str:
@@ -30,17 +28,20 @@ def format_elapsed(seconds: float) -> str:
     return f"{seconds:.1f}s"
 
 
-def setup_logging(level: str) -> None:
+def setup_logging(level: str = "INFO") -> None:
     handler = RichHandler(
         rich_tracebacks=True,
         show_path=False,
         show_time=False,
         markup=False,
     )
-    handler.setFormatter(UtcFormatter(LOG_FORMAT))
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level.upper())
+    console_handler.setFormatter(UtcFormatter(LOG_FORMAT))
+
     logging.basicConfig(
         level=level.upper(),
-        handlers=[handler],
+        handlers=[handler, console_handler],
         force=True,
     )
     for noisy in ("httpx", "httpcore", "openai"):

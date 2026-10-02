@@ -4,10 +4,7 @@ from agent_loco.runtime.steward import parse_proposed_goal
 
 
 def test_parse_proposed_goal_reads_goal_line() -> None:
-    text = (
-        "GOAL: Extract inline styles into layout.css\n\n"
-        "Move the button rules out of index.html."
-    )
+    text = "GOAL: Extract inline styles into layout.css\n\nMove the button rules out of index.html."
     goal = parse_proposed_goal(text)
     assert goal is not None
     assert goal.startswith("Extract inline styles into layout.css")
