@@ -260,6 +260,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function syncTaskTokens(" in home.content
         assert b"function tokenUsageFromItem(" in home.content
         assert b"function parseTokenValue(" in home.content
+        assert b"function goalText(" in home.content
+        assert b"function goalHeadline(" in home.content
+        assert b'return item.goal.split("\\n")[0];' not in home.content
         assert b"function taskTokensHover(" in home.content
         assert b"function renderTokenBar(" in home.content
         assert b"function rememberContextWindow(" in home.content
@@ -291,6 +294,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"return progressHtml + renderTaskPanes" in home.content
         assert b"${taskProgress}" not in home.content
         assert b"Before tests" in home.content
+        assert b'event.kind === "lint"' in home.content
+        assert b"Lint failed" in home.content
+        assert b'id: "lint"' in home.content
         assert b"label || name" not in home.content
         assert b"\n  10|" not in home.content
 
@@ -1247,6 +1253,8 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
         assert b"Tests failed" in home.content
         assert b'event.kind === "test"' in home.content
         assert b"groupTimelineEvents" in home.content
+        assert b"items.reverse()" in home.content
+        assert b"outputEl.insertBefore(entry, outputEl.firstChild)" in home.content
         assert b"Thinking" in home.content
         assert b"timeline-item think" in home.content
         assert b"function renderFileChanges(" in home.content

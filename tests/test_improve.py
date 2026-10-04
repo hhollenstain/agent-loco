@@ -149,11 +149,105 @@ def test_cycle_skips_commit_when_lint_fails(tmp_path: Path, settings: Settings) 
     assert result.tests_passed is True
     assert result.committed is False
     assert result.published is False
-    assert result.reason == "lint failed; commit skipped"
+    assert result.reason.startswith("lint failed; commit skipped:")
+    assert "F401" in (result.reason or "")
+    assert "F401" in (result.summary or "")
     lint_events = [event for event in result.events if event["kind"] == "lint"]
     assert lint_events
     assert any(event["ok"] is False for event in lint_events)
     assert any("F401" in (event.get("output") or "") for event in lint_events)
+
+
+def test_cycle_attempts_lint_repair(tmp_path: Path, settings: Settings) -> None:
+    _broken_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        "name: fixture\n"
+        "test_command: python3 check.py\n"
+        "lint_command: python3 -c \"raise SystemExit('F401 unused import')\"\n"
+        "max_repair_attempts: 1\n"
+        "publish:\n  enabled: false\n"
+        "goals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add and verified with python3 check.py."),
+            _review_turn(True, "adder returns 5 and tests passed"),
+            AssistantTurn(text="Tried to fix lint."),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm)
+    assert result.status == "failed"
+    assert any(
+        event.get("kind") == "step" and "Lint repair 1/4" in (event.get("message") or "")
+        for event in result.events
+    )
+    assert result.reason.startswith("lint failed; commit skipped:")
+
+
+def test_cycle_repairs_lint_in_untouched_files(tmp_path: Path, settings: Settings) -> None:
+    (tmp_path / "leftover.py").write_text("x = 1\n", encoding="utf-8")
+    _broken_project(tmp_path)
+    (tmp_path / "lint_fail.py").write_text(
+        "raise SystemExit('F821 Undefined name `self`\\n   --> leftover.py:55:10')\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        "name: fixture\n"
+        "test_command: python3 check.py\n"
+        "lint_command: python3 lint_fail.py\n"
+        "max_repair_attempts: 1\n"
+        "publish:\n  enabled: false\n"
+        "goals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add and verified with python3 check.py."),
+            _review_turn(True, "adder returns 5 and tests passed"),
+            AssistantTurn(text="Tried to fix lint."),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm)
+    assert result.status == "failed"
+    assert any(
+        event.get("kind") == "step" and "Lint repair 1/4" in (event.get("message") or "")
+        for event in result.events
+    )
+    assert any(
+        event.get("kind") == "step" and "Undefined name `self`" in (event.get("message") or "")
+        for event in result.events
+    )
+    assert result.reason.startswith("lint failed; commit skipped:")
+    assert "leftover.py" in (result.reason or "")
 
 
 def test_cycle_skips_before_tests_when_a_goal_is_given(tmp_path: Path, settings: Settings) -> None:
