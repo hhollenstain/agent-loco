@@ -3,11 +3,21 @@ from __future__ import annotations
 import pytest
 
 from agent_loco.config import Settings
+from agent_loco.runtime.palace import NullPalace
 from agent_loco.runtime.uireview import UiEvidence
 
 
 def _skipped_ui_evidence(*_args, **_kwargs) -> UiEvidence:
     return UiEvidence(ok=True, notes="skipped live browser in tests")
+
+
+@pytest.fixture(autouse=True)
+def _skip_workspace_palace(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep cycle tests off Chroma and the embedding model."""
+    monkeypatch.setattr(
+        "agent_loco.runtime.palace.open_palace",
+        lambda root: NullPalace(),
+    )
 
 
 @pytest.fixture(autouse=True)

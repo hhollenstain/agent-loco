@@ -92,11 +92,81 @@
       padding: 1.25rem 1.5rem;
     }
     .tasks {
-      padding: 0.75rem 3.5rem 1.25rem 1.1rem;
-      display: flex;
-      flex-direction: column;
+      padding: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
       min-height: 0;
       overflow: hidden;
+    }
+    .run-stage {
+      display: contents;
+    }
+    .run-detail {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 0.85rem 1.15rem 1.5rem;
+    }
+    .run-rail {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      overflow: hidden;
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      padding: 0.85rem 0.85rem 1rem;
+    }
+    .run-rail-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .run-rail-head label,
+    .run-rail-head .meta { margin: 0; }
+    .run-rail-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    #run-search { margin: 0; }
+    .run-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .run-filter {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.2rem 0.6rem;
+      min-width: 0;
+      font: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .run-filter[aria-pressed="true"] {
+      color: var(--ink);
+      border-color: var(--accent);
+      background: var(--panel-2);
+    }
+    .run-rail .task-list {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    @media (max-width: 1100px) {
+      .tasks {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(18rem, 46vh) minmax(14rem, 40vh);
+      }
+      .run-rail {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
     }
     #task-form {
       overflow-y: auto;
@@ -110,7 +180,7 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
-    input[type="text"], textarea, select {
+    input[type="text"], input[type="search"], textarea, select {
       width: 100%;
       background: var(--panel);
       color: var(--ink);
@@ -1445,6 +1515,18 @@
       border-color: var(--accent);
       color: var(--accent);
     }
+    .pr-link.pr-open, .pr-link.pr-open:hover, .pr-link.pr-open:focus {
+      color: var(--ok);
+      border-color: var(--ok);
+    }
+    .pr-link.pr-merged, .pr-link.pr-merged:hover, .pr-link.pr-merged:focus {
+      color: #c084fc;
+      border-color: #c084fc;
+    }
+    .pr-link.pr-closed, .pr-link.pr-closed:hover, .pr-link.pr-closed:focus {
+      color: var(--bad);
+      border-color: var(--bad);
+    }
     .pr-logo {
       width: 0.9rem;
       height: 0.9rem;
@@ -1510,9 +1592,20 @@
       border-radius: 999px;
       border: 1px solid var(--line);
     }
-    .pr-state-open { color: var(--ok); }
-    .pr-state-merged { color: var(--accent); }
-    .pr-state-closed { color: var(--bad); }
+    .pr-state-open { color: var(--ok); border-color: var(--ok); background: rgba(143, 202, 122, 0.16); }
+    .pr-state-merged { color: #c084fc; border-color: #c084fc; background: rgba(192, 132, 252, 0.18); }
+    .pr-state-closed { color: var(--bad); border-color: var(--bad); background: rgba(224, 139, 115, 0.16); }
+    .run-pr-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.15rem 0.85rem 0.55rem;
+    }
+    .run-pr-row .pr-link {
+      position: static;
+      max-width: 100%;
+    }
     .task-card > .card-actions .history-line-stats {
       position: static;
       margin-right: auto;
@@ -1559,6 +1652,31 @@
       overflow: hidden;
       color: var(--ink);
     }
+    .run-rail .task .goal,
+    .run-rail .task > p.meta {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+    }
+    .run-rail .task-card.expanded .goal,
+    .run-rail .task-card.expanded .task > p.meta {
+      display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+    .run-expand {
+      display: inline-flex;
+      margin: 0.15rem 0.85rem 0.45rem;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+    .run-expand:hover, .run-expand:focus { color: var(--ink); }
     .empty { color: var(--muted); }
     pre {
       margin: 0.85rem 0 0;
@@ -2124,54 +2242,26 @@
       </div>
     </aside>
     <section class="tasks">
-      <div class="main-tabs" role="tablist" aria-label="Workspace views">
-        <button type="button" class="main-tab" role="tab" id="tab-current" data-main-pane="current" aria-selected="true" aria-controls="current-run">Current</button>
-        <button type="button" class="main-tab" role="tab" id="tab-history" data-main-pane="history" aria-selected="false" aria-controls="past-runs">Past runs</button>
-      </div>
-      <div class="main-panels">
-        <div class="main-pane" role="tabpanel" id="current-run" data-main-pane="current" aria-labelledby="tab-current">
-          <div class="tasks-toolbar">
-            <div class="row">
-              <label class="label-no-margin">Tasks</label>
+      <div class="run-stage">
+        <div id="run-detail" class="run-detail"></div>
+        <aside class="run-rail" aria-label="Workspace runs">
+          <div class="run-rail-head">
+            <label class="label-no-margin" for="run-search">Runs</label>
+            <div class="run-rail-actions">
+              <button type="button" class="run-filter" id="refresh-pr-status">Refresh PRs</button>
               <span class="meta" id="counts"></span>
             </div>
-            <div class="server-filter">
-              <label for="server-filter">Server</label>
-              <select id="server-filter" aria-label="Filter tasks by server">
-                <option value="">All servers</option>
-              </select>
-            </div>
           </div>
-          <div class="task-toolbar">
-            <div id="task-pagination" class="pagination" aria-label="Task pagination"></div>
+          <input id="run-search" type="search" placeholder="Search runs" aria-label="Search runs" autocomplete="off">
+          <div class="run-filters" role="group" aria-label="Filter runs by status">
+            <button type="button" class="run-filter" data-status-filter="" aria-pressed="true">All</button>
+            <button type="button" class="run-filter" data-status-filter="running" aria-pressed="false">Running</button>
+            <button type="button" class="run-filter" data-status-filter="success" aria-pressed="false">Success</button>
+            <button type="button" class="run-filter" data-status-filter="skipped" aria-pressed="false">Skipped</button>
+            <button type="button" class="run-filter" data-status-filter="failed" aria-pressed="false">Failed</button>
           </div>
-          <div id="task-list" class="task-list"></div>
-          <div id="detail"></div>
-        </div>
-        <div class="main-pane" role="tabpanel" id="past-runs" data-main-pane="history" aria-labelledby="tab-history" hidden>
-          <div class="history-toolbar">
-            <div class="history-heading">
-              <label class="label-no-margin">Past run</label>
-              <span class="meta" id="history-counts"></span>
-            </div>
-            <button type="button" class="secondary" id="open-history-picker" aria-expanded="false" aria-controls="history-picker">Browse runs</button>
-          </div>
-          <div id="history-detail" class="history-center"></div>
-          <button type="button" class="history-scrim" id="history-scrim" tabindex="-1" aria-label="Close past runs picker"></button>
-          <aside class="history-picker" id="history-picker" role="dialog" aria-modal="true" aria-labelledby="history-picker-title" aria-hidden="true" inert>
-            <div class="history-picker-head">
-              <h2 id="history-picker-title">Past runs</h2>
-              <button type="button" class="secondary" id="close-history-picker">Close</button>
-            </div>
-            <div class="search-row">
-              <label for="history-search" class="label-no-margin">Filter</label>
-              <input id="history-search" type="text" placeholder="goal, status, summary, id">
-              <button type="button" class="secondary" id="clear-search">Clear</button>
-            </div>
-            <div id="pagination" class="pagination" aria-label="Past run pages"></div>
-            <div id="history-list" class="task-list"></div>
-          </aside>
-        </div>
+          <div id="run-list" class="task-list"></div>
+        </aside>
       </div>
     </section>
   </main>
@@ -2303,29 +2393,18 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], historyPage: 1, history: [], taskPage: 1, taskPageSize: 10, taskTotalPages: 1, selected: null, selectedHistoryKey: "", mainPane: "current", pageSize: 10, search: "", sidebarCollapsed: false, serverFilter: "", openDiffs: new Set(), closedChanges: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
-    const listEl = document.getElementById("task-list");
-    const currentDetailEl = document.getElementById("detail");
-    const historyDetailEl = document.getElementById("history-detail");
+    const state = { tasks: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, openDiffs: new Set(), closedChanges: new Set(), expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
+    const listEl = document.getElementById("run-list");
+    const runDetailEl = document.getElementById("run-detail");
     function activeDetailEl() {
-      return state.selectedHistoryKey ? historyDetailEl : currentDetailEl;
+      return runDetailEl;
     }
     const countsEl = document.getElementById("counts");
-    const historyEl = document.getElementById("history-list");
-    const historyCountsEl = document.getElementById("history-counts");
-    const pastRunsEl = document.getElementById("past-runs");
-    const historyPickerEl = document.getElementById("history-picker");
-    const historyScrimEl = document.getElementById("history-scrim");
-    const openHistoryPickerBtn = document.getElementById("open-history-picker");
-    const closeHistoryPickerBtn = document.getElementById("close-history-picker");
     const errorEl = document.getElementById("form-error");
     const submitEl = document.getElementById("submit");
-    const searchInput = document.getElementById("history-search");
-    const paginationEl = document.getElementById("pagination");
-    const taskPaginationEl = document.getElementById("task-pagination");
+    const searchInput = document.getElementById("run-search");
     const mainEl = document.getElementById("main");
     const toggleBtn = document.getElementById("toggle-sidebar");
-    const serverFilterEl = document.getElementById("server-filter");
     const pickerEl = document.getElementById("workspace-picker");
     const recentEl = document.getElementById("recent-workspaces");
     const archivedEl = document.getElementById("archived-workspaces");
@@ -2715,8 +2794,9 @@
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `failed to ${action} workspace`);
+      const previous = workspaceEl.value;
       applyWorkspacePayload(body);
-      state.historyPage = 1;
+      if (body.current && body.current !== previous) resetRunView();
       await refresh();
       return body;
     }
@@ -2788,6 +2868,26 @@
       pickerEl.hidden = true;
     }
 
+    function resetRunView() {
+      state.selectedRunKey = "";
+      state.selected = null;
+      state.selectedHistoryKey = "";
+      state.search = "";
+      state.statusFilter = "";
+      if (searchInput) searchInput.value = "";
+      syncStatusFilters();
+      state.pinnedStage = "";
+      state.taskPane = "progress";
+      state.closedChanges = new Set();
+      state.expandedRuns = new Set();
+      state.historyToken = "";
+      state.history = [];
+      state.prStates = {};
+      pullStateKey = "";
+      pullStateAt = 0;
+      pullStateGeneration += 1;
+    }
+
     async function selectWorkspace(path, opts = {}) {
       pickerErrorEl.replaceChildren();
       const payload = { path };
@@ -2801,7 +2901,7 @@
       if (!res.ok) throw new Error(body.error || "failed to select workspace");
       applyWorkspacePayload(body);
       if (opts.close !== false) closePicker();
-      state.historyPage = 1;
+      resetRunView();
       await refresh();
       if (opts.close !== false) {
         notify("success", body.current, { title: "Workspace selected" });
@@ -3159,7 +3259,7 @@
         applyWorkspacePayload(body);
         createNameEl.value = "";
         closePicker();
-        state.historyPage = 1;
+        resetRunView();
         await refresh();
         notify("success", body.current, { title: "Workspace created" });
       } catch (err) {
@@ -3185,7 +3285,7 @@
         cloneUrlEl.value = "";
         cloneNameEl.value = "";
         closePicker();
-        state.historyPage = 1;
+        resetRunView();
         await refresh();
         notify("success", body.current, { title: "Repository cloned" });
       } catch (err) {
@@ -3468,30 +3568,112 @@
       return String(item.id || item.created_at || "") + ":" + String(index);
     }
 
-    function ensureLatestHistorySelection() {
-      const items = historyItems();
-      if (!items.length) {
-        state.selectedHistoryKey = "";
-        return;
-      }
-      const keys = items.map((entry, index) => historyKey(entry, index));
-      if (!keys.includes(state.selectedHistoryKey)) {
-        state.selectedHistoryKey = keys[0];
-        state.pinnedStage = "";
-        state.taskPane = "progress";
-        state.closedChanges = new Set();
-      }
+    function runTime(item) {
+      const raw = item.finished_at || item.started_at || item.created_at || "";
+      const parsed = Date.parse(raw);
+      return Number.isFinite(parsed) ? parsed : 0;
     }
 
-    function setHistoryPickerOpen(open) {
-      const next = Boolean(open) && state.mainPane === "history";
-      pastRunsEl.classList.toggle("picker-open", next);
-      openHistoryPickerBtn.setAttribute("aria-expanded", next ? "true" : "false");
-      historyPickerEl.setAttribute("aria-hidden", next ? "false" : "true");
-      historyPickerEl.inert = !next;
-      if (next) {
-        window.requestAnimationFrame(() => searchInput.focus());
-      }
+    function sameWorkspaceRun(task, entry) {
+      if (entry.id && task.id && String(entry.id) === String(task.id)) return true;
+      if (
+        task.commit_sha
+        && entry.commit_sha
+        && task.commit_sha === entry.commit_sha
+        && (task.goal || "") === (entry.goal || "")
+      ) return true;
+      return Boolean(
+        (task.goal || "") === (entry.goal || "")
+        && task.summary
+        && entry.summary
+        && task.summary === entry.summary
+        && task.status === entry.status
+      );
+    }
+
+    function historyRunKey(entry, index) {
+      const basis = entry.id || entry.created_at || String(index);
+      return `history:${basis}:${String(entry.goal || "").slice(0, 80)}`;
+    }
+
+    function workspaceRuns() {
+      const tasks = state.tasks.map((task) => ({
+        kind: "task",
+        item: task,
+        key: `task:${task.id}`,
+        status: task.status || "",
+      }));
+      const seen = new Set();
+      const history = [];
+      historyItems().forEach((entry, index) => {
+        if (tasks.some((run) => sameWorkspaceRun(run.item, entry))) return;
+        const identity = [
+          entry.id || "",
+          entry.created_at || "",
+          entry.goal || "",
+          entry.status || "",
+          entry.commit_sha || "",
+        ].join("\n");
+        if (seen.has(identity)) return;
+        seen.add(identity);
+        history.push({
+          kind: "history",
+          item: entry,
+          key: historyRunKey(entry, index),
+          status: entry.status || "",
+        });
+      });
+      const runs = tasks.concat(history);
+      const rank = (status) => (status === "running" ? 0 : status === "queued" ? 1 : 2);
+      runs.sort((left, right) => {
+        const byStatus = rank(left.status) - rank(right.status);
+        if (byStatus) return byStatus;
+        return runTime(right.item) - runTime(left.item);
+      });
+      return runs;
+    }
+
+    function statusMatches(status, filter) {
+      if (!filter) return true;
+      if (filter === "running") return status === "running" || status === "queued";
+      if (filter === "failed") return status === "failed" || status === "error";
+      if (filter === "skipped") return status === "skipped";
+      return status === filter;
+    }
+
+    function runMatchesSearch(run, query) {
+      const term = (query || "").trim().toLowerCase();
+      if (!term) return true;
+      const item = run.item;
+      const blob = [item.goal, item.summary, item.reason, item.status, item.id, item.model]
+        .join(" ")
+        .toLowerCase();
+      return blob.includes(term);
+    }
+
+    function visibleRuns(runs) {
+      return runs.filter((run) => statusMatches(run.status, state.statusFilter) && runMatchesSearch(run, state.search));
+    }
+
+    function ensureRunSelection(runs) {
+      const visible = visibleRuns(runs);
+      const pool = visible.length ? visible : runs;
+      if (pool.some((run) => run.key === state.selectedRunKey)) return;
+      const pick = pool.find((run) => run.status === "running") || pool[0] || null;
+      state.selectedRunKey = pick ? pick.key : "";
+      state.pinnedStage = "";
+      state.taskPane = "progress";
+      state.closedChanges = new Set();
+    }
+
+    function syncStatusFilters() {
+      document.querySelectorAll("[data-status-filter]").forEach((button) => {
+        button.setAttribute("aria-pressed", (button.dataset.statusFilter || "") === state.statusFilter ? "true" : "false");
+      });
+    }
+
+    function findRun(key) {
+      return workspaceRuns().find((run) => run.key === key) || null;
     }
 
     const GITHUB_MARK = `<svg class="pr-logo" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.65 7.65 0 0 1 8 4.77c.68.003 1.36.092 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>`;
@@ -3532,15 +3714,24 @@
       return "";
     }
 
+    function runTextOverflows(text) {
+      const value = String(text || "").trim();
+      if (!value) return false;
+      if (value.split("\n").length > 3) return true;
+      return value.length > 110;
+    }
+
     function prLinkHtml(url) {
       if (!url) return "";
       const safe = escapeHtml(url);
       const status = prStateOf(url);
       const label = prStateLabel(status);
+      const tone = label ? ` pr-${status}` : "";
       const badge = label
         ? `<span class="pr-state pr-state-${escapeHtml(status)}">${escapeHtml(label)}</span>`
         : "";
-      return `<a class="pr-link" href="${safe}" target="_blank" rel="noopener noreferrer" title="${safe}">${GITHUB_MARK}<span>${escapeHtml(prLabel(url))}</span>${badge}</a>`;
+      const title = label ? `${label} — ${url}` : url;
+      return `<a class="pr-link${tone}" href="${safe}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}">${badge}${GITHUB_MARK}<span>${escapeHtml(prLabel(url))}</span></a>`;
     }
 
     function historyCardHtml(entry, index) {
@@ -3580,6 +3771,70 @@
           ${succeeded && successActions
             ? `<div class="card-actions">${successActions}</div>`
             : `${rerunBtn}${prLinkHtml(prUrl(entry))}${linesHtml}`}
+        </div>
+      `;
+    }
+
+    function runCardHtml(run) {
+      const entry = run.item;
+      const selected = run.key === state.selectedRunKey ? " selected" : "";
+      const failed = entry.status === "failed" || entry.status === "error";
+      const succeeded = entry.status === "success";
+      const canUpdate = succeeded && prIsOpen(entry);
+      const key = escapeHtml(run.key);
+      const rerunBtn = failed
+        ? (run.kind === "task"
+          ? `<button type="button" class="rerun-btn" data-rerun-id="${escapeHtml(entry.id)}" title="Rerun this task">↻ Rerun</button>`
+          : `<button type="button" class="rerun-btn" data-history-rerun="${key}" title="Rerun this failed run">↻ Rerun</button>`)
+        : "";
+      const updateBtn = canUpdate
+        ? (run.kind === "task"
+          ? `<button type="button" class="rerun-btn" data-task-update="${escapeHtml(entry.id)}" title="Add context and continue on this open pull request">Update</button>`
+          : `<button type="button" class="rerun-btn" data-history-update="${key}" title="Add context and continue on this open pull request">Update</button>`)
+        : "";
+      const events = entry.events || [];
+      const groups = groupedFileChanges(events);
+      const lineStats = groups.reduce((totals, group) => {
+        const stats = diffStats(fileReviewDiff(group).diff);
+        totals.added += stats.added;
+        totals.removed += stats.removed;
+        return totals;
+      }, { added: 0, removed: 0 });
+      const linesHtml = lineStats.added || lineStats.removed
+        ? `<span class="history-line-stats"><span class="diff-add">+${lineStats.added}</span> <span class="diff-del">−${lineStats.removed}</span></span>`
+        : "";
+      const when = run.kind === "task"
+        ? (taskDurationLabel(entry) || formatTimestamp(entry.started_at || entry.created_at))
+        : timestampLabel(entry);
+      const reason = String(entry.reason || "").trim();
+      const summary = String(entry.summary || "").trim();
+      const detail = run.kind === "task"
+        ? [entry.model || "", entry.base_url || ""].filter(Boolean).join(" · ")
+        : (summary.length > reason.length ? summary : (reason || summary));
+      const prHtml = prLinkHtml(prUrl(entry));
+      const successActions = `${linesHtml}${updateBtn}`;
+      const goal = goalText(entry);
+      const needsClamp = runTextOverflows(goal) || runTextOverflows(detail);
+      const expanded = needsClamp && state.expandedRuns.has(run.key);
+      const expandBtn = needsClamp
+        ? `<button type="button" class="run-expand" data-expand-run="${key}" aria-expanded="${expanded ? "true" : "false"}">${expanded ? "Less" : "More"}</button>`
+        : "";
+      const prRow = prHtml ? `<div class="run-pr-row">${prHtml}</div>` : "";
+      return `
+        <div class="task-card${selected}${expanded ? " expanded" : ""}">
+          <button type="button" class="task${selected}" data-run-key="${key}">
+            <div class="row">
+              <span class="status ${escapeHtml(entry.status || "")}">${escapeHtml(entry.status || "unknown")}</span>
+              <span class="meta duration">${escapeHtml(when || "")}</span>
+            </div>
+            <p class="goal">${escapeHtml(goal)}</p>
+            <p class="meta">${escapeHtml(detail)}</p>
+          </button>
+          ${expandBtn}
+          ${prRow}
+          ${succeeded && successActions
+            ? `<div class="card-actions">${successActions}</div>`
+            : `${rerunBtn}${linesHtml}`}
         </div>
       `;
     }
@@ -4376,79 +4631,30 @@
     function render() {
       const scroll = captureProgressScroll();
       const page = { x: window.scrollX, y: window.scrollY };
-      const running = state.tasks.filter(t => t.status === "running").length;
-      const queued = state.tasks.filter(t => t.status === "queued").length;
-      countsEl.textContent = `${running} running · ${queued} queued`;
-      
-      // Filter tasks by server if filter is set
-      const filteredTasks = state.serverFilter 
-        ? state.tasks.filter(t => (t.base_url || "") === state.serverFilter)
-        : state.tasks;
-      
-      if (!filteredTasks.length) {
-        listEl.innerHTML = `<p class="empty">No tasks yet.</p>`;
+      const runs = workspaceRuns();
+      ensureRunSelection(runs);
+      const visible = visibleRuns(runs);
+      const running = runs.filter((run) => run.status === "running").length;
+      const queued = runs.filter((run) => run.status === "queued").length;
+      countsEl.textContent = running || queued
+        ? `${running} running · ${queued} queued`
+        : `${runs.length} run${runs.length === 1 ? "" : "s"}`;
+      syncStatusFilters();
+      if (!visible.length) {
+        const empty = state.search || state.statusFilter
+          ? "No matching runs."
+          : "No runs for this workspace yet.";
+        listEl.innerHTML = `<p class="empty">${empty}</p>`;
       } else {
-        listEl.innerHTML = filteredTasks.map(task => {
-          const duration = taskDurationLabel(task);
-          const selected = task.id === state.selected ? " selected" : "";
-          const failed = task.status === "failed" || task.status === "error";
-          const succeeded = task.status === "success";
-          const canUpdate = succeeded && prIsOpen(task);
-          const rerunBtn = failed
-            ? `<button type="button" class="rerun-btn" data-rerun-id="${escapeHtml(task.id)}" title="Rerun this task">↻ Rerun</button>`
-            : "";
-          const updateBtn = canUpdate
-            ? `<button type="button" class="rerun-btn" data-task-update="${escapeHtml(task.id)}" title="Add context and continue on this open pull request">Update</button>`
-            : "";
-          const pr = prLinkHtml(prUrl(task));
-          const successActions = `${pr}${updateBtn}`;
-          return `
-          <div class="task-card${selected}">
-            <button type="button" class="task${selected}" data-id="${escapeHtml(task.id)}">
-              <div class="row">
-                <span class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
-                <span class="meta duration">${escapeHtml(duration || formatTimestamp(task.started_at || task.created_at))}</span>
-              </div>
-              <p class="goal">${escapeHtml(goalText(task))}</p>
-              <p class="meta">${escapeHtml(task.model || "")}${task.base_url ? " · " + escapeHtml(task.base_url) : ""}${duration ? " · " + escapeHtml(formatTimestamp(task.started_at || task.created_at)) : ""}</p>
-            </button>
-            ${succeeded && successActions ? `<div class="card-actions">${successActions}</div>` : `${rerunBtn}${pr}`}
-          </div>
-        `}).join("");
+        listEl.innerHTML = visible.map((run) => runCardHtml(run)).join("");
       }
 
-      const onHistory = state.mainPane === "history";
-      if (onHistory) ensureLatestHistorySelection();
-
-      if (state.history.total === undefined) {
-        // Legacy format (unpaginated)
-        historyCountsEl.textContent = `${state.history.length} logged`;
-        if (!state.history.length) {
-          historyEl.innerHTML = `<p class="empty">No past runs yet.</p>`;
-        } else {
-          historyEl.innerHTML = state.history.map((entry, index) => historyCardHtml(entry, index)).join("");
-        }
-        paginationEl.innerHTML = "";
-      } else {
-        // Paginated format
-        const { page, total, total_pages, page_size, items } = state.history;
-        historyCountsEl.textContent = `Page ${page} of ${total_pages} (${total} total)`;
-        if (!items.length) {
-          historyEl.innerHTML = `<p class="empty">${state.search ? "No matches found." : "No past runs yet."}</p>`;
-        } else {
-          historyEl.innerHTML = items.map((entry, index) => historyCardHtml(entry, index)).join("");
-        }
-        renderPagination(page, total_pages);
-      }
-
-      const selectedHistory = onHistory
-        ? historyItems().find((entry, index) => historyKey(entry, index) === state.selectedHistoryKey)
-        : null;
-      const selected = onHistory
-        ? null
-        : (state.tasks.find(t => t.id === state.selected) || state.tasks[0] || null);
+      const selectedRun = runs.find((run) => run.key === state.selectedRunKey) || null;
+      const selected = selectedRun && selectedRun.kind === "task" ? selectedRun.item : null;
+      const selectedHistory = selectedRun && selectedRun.kind === "history" ? selectedRun.item : null;
+      state.selected = selected ? selected.id : null;
+      state.selectedHistoryKey = selectedHistory ? selectedRun.key.slice("history:".length) : "";
       const live = Boolean(selected && selected.status === "running");
-      if (selected) state.selected = selected.id;
       const itemKey = selected
         ? `task:${selected.id}`
         : selectedHistory
@@ -4471,16 +4677,11 @@
           ? [goalHeadline(selectedHistory), taskDurationLabel(selectedHistory), timestampLabel(selectedHistory)].filter(Boolean).join(" · ")
           : "";
       const prHtml = prLinkHtml(prUrl(selected || selectedHistory));
-      const target = selectedHistory ? historyDetailEl : currentDetailEl;
-      const other = selectedHistory ? currentDetailEl : historyDetailEl;
-      other.innerHTML = "";
+      const target = runDetailEl;
       const root = target.querySelector("[data-progress-root]");
       const sameItem = Boolean(root && itemKey && root.dataset.itemKey === itemKey);
       if (!itemKey) {
-        currentDetailEl.innerHTML = "";
-        historyDetailEl.innerHTML = onHistory
-          ? `<p class="empty">${state.search ? "No matches found." : "No past runs yet."}</p>`
-          : "";
+        runDetailEl.innerHTML = `<p class="empty">No runs for this workspace yet.</p>`;
       } else if (sameItem) {
         const metaEl = root.querySelector("[data-progress-meta]");
         if (metaEl) metaEl.textContent = metaText;
@@ -4512,27 +4713,6 @@
       lastProgressHtml = progressHtml;
       restoreScroll(scroll, page, { running: live });
       requestAnimationFrame(() => restoreScroll(scroll, page, { running: live }));
-      renderTaskPagination(state.taskPage, state.taskTotalPages);
-    }
-
-    function renderTaskPagination(page, totalPages) {
-      renderPagination(page, totalPages, taskPaginationEl);
-    }
-
-    function renderPagination(page, totalPages, element = paginationEl) {
-      if (totalPages <= 1) {
-        element.innerHTML = "";
-        return;
-      }
-      const prevDisabled = page <= 1;
-      const nextDisabled = page >= totalPages;
-      
-      let html = "";
-      html += `<button type="button" class="secondary" ${prevDisabled ? "disabled" : ""} data-page="${Math.max(1, page - 1)}">←</button>`;
-      html += `<button type="button" class="current">${page}</button>`;
-      html += `<button type="button" class="secondary" ${nextDisabled ? "disabled" : ""} data-page="${Math.min(totalPages, page + 1)}">→</button>`;
-      
-      element.innerHTML = html;
     }
 
     let refreshInflight = null;
@@ -4557,47 +4737,27 @@
     }
 
     async function refreshNow() {
+      const workspace = encodeURIComponent(workspaceEl.value || "");
+      const token = state.historyToken ? `&token=${encodeURIComponent(state.historyToken)}` : "";
       const [tasksRes, historyRes] = await Promise.all([
-        fetch(`/api/tasks?page=${state.taskPage}&page_size=${state.taskPageSize}`),
-        fetch(`/api/history?page=${state.historyPage}&page_size=${state.pageSize}${state.search ? `&search=${encodeURIComponent(state.search)}` : ''}`),
+        fetch(`/api/tasks?workspace=${workspace}`),
+        fetch(`/api/history?page=1&page_size=100${token}`),
       ]);
       const tasksData = await tasksRes.json();
-      if (Array.isArray(tasksData)) {
-        state.tasks = tasksData;
-        state.taskTotalPages = Math.max(1, Math.ceil(state.tasks.length / state.taskPageSize) || 1);
-      } else {
-        state.tasks = tasksData.items || [];
-        state.taskTotalPages = tasksData.total_pages || 1;
-        state.taskPage = tasksData.page || 1;
-        state.taskPageSize = tasksData.page_size || state.taskPageSize;
-      }
+      state.tasks = Array.isArray(tasksData) ? tasksData : (tasksData.items || []);
       for (const task of state.tasks) {
         announceTaskStatus(task, state.taskStatus[task.id]);
         state.taskStatus[task.id] = task.status;
       }
-      const historyData = historyRes.ok ? await historyRes.json() : [];
-      state.history = historyData;
-
-      const servers = new Set();
-      for (const task of state.tasks) {
-        if (task.base_url) {
-          servers.add(task.base_url);
-        }
-      }
-      serverFilterEl.innerHTML = '<option value="">All servers</option>';
-      for (const server of servers) {
-        const option = document.createElement("option");
-        option.value = escapeHtml(server);
-        option.textContent = escapeHtml(server);
-        if (server === state.serverFilter) {
-          option.selected = true;
-        }
-        serverFilterEl.appendChild(option);
+      const historyData = historyRes.ok ? await historyRes.json() : null;
+      if (historyData && !historyData.unchanged) {
+        state.history = historyData;
+        state.historyToken = historyData.token || "";
       }
 
       render();
       syncKeepImproving();
-      refreshPullStates(state.tasks.concat(historyItems())).then((changed) => {
+      refreshPullStates(workspaceRuns()).then((changed) => {
         if (changed) render();
       });
     }
@@ -4605,55 +4765,76 @@
     let pullStateKey = "";
     let pullStateAt = 0;
     let pullStateInflight = "";
+    let pullStateGeneration = 0;
 
-    async function refreshPullStates(items) {
+    function prStateIsTerminal(status) {
+      return status === "closed" || status === "merged";
+    }
+
+    async function refreshPullStates(runs, force) {
+      const allUrls = [];
       const urls = [];
-      for (const item of items) {
-        const url = prUrl(item);
-        if (url && !urls.includes(url)) urls.push(url);
+      for (const run of runs) {
+        const url = prUrl(run.item);
+        if (!url || allUrls.includes(url)) continue;
+        allUrls.push(url);
+        if (!force && prStateIsTerminal(prStateOf(url))) continue;
+        urls.push(url);
       }
-      urls.sort();
-      const key = urls.join("\n");
-      const now = Date.now();
-      if (!urls.length) {
+      if (!allUrls.length) {
         const had = Object.keys(state.prStates).length > 0;
         state.prStates = {};
         pullStateKey = "";
         return had;
       }
+      if (!urls.length) return false;
+      const key = `${force ? "force:" : ""}${urls.join("\n")}`;
+      const now = Date.now();
       if (pullStateInflight === key) return false;
-      if (key === pullStateKey && now - pullStateAt < 30000) return false;
+      if (!force && key === pullStateKey && now - pullStateAt < 30000) return false;
+      const generation = ++pullStateGeneration;
       pullStateInflight = key;
       try {
         const res = await fetch("/api/pulls/status", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ urls }),
+          body: JSON.stringify({ urls, force: Boolean(force) }),
         });
-        if (!res.ok) return false;
+        if (!res.ok || generation !== pullStateGeneration) return false;
         const body = await res.json();
-        const next = body.states || {};
+        if (generation !== pullStateGeneration) return false;
+        const incoming = body.states || {};
+        const next = Object.assign({}, state.prStates);
+        for (const [url, status] of Object.entries(incoming)) {
+          if (!status && prStateIsTerminal(next[url])) continue;
+          next[url] = status;
+        }
         const same = JSON.stringify(next) === JSON.stringify(state.prStates);
         state.prStates = next;
-        pullStateKey = key;
-        pullStateAt = Date.now();
+        if (force) {
+          pullStateKey = "";
+          pullStateAt = 0;
+        } else {
+          pullStateKey = key;
+          pullStateAt = Date.now();
+        }
         return !same;
       } finally {
         if (pullStateInflight === key) pullStateInflight = "";
       }
     }
 
-    taskPaginationEl.addEventListener("click", (event) => {
-      const button = event.target.closest("button");
-      if (!button) return;
-      const page = parseInt(button.dataset.page, 10);
-      if (page && !isNaN(page) && page !== state.taskPage) {
-        state.taskPage = page;
-        refresh();
-      }
-    });
-
     listEl.addEventListener("click", (event) => {
+      const expand = event.target.closest("[data-expand-run]");
+      if (expand) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = expand.dataset.expandRun;
+        if (state.expandedRuns.has(key)) state.expandedRuns.delete(key);
+        else state.expandedRuns.add(key);
+        render();
+        return;
+      }
       const update = event.target.closest("[data-task-update]");
       if (update) {
         event.preventDefault();
@@ -4669,45 +4850,30 @@
         rerunFailedTask(rerun.dataset.rerunId);
         return;
       }
-      if (event.target.closest("a.pr-link")) return;
-      const button = event.target.closest("[data-id]");
-      if (!button) return;
-      state.selected = button.dataset.id;
-      state.selectedHistoryKey = "";
-      state.pinnedStage = "";
-      state.taskPane = "progress";
-      state.closedChanges = new Set();
-      showMainPane("current");
-    });
-
-    historyEl.addEventListener("click", (event) => {
       const historyUpdate = event.target.closest("[data-history-update]");
       if (historyUpdate) {
         event.preventDefault();
         event.stopPropagation();
-        const key = historyUpdate.dataset.historyUpdate;
-        const entry = historyItems().find((item, index) => historyKey(item, index) === key);
-        if (entry) showRerunGoalPicker({ kind: "history", entry });
+        const run = findRun(historyUpdate.dataset.historyUpdate);
+        if (run) showRerunGoalPicker({ kind: "history", entry: run.item });
         return;
       }
       const historyRerun = event.target.closest("[data-history-rerun]");
       if (historyRerun) {
         event.preventDefault();
         event.stopPropagation();
-        const key = historyRerun.dataset.historyRerun;
-        const entry = historyItems().find((item, index) => historyKey(item, index) === key);
-        if (entry) rerunHistoryEntry(entry);
+        const run = findRun(historyRerun.dataset.historyRerun);
+        if (run) rerunHistoryEntry(run.item);
         return;
       }
       if (event.target.closest("a.pr-link")) return;
-      const button = event.target.closest("[data-history-key]");
-      if (!button) return;
-      state.selectedHistoryKey = button.dataset.historyKey;
+      const button = event.target.closest("[data-run-key]");
+      if (!button || button.dataset.runKey === state.selectedRunKey) return;
+      state.selectedRunKey = button.dataset.runKey;
       state.pinnedStage = "";
       state.taskPane = "progress";
       state.closedChanges = new Set();
-      showMainPane("history");
-      setHistoryPickerOpen(false);
+      render();
     });
 
     function bindDetailEvents(el) {
@@ -4744,68 +4910,40 @@
         else state.openDiffs.delete(key);
       }, true);
     }
-    bindDetailEvents(currentDetailEl);
-    bindDetailEvents(historyDetailEl);
-
-    paginationEl.addEventListener("click", (event) => {
-      const button = event.target.closest("button");
-      if (!button) return;
-      const page = parseInt(button.dataset.page, 10);
-      if (page && !isNaN(page) && page !== state.historyPage) {
-        state.historyPage = page;
-        refresh();
-      }
-    });
+    bindDetailEvents(runDetailEl);
 
     searchInput.addEventListener("input", (event) => {
       state.search = event.target.value;
-      state.historyPage = 1;
-      refresh();
+      render();
     });
-
-    document.getElementById("clear-search").addEventListener("click", () => {
-      state.search = "";
-      state.historyPage = 1;
-      searchInput.value = "";
-      refresh();
+    document.querySelectorAll("[data-status-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.statusFilter = button.dataset.statusFilter || "";
+        syncStatusFilters();
+        render();
+      });
     });
+    const refreshPrButton = document.getElementById("refresh-pr-status");
+    if (refreshPrButton) {
+      refreshPrButton.addEventListener("click", async () => {
+        if (refreshPrButton.disabled) return;
+        refreshPrButton.disabled = true;
+        refreshPrButton.textContent = "Checking…";
+        try {
+          const changed = await refreshPullStates(workspaceRuns(), true);
+          if (changed) render();
+        } finally {
+          refreshPrButton.disabled = false;
+          refreshPrButton.textContent = "Refresh PRs";
+        }
+      });
+    }
 
     document.getElementById("clear-console")?.addEventListener("click", () => {
       const outputEl = document.getElementById("live-console-output");
       if (outputEl) {
         outputEl.innerHTML = "";
       }
-    });
-
-    function showMainPane(name) {
-      state.mainPane = name === "history" ? "history" : "current";
-      document.querySelectorAll(".main-tab").forEach((tab) => {
-        tab.setAttribute("aria-selected", tab.dataset.mainPane === state.mainPane ? "true" : "false");
-      });
-      document.querySelectorAll(".main-pane").forEach((pane) => {
-        pane.hidden = pane.dataset.mainPane !== state.mainPane;
-      });
-      if (state.mainPane === "history") ensureLatestHistorySelection();
-      else setHistoryPickerOpen(false);
-      render();
-    }
-    document.querySelectorAll(".main-tab").forEach((tab) => {
-      tab.addEventListener("click", () => showMainPane(tab.dataset.mainPane));
-    });
-    openHistoryPickerBtn.addEventListener("click", () => setHistoryPickerOpen(true));
-    closeHistoryPickerBtn.addEventListener("click", () => setHistoryPickerOpen(false));
-    historyScrimEl.addEventListener("click", () => setHistoryPickerOpen(false));
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && pastRunsEl.classList.contains("picker-open")) {
-        event.preventDefault();
-        setHistoryPickerOpen(false);
-        openHistoryPickerBtn.focus();
-      }
-    });
-
-    serverFilterEl.addEventListener("change", (event) => {
-      state.serverFilter = event.target.value;
-      refresh();
     });
 
     editorSchemeEl.value = editorScheme();
@@ -4846,10 +4984,11 @@
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "failed to queue task");
+      state.selectedRunKey = `task:${body.id}`;
       state.selected = body.id;
+      state.selectedHistoryKey = "";
       state.taskStatus[body.id] = body.status || "queued";
       notify("queued", goalHeadline(body), { title: notice || "Task queued" });
-      showMainPane("current");
       await refresh();
       return body;
     }
@@ -4915,10 +5054,11 @@
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "Could not rerun task");
+        state.selectedRunKey = `task:${body.id}`;
         state.selected = body.id;
+        state.selectedHistoryKey = "";
         state.taskStatus[body.id] = body.status || "queued";
         notify("queued", goalHeadline(body), { title: revised ? "Update queued" : "Rerun queued" });
-        showMainPane("current");
         await refresh();
       } catch (err) {
         showNotice(errorEl, "error", err.message);

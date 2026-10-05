@@ -15,6 +15,7 @@ from agent_loco.hardware import command_available, detect_hardware
 from agent_loco.llm.client import (
     OpenAICompatClient,
     check_model_endpoint,
+    lookup_context_window,
     normalize_model_base_url,
 )
 from agent_loco.logging import setup_logging
@@ -304,6 +305,11 @@ def run(
         goal,
         cli_create_pr=True if continuous and create_pr is None else create_pr,
         continuous=continuous,
+        context_window=lookup_context_window(
+            settings.model_base_url,
+            settings.model_api_key,
+            settings.model_name,
+        ),
     )
     console.print(
         f"[bold]{result.status}[/bold] committed={result.committed} "

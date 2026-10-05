@@ -13,7 +13,11 @@ from agent_loco.llm.client import model_ids_from_payload, normalize_model_base_u
 from agent_loco.runtime.improve import CycleResult
 from agent_loco.runtime.servers import remember_server
 from agent_loco.runtime.tasks import Task, TaskManager
-from agent_loco.web_ui import create_app
+from agent_loco.web_ui import (
+    _PR_STATE_CACHE,
+    _PR_STATE_LOCK,
+    create_app,
+)
 
 
 def _ok_result(goal: str | None = "do the thing") -> CycleResult:
@@ -214,7 +218,7 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"notice-warning" in home.content
         assert b"notice-skipped" in home.content
         assert b"function notify(" in home.content
-        assert b'class="pr-link"' in home.content
+        assert b'class="pr-link' in home.content
         assert b"function prLinkHtml(" in home.content
         assert b"function rerunFailedTask(" in home.content
         assert b"data-rerun-id" in home.content
@@ -236,6 +240,10 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"data-history-update" in home.content
         assert b"card-actions" in home.content
         assert b"pr-state" in home.content
+        assert b"pr-merged" in home.content
+        assert b"function runTextOverflows(" in home.content
+        assert b"data-expand-run" in home.content
+        assert b"-webkit-line-clamp: 3" in home.content
         assert b"/api/pulls/status" in home.content
         assert b"/rerun" in home.content
         assert b"GITHUB_MARK" in home.content
@@ -249,9 +257,20 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'<link rel="stylesheet" href="/static/layout.css">' in home.content
         assert b"<style>" in home.content
         assert home.content.index(b"<style>") < home.content.index(b"* { box-sizing")
-        assert b'data-main-pane="current"' in home.content
-        assert b'data-main-pane="history"' in home.content
-        assert b'id="current-run"' in home.content
+        assert b'id="run-detail"' in home.content
+        assert b'id="run-list"' in home.content
+        assert b'id="run-search"' in home.content
+        assert b'id="refresh-pr-status"' in home.content
+        assert b'data-status-filter="running"' in home.content
+        assert b'data-status-filter="success"' in home.content
+        assert b'data-status-filter="skipped"' in home.content
+        assert b'data-status-filter="failed"' in home.content
+        assert b"function workspaceRuns(" in home.content
+        assert b"function ensureRunSelection(" in home.content
+        assert b"/api/tasks?workspace=" in home.content
+        assert home.content.index(b'id="run-detail"') < home.content.index(b'id="run-list"')
+        assert b"data-main-pane=" not in home.content
+        assert b'id="past-runs"' not in home.content
         assert b'id="running-chicken"' in home.content
         assert b"function runningChickenHtml(" in home.content
         assert b"function syncRunningChicken(" in home.content
@@ -273,17 +292,7 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"Show server" not in home.content
         assert b"Hide server" not in home.content
         assert b'aria-label="Server settings"' in home.content
-        assert b'id="past-runs"' in home.content
-        assert b'id="history-detail"' in home.content
-        assert b'id="history-picker"' in home.content
-        assert b'id="open-history-picker"' in home.content
-        assert b"function setHistoryPickerOpen(" in home.content
-        assert b"function ensureLatestHistorySelection(" in home.content
-        assert home.content.index(b'id="history-detail"') < home.content.index(b'id="history-list"')
-        assert home.content.index(b'id="pagination"') < home.content.index(b'id="history-list"')
         assert b".task-pane {\n      display: none;" not in home.content
-        assert b'id="task-pagination"' in home.content
-        assert b"taskPageSize" in home.content
         assert b"function taskPaneFromTab(" in home.content
         assert b"/api/ui-screenshot" in home.content
         assert b'id="file-changes"' in home.content
@@ -392,6 +401,30 @@ def test_web_ui_paginates_tasks_and_serves_favicon(settings: Settings, tmp_path:
         layout = client.get("/static/layout.css")
         assert layout.status_code == 200
         assert b"box-sizing: border-box" in layout.content
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_lists_tasks_for_one_workspace(settings: Settings, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    other = tmp_path / "other"
+    home.mkdir()
+    other.mkdir()
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=home)
+    client = TestClient(app)
+    try:
+        for workspace, goal in ((home, "Home task"), (other, "Other task")):
+            created = client.post(
+                "/api/tasks",
+                json={"workspace": str(workspace), "goal": goal, "auto_commit": False},
+            )
+            assert created.status_code == 201
+        home_tasks = client.get("/api/tasks", params={"workspace": str(home)}).json()
+        other_tasks = client.get("/api/tasks", params={"workspace": str(other)}).json()
+        assert [item["goal"] for item in home_tasks] == ["Home task"]
+        assert [item["goal"] for item in other_tasks] == ["Other task"]
+        assert len(client.get("/api/tasks").json()) == 2
     finally:
         manager.shutdown(wait=False)
 
@@ -797,6 +830,39 @@ def test_history_load_reuses_unchanged_files(
         monkeypatch.setattr("agent_loco.web_ui.json.load", boom)
         second = ui.load_history(tmp_path)
         assert second is first
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_history_poll_skips_the_body_when_the_token_matches(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "history.json").write_text(
+        json.dumps([{"status": "success", "goal": "cached", "created_at": "2026-10-04T00:00:00Z"}]),
+        encoding="utf-8",
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        first = client.get("/api/history", params={"page_size": 100})
+        assert first.status_code == 200
+        body = first.json()
+        assert body["unchanged"] is False
+        assert body["items"][0]["goal"] == "cached"
+        token = body["token"]
+        assert token
+
+        def boom(*_args: object, **_kwargs: object) -> object:
+            raise AssertionError("unchanged history should not be parsed again")
+
+        monkeypatch.setattr("agent_loco.web_ui.UiState.load_history", boom)
+        second = client.get("/api/history", params={"page_size": 100, "token": token})
+        assert second.status_code == 200
+        skipped = second.json()
+        assert skipped["unchanged"] is True
+        assert skipped["items"] == []
+        assert skipped["token"] == token
     finally:
         manager.shutdown(wait=False)
 
@@ -1552,6 +1618,11 @@ def test_web_ui_refuses_update_when_pull_request_is_not_open(
         manager.shutdown(wait=False)
 
 
+def _clear_pr_state_cache() -> None:
+    with _PR_STATE_LOCK:
+        _PR_STATE_CACHE.clear()
+
+
 def test_web_ui_reports_pull_request_states(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1562,6 +1633,7 @@ def test_web_ui_reports_pull_request_states(
             return "merged"
         return ""
 
+    _clear_pr_state_cache()
     monkeypatch.setattr("agent_loco.web_ui.pull_request_state", fake_state)
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
@@ -1582,7 +1654,102 @@ def test_web_ui_reports_pull_request_states(
         assert states["https://example.test/pull/9"] == "open"
         assert states["https://example.test/pull/10"] == "merged"
         assert "not a pull request" not in states
+        many = [f"https://example.test/pull/{index}" for index in range(30)]
+        listed_many = client.post("/api/pulls/status", json={"urls": many})
+        assert listed_many.status_code == 200
+        assert len(listed_many.json()["states"]) == 30
     finally:
+        _clear_pr_state_cache()
+        manager.shutdown(wait=False)
+
+
+def test_pull_status_caches_closed_and_merged_until_forced(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_state(url: str) -> str:
+        calls.append(url)
+        if url.endswith("/1"):
+            return "merged"
+        if url.endswith("/2"):
+            return "closed"
+        if url.endswith("/3"):
+            return "open"
+        return ""
+
+    _clear_pr_state_cache()
+    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", fake_state)
+    monkeypatch.setattr("agent_loco.web_ui._PR_STATE_TTL", 0)
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    urls = [
+        "https://example.test/pull/1",
+        "https://example.test/pull/2",
+        "https://example.test/pull/3",
+    ]
+    try:
+        first = client.post("/api/pulls/status", json={"urls": urls})
+        assert first.status_code == 200
+        assert first.json()["states"] == {
+            urls[0]: "merged",
+            urls[1]: "closed",
+            urls[2]: "open",
+        }
+        saved = json.loads((tmp_path / ".loco" / "pr-states.json").read_text(encoding="utf-8"))
+        assert saved == {urls[0]: "merged", urls[1]: "closed"}
+
+        calls.clear()
+        second = client.post("/api/pulls/status", json={"urls": urls})
+        assert second.status_code == 200
+        assert second.json()["states"][urls[0]] == "merged"
+        assert second.json()["states"][urls[1]] == "closed"
+        assert second.json()["states"][urls[2]] == "open"
+        assert calls == [urls[2]]
+
+        _clear_pr_state_cache()
+        calls.clear()
+        reloaded = client.post("/api/pulls/status", json={"urls": urls})
+        assert reloaded.json()["states"][urls[0]] == "merged"
+        assert reloaded.json()["states"][urls[1]] == "closed"
+        assert calls == [urls[2]]
+
+        calls.clear()
+        forced = client.post("/api/pulls/status", json={"urls": urls, "force": True})
+        assert forced.status_code == 200
+        assert set(calls) == set(urls)
+        assert forced.json()["states"][urls[0]] == "merged"
+
+        def unknown(_url: str) -> str:
+            calls.append(_url)
+            return ""
+
+        calls.clear()
+        monkeypatch.setattr("agent_loco.web_ui.pull_request_state", unknown)
+        missed = client.post("/api/pulls/status", json={"urls": urls, "force": True})
+        assert set(calls) == set(urls)
+        assert missed.json()["states"][urls[0]] == "merged"
+        assert missed.json()["states"][urls[1]] == "closed"
+        kept = json.loads((tmp_path / ".loco" / "pr-states.json").read_text(encoding="utf-8"))
+        assert kept == {urls[0]: "merged", urls[1]: "closed"}
+
+        def reopened(url: str) -> str:
+            calls.append(url)
+            if url.endswith("/2"):
+                return "open"
+            if url.endswith("/1"):
+                return "merged"
+            return ""
+
+        calls.clear()
+        monkeypatch.setattr("agent_loco.web_ui.pull_request_state", reopened)
+        opened = client.post("/api/pulls/status", json={"urls": urls, "force": True})
+        assert opened.json()["states"][urls[1]] == "open"
+        kept = json.loads((tmp_path / ".loco" / "pr-states.json").read_text(encoding="utf-8"))
+        assert kept == {urls[0]: "merged"}
+    finally:
+        _clear_pr_state_cache()
         manager.shutdown(wait=False)
 
 

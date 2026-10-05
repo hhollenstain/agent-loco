@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from agent_loco.config import Settings
-from agent_loco.llm.client import LLMClient
+from agent_loco.llm.client import LLMClient, lookup_context_window
 from agent_loco.runtime.improve import run_cycle
 
 log = logging.getLogger("loco")
@@ -26,6 +26,11 @@ def watch(
         settings.watch_interval_seconds,
         " (keep improving)" if continuous else "",
     )
+    context_window = lookup_context_window(
+        settings.model_base_url,
+        settings.model_api_key,
+        settings.model_name,
+    )
     while True:
         result = run_cycle(
             workspace_path,
@@ -35,6 +40,7 @@ def watch(
             mark_checkbox=goal is None,
             cli_create_pr=cli_create_pr,
             continuous=continuous,
+            context_window=context_window,
         )
         log.info(
             "cycle status=%s committed=%s published=%s merged=%s reason=%s",

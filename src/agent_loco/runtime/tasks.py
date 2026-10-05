@@ -35,6 +35,28 @@ def _utcnow() -> str:
     return utcnow_iso()
 
 
+def sibling_task_records(manager: TaskManager, task: Task) -> list[dict]:
+    """Goals and summaries from other tasks in the same workspace."""
+    records: list[dict] = []
+    for other in manager.list_for_workspace(task.workspace):
+        if other.id == task.id:
+            continue
+        if not (other.goal or other.summary):
+            continue
+        records.append(
+            {
+                "id": other.id,
+                "goal": other.goal,
+                "summary": other.summary,
+                "status": other.status,
+                "reason": other.reason,
+                "created_at": other.created_at,
+                "pr_url": other.pr_url,
+            }
+        )
+    return records
+
+
 def _default_llm(settings: Settings) -> LLMClient:
     return OpenAICompatClient(
         model=settings.model_name,
@@ -210,12 +232,14 @@ class TaskManager:
 
     def list_for_workspace(self, workspace: str) -> list[Task]:
         """Return tasks for a specific workspace, sorted newest first."""
-        workspace = workspace.expanduser().resolve() if workspace else ""
+        if not workspace:
+            return []
+        resolved = Path(workspace).expanduser().resolve()
         with self._lock:
             tasks = [
                 task
                 for task in self._tasks.values()
-                if Path(task.workspace).resolve() == Path(workspace).resolve()
+                if Path(task.workspace).expanduser().resolve() == resolved
             ]
         tasks.sort(key=lambda item: item.created_at, reverse=True)
         return tasks
@@ -381,6 +405,9 @@ class TaskManager:
             task.goal,
             cli_create_pr=task.create_pr,
             continuous=task.continuous,
+            sibling_tasks=sibling_task_records(self, task),
+            context_window=task.context_window,
+            task_id=task.id,
         )
 
     def _maybe_continue(self, task: Task) -> None:

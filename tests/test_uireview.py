@@ -582,15 +582,14 @@ def test_loco_review_clicks_include_main_and_task_tabs(tmp_path: Path) -> None:
     (tmp_path / "src" / "agent_loco" / "web_ui.py").parent.mkdir(parents=True)
     (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
     clicks = _review_clicks(tmp_path, '[data-task-pane="progress"]')
-    assert '[data-main-pane="history"]' in clicks
-    assert '[data-main-pane="current"]' in clicks
+    assert '[data-status-filter="failed"]' in clicks
+    assert '[data-status-filter=""]' in clicks
     assert '[data-task-pane="screenshots"]' in clicks
     assert '[data-task-pane="progress"]' in clicks
-    assert clicks.index('[data-main-pane="history"]') < clicks.index("#open-history-picker")
-    assert clicks.index("#open-history-picker") < clicks.index("#history-list button.task")
-    assert clicks.index("#history-list button.task") < clicks.index('[data-task-pane="changes"]')
+    assert clicks.index('[data-status-filter="failed"]') < clicks.index("#run-list button.task")
+    assert clicks.index("#run-list button.task") < clicks.index('[data-task-pane="changes"]')
     assert clicks.index('[data-task-pane="screenshots"]') < clicks.index(
-        '[data-main-pane="current"]'
+        '[data-task-pane="progress"]'
     )
 
 
@@ -606,8 +605,8 @@ def test_loco_review_clicks_open_goal_panels_last(tmp_path: Path) -> None:
     )
     assert clicks[-1] == "#open-skills"
     assert "#open-settings" not in clicks
-    assert '[data-main-pane="current"]' in clicks
-    assert clicks.index('[data-main-pane="current"]') < clicks.index("#open-skills")
+    assert '[data-task-pane="progress"]' in clicks
+    assert clicks.index('[data-task-pane="progress"]') < clicks.index("#open-skills")
 
     rule_clicks = _review_clicks(tmp_path, None, "Move rules into the left pane")
     assert rule_clicks[-1] == "#open-guidelines"
@@ -727,7 +726,7 @@ def test_unverified_interactive_ui_requires_main_tab_clicks() -> None:
         "Move current tasks and past runs onto their own tabs",
         evidence,
     )
-    assert reason and "Current/Past runs" in reason
+    assert reason and "workspace run list" in reason
 
 
 def test_pr_screenshot_names_keeps_final_successful_change() -> None:

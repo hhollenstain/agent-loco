@@ -11,6 +11,7 @@ from agent_loco.agent.prompts import SYSTEM_PROMPT, adapt_system_prompt, user_pr
 from agent_loco.llm.client import AssistantTurn, LLMClient, ToolCall
 from agent_loco.llm.toolparse import parse_tool_calls
 from agent_loco.progress import record_event, timed_complete
+from agent_loco.runtime.palace import Palace, fit_prompt, memory_preface
 from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
@@ -186,10 +187,14 @@ class CodingAgent:
         *,
         max_iterations: int,
         system_prompt: str | None = None,
+        palace: Palace | None = None,
+        context_window: int | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
         self.max_iterations = max_iterations
+        self.palace = palace
+        self.context_window = context_window
         prompt = (system_prompt or "").strip()
         model = getattr(llm, "model", "") or ""
         self.system_prompt = adapt_system_prompt(prompt or SYSTEM_PROMPT, model)
@@ -202,6 +207,7 @@ class CodingAgent:
         require_change: bool = False,
         require_tests: bool = False,
     ) -> AgentResult:
+        context = memory_preface(self.palace, goal, context)
         messages: list[dict] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_prompt(goal, context)},
@@ -224,6 +230,12 @@ class CodingAgent:
         failure_tracker = FailureTracker()
 
         for iteration in range(1, self.max_iterations + 1):
+            messages = fit_prompt(
+                messages,
+                self.palace,
+                query=goal,
+                context_window=self.context_window,
+            )
             turn = timed_complete(self.llm, messages, schemas, purpose="agent")
             last_text = turn.text or last_text
             snippet = " ".join((turn.text or "").split())

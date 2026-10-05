@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -66,21 +68,88 @@ FAVICON_SVG = (STATIC_DIR / "favicon.svg").read_text(encoding="utf-8")
 
 
 _PR_STATE_TTL = 45.0
+_TERMINAL_PR_STATES = frozenset({"closed", "merged"})
 _PR_STATE_CACHE: dict[str, tuple[float, str]] = {}
 _PR_STATE_LOCK = threading.Lock()
 
 
-def lookup_pull_state(url: str) -> str:
-    """Cached pull-request state. Empty when the URL is missing or gh cannot tell."""
+def _pr_states_path(root: Path) -> Path:
+    return Path(root).expanduser().resolve() / ".loco" / "pr-states.json"
+
+
+def load_cached_pr_states(root: Path) -> None:
+    """Remember closed and merged pull requests stored for this workspace."""
+    path = _pr_states_path(root)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(raw, dict):
+        return
+    now = time.monotonic()
+    with _PR_STATE_LOCK:
+        for url, state in raw.items():
+            clean = extract_pr_url(str(url)) or ""
+            if not clean or state not in _TERMINAL_PR_STATES:
+                continue
+            current = _PR_STATE_CACHE.get(clean)
+            if current is None or current[1] not in _TERMINAL_PR_STATES:
+                _PR_STATE_CACHE[clean] = (now, str(state))
+
+
+def store_pr_states(root: Path, states: dict[str, str]) -> None:
+    """Keep closed and merged states on disk. Drop a URL that is open again."""
+    path = _pr_states_path(root)
+    try:
+        current: dict[str, str] = {}
+        if path.is_file():
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                current = {
+                    str(url): str(state)
+                    for url, state in loaded.items()
+                    if state in _TERMINAL_PR_STATES
+                }
+    except (OSError, json.JSONDecodeError):
+        current = {}
+    changed = False
+    for url, state in states.items():
+        if state in _TERMINAL_PR_STATES:
+            if current.get(url) != state:
+                current[url] = state
+                changed = True
+        elif state == "open" and url in current:
+            del current[url]
+            changed = True
+    if not changed:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        return
+
+
+def lookup_pull_state(url: str, *, force: bool = False) -> str:
+    """Cached pull-request state. Closed and merged stay cached until a forced refresh."""
     clean = extract_pr_url(url or "") or ""
     if not clean:
         return ""
     now = time.monotonic()
-    with _PR_STATE_LOCK:
-        cached = _PR_STATE_CACHE.get(clean)
-        if cached is not None and now - cached[0] < _PR_STATE_TTL:
-            return cached[1]
+    if not force:
+        with _PR_STATE_LOCK:
+            cached = _PR_STATE_CACHE.get(clean)
+            if cached is not None:
+                if cached[1] in _TERMINAL_PR_STATES:
+                    return cached[1]
+                if now - cached[0] < _PR_STATE_TTL:
+                    return cached[1]
     state = pull_request_state(clean)
+    if not state and force:
+        with _PR_STATE_LOCK:
+            previous = _PR_STATE_CACHE.get(clean)
+        if previous is not None and previous[1] in _TERMINAL_PR_STATES:
+            state = previous[1]
     with _PR_STATE_LOCK:
         _PR_STATE_CACHE[clean] = (time.monotonic(), state)
     return state
@@ -111,6 +180,7 @@ class RerunPayload(BaseModel):
 
 class PullStatusQuery(BaseModel):
     urls: list[str] = []
+    force: bool = False
 
 
 class ModelsQuery(BaseModel):
@@ -433,6 +503,13 @@ def _history_fingerprint(
     except OSError:
         pass
     return (tuple(entries), hist)
+
+
+def history_token(root: Path) -> str:
+    """Short signature of the run logs and history file, without reading them."""
+    resolved = Path(root).expanduser().resolve()
+    payload = f"{resolved}\n{repr(_history_fingerprint(resolved))}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
 def _live_task(manager: TaskManager) -> Task | None:
@@ -766,9 +843,15 @@ def create_app(
         request: Request,
         page: int | None = None,
         page_size: int | None = None,
+        workspace: str | None = None,
     ) -> Any:
         ui: UiState = request.app.state.ui
         tasks = ui.manager.list()
+        if workspace and workspace.strip():
+            wanted = Path(workspace).expanduser().resolve()
+            tasks = [
+                task for task in tasks if Path(task.workspace).expanduser().resolve() == wanted
+            ]
         if page is None and page_size is None:
             return [task.to_dict() for task in tasks]
         size = max(1, min(page_size or 10, 100))
@@ -859,14 +942,26 @@ def create_app(
         }
 
     @app.post("/api/pulls/status")
-    def pull_status(payload: PullStatusQuery | None = None) -> dict[str, Any]:
+    def pull_status(request: Request, payload: PullStatusQuery | None = None) -> dict[str, Any]:
+        ui: UiState = request.app.state.ui
+        root = Path(ui.default_workspace)
         body = payload or PullStatusQuery()
-        states: dict[str, str] = {}
-        for raw in body.urls[:20]:
+        if not body.force:
+            load_cached_pr_states(root)
+        urls: list[str] = []
+        for raw in body.urls[:80]:
             clean = extract_pr_url(raw or "") or ""
-            if not clean or clean in states:
-                continue
-            states[clean] = lookup_pull_state(clean)
+            if clean and clean not in urls:
+                urls.append(clean)
+        if not urls:
+            return {"states": {}}
+
+        def one(url: str) -> str:
+            return lookup_pull_state(url, force=body.force)
+
+        with ThreadPoolExecutor(max_workers=min(8, len(urls))) as pool:
+            states = dict(zip(urls, pool.map(one, urls), strict=True))
+        store_pr_states(root, states)
         return {"states": states}
 
     @app.get("/api/history")
@@ -875,14 +970,30 @@ def create_app(
         page: int = 1,
         page_size: int = 10,
         search: str | None = None,
+        token: str | None = None,
     ) -> dict[str, Any]:
         ui: UiState = request.app.state.ui
-        return ui.paginate_history(
-            Path(ui.default_workspace),
+        root = Path(ui.default_workspace)
+        current = history_token(root)
+        if token and token == current and not (search and search.strip()):
+            return {
+                "unchanged": True,
+                "token": current,
+                "items": [],
+                "page": 1,
+                "page_size": page_size,
+                "total": 0,
+                "total_pages": 1,
+            }
+        payload = ui.paginate_history(
+            root,
             page=page,
             page_size=page_size,
             search=search,
         )
+        payload["token"] = current
+        payload["unchanged"] = False
+        return payload
 
     @app.get("/api/ui-screenshot", response_model=None)
     def ui_screenshot(

@@ -834,10 +834,16 @@ def unverified_interactive_ui(goal: str, evidence: UiEvidence) -> str | None:
         goal or "",
         re.I,
     ):
-        if "data-main-pane" not in clicked and "past runs" not in clicked:
+        if (
+            "data-main-pane" not in clicked
+            and "past runs" not in clicked
+            and "data-status-filter" not in clicked
+            and "run-list" not in clicked
+            and "run-search" not in clicked
+        ):
             return (
-                "Rendered UI never clicked the Current/Past runs tabs; "
-                "those controls were not verified"
+                "Rendered UI never clicked the workspace run list; "
+                "search and status filters were not verified"
             )
     if re.search(r"\bskills?\b", goal or "", re.I) and re.search(
         r"skills-panel|open-skills", snapshot, re.I
@@ -1014,14 +1020,15 @@ def _first_html_file(root: Path) -> Path | None:
 def _default_clicks(root: Path) -> list[str]:
     if _is_loco_project(root):
         return [
-            '[data-main-pane="history"]',
-            "#open-history-picker",
-            "#history-list button.task",
+            '[data-status-filter="failed"]',
+            '[data-status-filter="success"]',
+            '[data-status-filter="skipped"]',
+            '[data-status-filter="running"]',
+            '[data-status-filter=""]',
+            "#run-list button.task",
             '[data-task-pane="changes"]',
             '[data-task-pane="screenshots"]',
             '[data-task-pane="progress"]',
-            '[data-main-pane="current"]',
-            "#task-list button.task",
         ]
     return []
 

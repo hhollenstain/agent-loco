@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -70,6 +71,9 @@ from agent_loco.tools.lint import apply_ruff_autofix, run_project_lint
 from agent_loco.tools.tests import run_project_tests
 
 log = logging.getLogger("loco")
+
+_TASK_ID: ContextVar[str | None] = ContextVar("loco_palace_task_id", default=None)
+_PALACE: ContextVar[object] = ContextVar("loco_palace", default=None)
 
 
 def log_progress(message: str) -> None:
@@ -224,8 +228,13 @@ def run_cycle(
     mark_checkbox: bool = True,
     cli_create_pr: bool | None = None,
     continuous: bool = False,
+    sibling_tasks: list[dict] | None = None,
+    context_window: int | None = None,
+    task_id: str | None = None,
 ) -> CycleResult:
     progress = bind_progress()
+    token = _TASK_ID.set(task_id)
+    palace_token = _PALACE.set(None)
     try:
         return _run_cycle(
             workspace_path,
@@ -235,8 +244,13 @@ def run_cycle(
             mark_checkbox=mark_checkbox,
             cli_create_pr=cli_create_pr,
             continuous=continuous,
+            sibling_tasks=sibling_tasks,
+            context_window=context_window,
+            task_id=task_id,
         )
     finally:
+        _PALACE.reset(palace_token)
+        _TASK_ID.reset(token)
         reset_progress(progress)
 
 
@@ -249,6 +263,9 @@ def _run_cycle(
     mark_checkbox: bool = True,
     cli_create_pr: bool | None = None,
     continuous: bool = False,
+    sibling_tasks: list[dict] | None = None,
+    context_window: int | None = None,
+    task_id: str | None = None,
 ) -> CycleResult:
     log_progress("Initializing workspace...")
     workspace = Workspace(workspace_path)
@@ -302,11 +319,18 @@ def _run_cycle(
     sha_before = current_sha(workspace)
     log_progress("Initializing coding agent...")
     extra_skills = ("steward",) if continuous else ()
+    palace = _workspace_palace(
+        workspace.root,
+        siblings=sibling_tasks,
+        task_id=task_id,
+    )
     agent = CodingAgent(
         llm,
         tools,
         max_iterations=settings.max_iterations,
         system_prompt=compose_system_prompt(workspace.root, extra_skills),
+        palace=palace,
+        context_window=context_window,
     )
     log_progress("Running coding agent...")
     agent_result = agent.run(
@@ -1598,6 +1622,46 @@ def _write_run_log(root: Path, result: CycleResult) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _workspace_palace(
+    root: Path,
+    *,
+    siblings: list[dict] | None,
+    task_id: str | None,
+):
+    from agent_loco.runtime.palace import Palace, open_palace, seed_workspace
+
+    palace: Palace = open_palace(root)
+    _PALACE.set(palace)
+    records = list(siblings or [])
+    if task_id:
+        records = [record for record in records if str(record.get("id") or "") != task_id]
+    seed_workspace(root, palace, siblings=records)
+    return palace
+
+
+def _remember_cycle(root: Path, result: CycleResult) -> None:
+    from agent_loco.runtime.palace import open_palace, remember_record
+
+    if not (result.goal or result.summary):
+        return
+    palace = _PALACE.get()
+    if palace is None:
+        palace = open_palace(root)
+    remember_record(
+        palace,
+        {
+            "id": _TASK_ID.get(),
+            "goal": result.goal,
+            "summary": result.summary,
+            "status": result.status,
+            "reason": result.reason,
+            "created_at": result.created_at,
+            "pr_url": result.pr_url,
+            "branch": result.branch,
+        },
+    )
+
+
 def _append_to_history(root: Path, result: CycleResult) -> None:
     """Append cycle result to history.json for persistent storage across restarts."""
     history_file = root / "history.json"
@@ -1616,7 +1680,11 @@ def _append_to_history(root: Path, result: CycleResult) -> None:
     # (most recent at the beginning) and keep only the last 100 entries
     _stamp_git(root, result)
     _attach_events(result)
-    history.insert(0, asdict(result))
+    entry = asdict(result)
+    task_id = _TASK_ID.get()
+    if task_id:
+        entry["id"] = task_id
+    history.insert(0, entry)
 
     # Limit history size to avoid file becoming too large
     if len(history) > 100:
@@ -1628,3 +1696,4 @@ def _append_to_history(root: Path, result: CycleResult) -> None:
     except OSError:
         # If we can't write the file, silently ignore (not critical for functionality)
         pass
+    _remember_cycle(root, result)
