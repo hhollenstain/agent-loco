@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,14 @@ from agent_loco.tools.files import SKIP_DIR_NAMES
 
 GUIDELINES_FILE = "guidelines.md"
 DEFAULT_MAX_REPAIR_ATTEMPTS = 4
+_RUFF_DEPENDENCY = re.compile(
+    r"""(?mx)
+    \[tool\.ruff
+    | ["']ruff["']\s*=
+    | ["']ruff[>=<~!]
+    | ^\s*ruff\s*=
+    """
+)
 
 
 @dataclass(frozen=True)
@@ -100,17 +109,39 @@ def infer_test_command(root: Path) -> str | None:
 
 def infer_lint_command(root: Path) -> str | None:
     """Infer a linter that matches CI for this workspace."""
-    has_ruff = (root / "ruff.toml").exists() or (root / "pyproject.toml").exists()
-    if has_ruff:
+    if _project_uses_ruff(root):
+        runner = "PIPENV_IGNORE_VIRTUALENVS=1 pipenv run " if (root / "Pipfile").exists() else ""
         src = root / "src"
         tests_dir = root / "tests"
         if src.is_dir() and tests_dir.is_dir():
-            return "ruff format src tests && ruff check src tests"
-        return "ruff format . && ruff check ."
+            return f"{runner}ruff format src tests && {runner}ruff check src tests"
+        return f"{runner}ruff format . && {runner}ruff check ."
     package_json = root / "package.json"
     if package_json.exists() and '"lint"' in package_json.read_text(encoding="utf-8"):
         return "npm run lint"
     return None
+
+
+def _project_uses_ruff(root: Path) -> bool:
+    """A packaging pyproject.toml is not a ruff lint gate."""
+    if (root / "ruff.toml").exists() or (root / ".ruff.toml").exists():
+        return True
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return False
+    try:
+        text = pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if _RUFF_DEPENDENCY.search(text):
+        return True
+    pipfile = root / "Pipfile"
+    if pipfile.exists():
+        try:
+            return bool(_RUFF_DEPENDENCY.search(pipfile.read_text(encoding="utf-8")))
+        except OSError:
+            return False
+    return False
 
 
 def load_goals(root: Path, goals_file: str) -> list[str]:

@@ -321,6 +321,28 @@ def has_changes(workspace: Workspace) -> bool:
     return any(_is_project_change(path) for path in _changed_paths(workspace))
 
 
+def changed_paths(workspace: Workspace, sha_before: str | None = None) -> list[str]:
+    """Project files this cycle changed: commits after sha_before plus the working tree."""
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        path = _posix_rel(raw)
+        if not path or path in seen or not _is_project_change(path):
+            return
+        seen.add(path)
+        found.append(path)
+
+    if sha_before:
+        committed = run_git(workspace, ["diff", "--name-only", sha_before, "HEAD"])
+        if committed.returncode == 0:
+            for line in committed.stdout.splitlines():
+                add(line)
+    for path in _changed_paths(workspace):
+        add(path.as_posix())
+    return found
+
+
 def _posix_rel(path: Path | str) -> str:
     posix = Path(str(path).strip().strip('"')).as_posix()
     while posix.startswith("./"):

@@ -1555,9 +1555,8 @@
     .status.skipped { color: var(--muted); }
     .goal {
       margin: 0.35rem 0 0;
-      white-space: nowrap;
+      white-space: pre-wrap;
       overflow: hidden;
-      text-overflow: ellipsis;
       color: var(--ink);
     }
     .empty { color: var(--muted); }
@@ -2522,7 +2521,7 @@
     function announceTaskStatus(task, previous) {
       if (!previous || previous === task.status) return;
       if (previous === "queued" && task.status === "running") {
-        notify("running", goalText(task), { title: "Task running" });
+        notify("running", goalHeadline(task), { title: "Task running" });
         return;
       }
       if (task.status === "queued" || task.status === "running") return;
@@ -2535,7 +2534,7 @@
         error: "Task error",
       };
       const kind = NOTICE_KINDS[task.status] ? task.status : (task.status === "error" ? "error" : "info");
-      notify(kind, task.reason || task.error || task.summary || goalText(task), {
+      notify(kind, task.reason || task.error || task.summary || goalHeadline(task), {
         title: titles[kind] || "Task update",
       });
     }
@@ -3350,8 +3349,8 @@
       } else {
         return;
       }
-      outputEl.appendChild(entry);
-      outputEl.scrollTop = outputEl.scrollHeight;
+      outputEl.insertBefore(entry, outputEl.firstChild);
+      outputEl.scrollTop = 0;
     }
 
     function formatElapsed(seconds) {
@@ -3442,9 +3441,15 @@
       return formatTimestamp(item.created_at || item.finished_at || item.started_at || item.id);
     }
 
+    function goalHeadline(item) {
+      const text = goalText(item);
+      const line = text.split("\n").find((part) => part.trim());
+      return line || text;
+    }
+
     function goalText(item) {
       if (!item.goal) return "(from project goals / failing tests)";
-      return item.goal.split("\n")[0];
+      return String(item.goal).replace(/\s+$/, "");
     }
 
     function escapeHtml(value) {
@@ -3642,14 +3647,14 @@
       const when = `<span class="timeline-when">${escapeHtml(formatTimestamp(last.at) || last.at || "")}</span>`;
       const title = `<span class="timeline-title">${escapeHtml(thinkingLabel(events))}</span>`;
       const meta = `<span class="think-meta">${events.length} turns${wait ? " · " + wait : ""}</span>`;
-      const rows = events.map((event) => {
+      const rows = [...events].reverse().map((event) => {
         const stamp = escapeHtml(formatTimestamp(event.at) || event.at || "");
         return `<li><span class="timeline-when">${stamp}</span>${escapeHtml(eventTitle(event))}</li>`;
       }).join("");
       return `<li><details class="timeline-item think"${stageAttr(stageId)} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}${meta}</summary><ol class="think-log">${rows}</ol></details></li>`;
     }
 
-    function renderEvent(event, { running = false, lastFile = null, lastFailedTest = null, stageId = "" } = {}) {
+    function renderEvent(event, { running = false, lastFile = null, lastFailedCheck = null, stageId = "" } = {}) {
       if (!event) return "";
       const when = `<span class="timeline-when">${escapeHtml(formatTimestamp(event.at) || event.at || "")}</span>`;
       const title = `<span class="timeline-title">${escapeHtml(eventTitle(event))}</span>`;
@@ -3664,9 +3669,9 @@
         const open = state.openDiffs.has(key) ? " open" : "";
         return `<li><details class="timeline-item"${stage} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary><pre class="diff">${escapeHtml(event.raw)}</pre></details></li>`;
       }
-      if (event.kind === "test" && event.output) {
+      if ((event.kind === "test" || event.kind === "lint") && event.output) {
         const key = `${event.kind}:${event.phase || ""}:${event.at || ""}`;
-        const open = lastFailedTest === event || state.openDiffs.has(key) ? " open" : "";
+        const open = lastFailedCheck === event || state.openDiffs.has(key) ? " open" : "";
         const tone = event.ok === false ? " failed" : " passed";
         const command = event.command ? `<span class="meta">${escapeHtml(event.command)}</span>` : "";
         return `<li><details class="timeline-item${tone}"${stage} data-event-key="${escapeHtml(key)}"${open}><summary>${when}${title}</summary>${command}<pre class="diff">${escapeHtml(event.output)}</pre></details></li>`;
@@ -3687,7 +3692,9 @@
     function renderTimeline(events, { running = false } = {}) {
       if (!events || !events.length) return "";
       const lastFile = [...events].reverse().find((event) => event.kind === "file");
-      const lastFailedTest = [...events].reverse().find((event) => event.kind === "test" && event.ok === false);
+      const lastFailedCheck = [...events].reverse().find(
+        (event) => (event.kind === "test" || event.kind === "lint") && event.ok === false
+      );
       const stageIds = eventStageIds(events);
       let index = 0;
       const items = groupTimelineEvents(events).map((group) => {
@@ -3698,9 +3705,10 @@
         }
         const stageId = stageIds[index] || "";
         index += 1;
-        return renderEvent(group.event, { running, lastFile, lastFailedTest, stageId });
-      }).join("");
-      return `<ol class="timeline" id="progress-timeline">${items}</ol>`;
+        return renderEvent(group.event, { running, lastFile, lastFailedCheck, stageId });
+      });
+      items.reverse();
+      return `<ol class="timeline" id="progress-timeline">${items.join("")}</ol>`;
     }
 
     function isStep(event, pattern) {
@@ -3717,6 +3725,8 @@
           event.kind === "llm" || isStep(event, /coding agent|without edits|goal retry|keep working|stop inspecting|unfinished/i) },
         { id: "tests", label: "Tests", match: (event) =>
           (event.kind === "test" && event.phase !== "before") || isStep(event, /after tests|running tests/i) },
+        { id: "lint", label: "Lint", match: (event) =>
+          event.kind === "lint" || isStep(event, /lint failed|lint repair|running linter/i) },
         { id: "review", label: "Review", match: (event) =>
           event.kind === "review" || event.kind === "ui"
           || isStep(event, /goal review|reviewing rendered ui|checking for changes|checking whether the goal/i) },
@@ -4057,6 +4067,13 @@
         if (wait) bits.push(wait);
         return bits.join(" · ");
       }
+      if (event.kind === "lint") {
+        const bits = [event.ok === false ? "Lint failed" : "Lint passed"];
+        if (event.phase && event.phase !== "lint") bits.push(event.phase);
+        const wait = formatElapsedMs(event.elapsed_ms);
+        if (wait) bits.push(wait);
+        return bits.join(" · ");
+      }
       if (event.kind === "ui") {
         if (event.ok === false) return event.message || "UI review failed";
         return event.message || "UI review";
@@ -4217,7 +4234,7 @@
           .filter(Boolean)
           .map((text) => `<pre>${escapeHtml(text)}</pre>`)
           .join("");
-        logHtml = renderTimeline(events, { running }) + tail;
+        logHtml = tail + renderTimeline(events, { running });
       } else {
         const parts = [logs, summary, extra].filter(Boolean);
         logHtml = parts.length
@@ -4290,7 +4307,7 @@
         selected: renderedProgressKey.selected,
         historyKey: renderedProgressKey.historyKey,
         top: el.scrollTop,
-        follow: maxScroll <= 0 || maxScroll - el.scrollTop <= FOLLOW_PX,
+        follow: maxScroll <= 0 || el.scrollTop <= FOLLOW_PX,
         hadScroller: true,
       };
     }
@@ -4304,7 +4321,7 @@
         && snap.historyKey === state.selectedHistoryKey;
       if (!sameItem) {
         state.pinnedStage = "";
-        if (running) el.scrollTop = el.scrollHeight;
+        if (running) el.scrollTop = 0;
         return;
       }
       if (state.pinnedStage) {
@@ -4312,7 +4329,7 @@
         return;
       }
       if (!snap.hadScroller || snap.follow) {
-        if (running || snap.follow) el.scrollTop = el.scrollHeight;
+        if (running || snap.follow) el.scrollTop = 0;
         return;
       }
       el.scrollTop = snap.top;
@@ -4451,7 +4468,7 @@
             taskDurationLabel(selected),
           ].filter(Boolean).join(" · ")
         : selectedHistory
-          ? [goalText(selectedHistory), taskDurationLabel(selectedHistory), timestampLabel(selectedHistory)].filter(Boolean).join(" · ")
+          ? [goalHeadline(selectedHistory), taskDurationLabel(selectedHistory), timestampLabel(selectedHistory)].filter(Boolean).join(" · ")
           : "";
       const prHtml = prLinkHtml(prUrl(selected || selectedHistory));
       const target = selectedHistory ? historyDetailEl : currentDetailEl;
@@ -4831,7 +4848,7 @@
       if (!res.ok) throw new Error(body.error || "failed to queue task");
       state.selected = body.id;
       state.taskStatus[body.id] = body.status || "queued";
-      notify("queued", goalText(body), { title: notice || "Task queued" });
+      notify("queued", goalHeadline(body), { title: notice || "Task queued" });
       showMainPane("current");
       await refresh();
       return body;
@@ -4900,7 +4917,7 @@
         if (!res.ok) throw new Error(body.error || "Could not rerun task");
         state.selected = body.id;
         state.taskStatus[body.id] = body.status || "queued";
-        notify("queued", goalText(body), { title: revised ? "Update queued" : "Rerun queued" });
+        notify("queued", goalHeadline(body), { title: revised ? "Update queued" : "Rerun queued" });
         showMainPane("current");
         await refresh();
       } catch (err) {

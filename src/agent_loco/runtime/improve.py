@@ -13,6 +13,7 @@ from agent_loco.llm.client import LLMClient
 from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
 from agent_loco.runtime.importer import goal_headline
 from agent_loco.runtime.project import (
+    DEFAULT_MAX_REPAIR_ATTEMPTS,
     ProjectConfig,
     collect_context,
     ensure_run_gitignore,
@@ -65,7 +66,7 @@ from agent_loco.tools.git import (
     update_pull_request,
     upstream_state,
 )
-from agent_loco.tools.lint import run_project_lint
+from agent_loco.tools.lint import apply_ruff_autofix, run_project_lint
 from agent_loco.tools.tests import run_project_tests
 
 log = logging.getLogger("loco")
@@ -436,18 +437,20 @@ def _run_cycle(
         settings,
         agent,
         allow_create_pr=allow_create_pr,
+        sha_before=sha_before,
     )
     if lint_after is not None and not lint_after.ok:
+        lint_output = (lint_after.output or "").strip()
         log_progress("Lint failed after repairs.")
         result = CycleResult(
             status="failed",
             goal=selected_goal,
-            summary=agent_result.summary,
+            summary=_with_lint_output(agent_result.summary, lint_output),
             tests_passed=tests_passed,
             committed=False,
             published=False,
             commit_sha=current_sha(workspace),
-            reason="lint failed; commit skipped",
+            reason=_lint_failure_reason(lint_output),
         )
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
@@ -1199,15 +1202,36 @@ def _maybe_test(
     )
 
 
+def _lint_failure_reason(output: str, *, limit: int = 400) -> str:
+    text = " ".join((output or "").split())
+    if not text:
+        return "lint failed; commit skipped"
+    if len(text) > limit:
+        text = text[: limit - 1] + "…"
+    return f"lint failed; commit skipped: {text}"
+
+
+def _with_lint_output(summary: str | None, output: str) -> str:
+    body = (summary or "").strip()
+    lint = (output or "").strip()
+    if not lint:
+        return body
+    block = f"Lint:\n{lint}"
+    return f"{body}\n\n{block}".strip() if body else block
+
+
 def _lint_repair_prompt(output: str) -> str:
     return (
-        "The linter failed after the last changes. Fix every reported error. "
-        "Ruff F401 means remove or use the unused import. E501 means wrap the "
-        "line to 100 characters or less. I001 means sort imports the way ruff "
-        "does. If ruff reports files that would be reformatted, run the "
-        "formatter so the files match `ruff format`. Do not disable the "
-        "linter. Do not skip a finding. After edits, the configured lint "
-        "command must pass.\n\n"
+        "The linter failed. These are the remaining errors. Read every reported "
+        "file, then str_replace each finding until the configured lint command "
+        "passes. Do not skip a finding because it looks older than this task. "
+        "F821 means a name is used where it does not exist — class-body "
+        "decorators cannot use `self`; wire the command after the instance "
+        "exists or use a method decorator. F401 means remove or use the unused "
+        "import. E501 means wrap the line to 100 characters or less. I001 means "
+        "sort imports the way ruff does. If ruff reports files that would be "
+        "reformatted, run the formatter so the files match `ruff format`. Do "
+        "not disable the linter.\n\n"
         f"{(output or '').strip()}"
     )
 
@@ -1229,6 +1253,12 @@ def _maybe_lint(
     )
 
 
+def _lint_repair_attempts(project: ProjectConfig) -> int:
+    if project.max_repair_attempts <= 0:
+        return 0
+    return max(project.max_repair_attempts, DEFAULT_MAX_REPAIR_ATTEMPTS)
+
+
 def _ensure_lint(
     workspace: Workspace,
     project: ProjectConfig,
@@ -1236,13 +1266,28 @@ def _ensure_lint(
     agent: CodingAgent,
     *,
     allow_create_pr: bool,
+    sha_before: str | None = None,
 ):
+    del sha_before
     lint_after = _maybe_lint(workspace, project, settings, phase="after")
     if lint_after is None or lint_after.ok:
         return lint_after
+    log_progress("Lint failed; applying automatic fixes, then repairing remaining errors.")
+    if apply_ruff_autofix(
+        workspace,
+        project.lint_command,
+        settings.command_timeout_seconds,
+    ):
+        lint_after = _maybe_lint(workspace, project, settings, phase="autofix")
+        if lint_after is None or lint_after.ok:
+            return lint_after
+    attempts = _lint_repair_attempts(project)
+    if attempts <= 0:
+        return lint_after
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
-    for attempt in range(project.max_repair_attempts):
-        log_progress(f"Lint repair {attempt + 1}/{project.max_repair_attempts}")
+    for attempt in range(attempts):
+        log_progress(f"Lint repair {attempt + 1}/{attempts}")
+        log_progress(f"Lint errors to fix:\n{(lint_after.output or '').strip()}")
         agent.run(
             _lint_repair_prompt(lint_after.output),
             context,
