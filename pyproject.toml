@@ -21,6 +21,7 @@ dependencies = [
     "markdown-it-py>=3.0",
     "playwright>=1.49",
     "mempalace>=3.10",
+    "docker>=7.0",
 ]
 
 [project.optional-dependencies]
@@ -46,7 +47,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-agent_loco = ["templates/*.html", "static/*.css", "static/*.svg", "skills/*/SKILL.md"]
+agent_loco = ["templates/*.html", "static/*.css", "static/*.svg", "templates/Dockerfile.sandbox", "skills/*/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
