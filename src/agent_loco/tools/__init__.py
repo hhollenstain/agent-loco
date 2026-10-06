@@ -7,6 +7,7 @@ from agent_loco.tools.files import file_tools
 from agent_loco.tools.git import git_tools
 from agent_loco.tools.issues import issues_tools
 from agent_loco.tools.lint import lint_tools
+from agent_loco.tools.polloco import polloco_tools
 from agent_loco.tools.shell import shell_tools
 from agent_loco.tools.tests import test_tools
 from agent_loco.tools.web import web_tools
@@ -30,6 +31,7 @@ def build_tools(
         *shell_tools(workspace, command_timeout_seconds, allow_publish=allow_publish),
         *test_tools(workspace, test_command, command_timeout_seconds),
         *lint_tools(workspace, lint_command, command_timeout_seconds),
+        *polloco_tools(workspace, goal),
         *git_tools(workspace, git_author_name, git_author_email, allow_publish=allow_publish),
         *issues_tools(workspace),
     ]

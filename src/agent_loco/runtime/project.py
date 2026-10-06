@@ -236,6 +236,7 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "    - research\n"
                 "    - review\n"
                 "    - security\n"
+                "    - polloco\n"
                 "    - tdd\n"
                 "    - ui\n"
             ),

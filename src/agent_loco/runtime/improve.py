@@ -13,6 +13,7 @@ from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient
 from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
 from agent_loco.runtime.importer import goal_headline
+from agent_loco.runtime.polloco_review import blocking_review_findings
 from agent_loco.runtime.project import (
     DEFAULT_MAX_REPAIR_ATTEMPTS,
     ProjectConfig,
@@ -984,6 +985,16 @@ def _review_goal(
         overridden = GoalReview(
             False,
             f"diff adds a helper that nothing calls: {unused[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
+    reviewed = blocking_review_findings(diff, goal=goal)
+    if verdict.met and reviewed and not existing:
+        overridden = GoalReview(
+            False,
+            f"code review found an error: {reviewed[0]}",
             parsed=True,
             ui_errors=ui_errors,
         )
