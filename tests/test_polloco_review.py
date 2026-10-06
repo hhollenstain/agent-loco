@@ -5,8 +5,8 @@ from pathlib import Path
 from agent_loco.llm.client import AssistantTurn, ScriptedClient
 from agent_loco.progress import bind_progress, reset_progress
 from agent_loco.runtime.improve import _review_goal
+from agent_loco.runtime.polloco_review import format_review, review_diff
 from agent_loco.runtime.project import load_project
-from agent_loco.runtime.supi_review import format_review, review_diff
 from agent_loco.sandbox import Workspace
 from agent_loco.tools import build_tools, execute_tool
 
@@ -100,7 +100,7 @@ def test_format_review_uses_finding_markers() -> None:
 
 def test_review_changes_tool_is_wired_and_fails_closed(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.supi.collect_work_diff",
+        "agent_loco.tools.polloco.collect_work_diff",
         lambda *_args, **_kwargs: _SECRET_DIFF,
     )
     tools = build_tools(

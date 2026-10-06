@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_loco.runtime.supi_review import format_review, review_diff
+from agent_loco.runtime.polloco_review import format_review, review_diff
 from agent_loco.runtime.workdiff import collect_work_diff
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
@@ -20,7 +20,7 @@ def review_changes(workspace: Workspace, goal: str = "") -> ToolResult:
     return ToolResult(True, text)
 
 
-def supi_tools(workspace: Workspace, goal: str = "") -> list[ToolSpec]:
+def polloco_tools(workspace: Workspace, goal: str = "") -> list[ToolSpec]:
     stated = goal
 
     def handler(goal: str = "") -> ToolResult:

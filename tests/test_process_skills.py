@@ -20,7 +20,7 @@ DEFAULT_ENABLED = [
     "research",
     "review",
     "security",
-    "supi",
+    "polloco",
     "tdd",
     "ui",
 ]
@@ -40,7 +40,7 @@ def test_process_skills_are_bundled_and_injected(tmp_path: Path) -> None:
         "explore": ("Match what is here", "search_text"),
         "review": ("Spec", "unused helper"),
         "security": ("Untrusted input", "secrets"),
-        "supi": ("review_changes", "Do not ask the user"),
+        "polloco": ("review_changes", "Do not ask the user"),
     }
     skills = {item.name: item for item in list_skills(tmp_path)}
     write_default_project_files(tmp_path)

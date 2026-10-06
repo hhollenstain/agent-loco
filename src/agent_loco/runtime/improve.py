@@ -13,6 +13,7 @@ from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient
 from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
 from agent_loco.runtime.importer import goal_headline
+from agent_loco.runtime.polloco_review import blocking_review_findings
 from agent_loco.runtime.project import (
     DEFAULT_MAX_REPAIR_ATTEMPTS,
     ProjectConfig,
@@ -35,7 +36,6 @@ from agent_loco.runtime.review import (
 )
 from agent_loco.runtime.skills import compose_system_prompt
 from agent_loco.runtime.steward import propose_improvement_goal
-from agent_loco.runtime.supi_review import blocking_review_findings
 from agent_loco.runtime.uireview import (
     UiEvidence,
     collect_ui_evidence,

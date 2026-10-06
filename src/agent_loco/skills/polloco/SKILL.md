@@ -1,13 +1,14 @@
 ---
-name: supi
+name: polloco
 description: >-
   Code review of the working diff before stopping. Flags hard-coded secrets,
   shell injection, and new modules with no tests. No extra questions.
 ---
 
-# Supi
+# Polloco
 
-Review the change before you summarize. The stated goal is the spec.
+The crazy chicken on the LoCo line. Review the change before you summarize.
+The stated goal is the spec.
 Do not ask the user to fill a review prompt. Call `review_changes`; the
 cycle already has the goal from the initial prompt and runs the same
 checks again after you stop.
