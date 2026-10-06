@@ -35,6 +35,7 @@ from agent_loco.runtime.review import (
 )
 from agent_loco.runtime.skills import compose_system_prompt
 from agent_loco.runtime.steward import propose_improvement_goal
+from agent_loco.runtime.supi_review import blocking_review_findings
 from agent_loco.runtime.uireview import (
     UiEvidence,
     collect_ui_evidence,
@@ -984,6 +985,16 @@ def _review_goal(
         overridden = GoalReview(
             False,
             f"diff adds a helper that nothing calls: {unused[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
+    reviewed = blocking_review_findings(diff, goal=goal)
+    if verdict.met and reviewed and not existing:
+        overridden = GoalReview(
+            False,
+            f"code review found an error: {reviewed[0]}",
             parsed=True,
             ui_errors=ui_errors,
         )
