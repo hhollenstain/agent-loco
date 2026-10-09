@@ -92,6 +92,23 @@ def test_run_lint_is_a_wired_tool(tmp_path: Path) -> None:
     assert "run_lint" in {tool.name for tool in tools}
 
 
+def test_run_project_lint_reads_a_command_added_during_the_run(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (tmp_path / "check.py").write_text("print('ok')\n", encoding="utf-8")
+    workspace = Workspace(tmp_path)
+    missing = run_project_lint(workspace, None, 10, phase="agent")
+    assert not missing.ok
+    assert missing.output.startswith("no lint command configured")
+    (loco / "config.yaml").write_text(
+        "name: demo\nlint_command: python3 check.py\n",
+        encoding="utf-8",
+    )
+    result = run_project_lint(workspace, None, 10, phase="agent")
+    assert result.ok
+    assert "ok" in result.output
+
+
 def test_run_project_lint_records_failure(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     command = "python3 -c \"raise SystemExit('E501 line too long')\""

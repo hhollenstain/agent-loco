@@ -36,9 +36,12 @@ and **review** before you stop.
 ## Verify
 
 - After functional edits: call `run_tests` once. If the tree has not changed since the last run, loco reuses that result.
-- After tests, call `run_lint` if the workspace has a lint command. That
-  command formats with ruff, then checks. Fix F401, E501, import order, and
-  any files ruff would reformat before stopping.
+- If `run_tests` says there is no test command, write `test_command` in `.loco/config.yaml` to the command that runs the tests, then call `run_tests` again.
+- After tests, call `run_lint`. If it says there is no lint command, write
+  `lint_command` in `.loco/config.yaml` to the command that lints this
+  project, then call `run_lint` again. A ruff command formats, then checks.
+  Fix F401, E501, import order, and any files ruff would reformat before
+  stopping.
 - After HTML/CSS/JS/template edits: call `review_ui`, click the new control, fix overlap/404/dead buttons.
 - If a tool fails, change arguments; do not repeat the same failed command.
 

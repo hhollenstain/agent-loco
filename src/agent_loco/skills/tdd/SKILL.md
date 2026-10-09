@@ -44,6 +44,7 @@ that nothing calls.
 
 - After the failing test, implement, then call `run_tests` once more.
   Loco reuses a previous result when the tree has not changed.
+- If `run_tests` says there is no test command, write `test_command` in `.loco/config.yaml` to the command that runs the tests, then call `run_tests` again.
 - Then call `run_lint` if a lint command is configured. Unused imports,
   long lines, and unformatted files must be fixed before a PR.
 - If the change is UI, `review_ui` is the rendered-page seam: click the new
