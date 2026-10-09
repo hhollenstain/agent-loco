@@ -361,6 +361,14 @@ def _run_cycle(
 
     log_progress("Running after tests...")
     tests_after = _maybe_test(workspace, project, settings, phase="after")
+    tests_after = _ensure_test_command(
+        workspace,
+        project,
+        settings,
+        agent,
+        tests_after,
+        allow_create_pr=allow_create_pr,
+    )
     tests_after = _repair_failing_tests(
         workspace,
         project,
@@ -801,6 +809,14 @@ def _handle_empty_diff(
         if follow.summary:
             summary = follow.summary
         tests_after = _maybe_test(workspace, project, settings, phase="retry")
+        tests_after = _ensure_test_command(
+            workspace,
+            project,
+            settings,
+            agent,
+            tests_after,
+            allow_create_pr=allow_create_pr,
+        )
         tests_after = _repair_failing_tests(
             workspace,
             project,
@@ -1074,6 +1090,14 @@ def _ensure_goal_met(
         if follow.summary:
             summary = follow.summary
         tests_after = _maybe_test(workspace, project, settings, phase="retry")
+        tests_after = _ensure_test_command(
+            workspace,
+            project,
+            settings,
+            agent,
+            tests_after,
+            allow_create_pr=allow_create_pr,
+        )
         tests_after = _repair_failing_tests(
             workspace,
             project,
@@ -1169,11 +1193,27 @@ def _goal_retry_prompt(
         "Follow enabled workspace skills. Do not add a helper that nothing calls. "
         "If you edited docs or compose files, the commands must actually exist "
         "(loco clone, docker compose, git clone — never docker clone). Run tests. "
+        "If tests fail, fix them and call run_tests again. If this project has "
+        "no test command, add a test at the public seam and write test_command "
+        "in .loco/config.yaml. Do not exit 0 without running the suite. "
         "Do not bind-mount this app's .loco over the mounted workspace.\n\n"
         f"Goal:\n{goal.strip()}\n\n"
         f"Why it is not done:\n{reason.strip()}"
         f"{broken}\n\n"
         f"Current diff:\n{diff}"
+    )
+
+
+def _test_setup_prompt() -> str:
+    return (
+        "This project has no test command, so the cycle cannot tell whether "
+        "the goal works. Add a test at the public seam (CLI, HTTP, rendered "
+        "page, or the project's real runner) that fails when the behavior is "
+        "wrong. Write test_command in .loco/config.yaml to the command that "
+        "executes that test. The command must run the suite and exit non-zero "
+        "on failure. Printing that tests would run, or exiting 0 without "
+        "executing them, is not a test. Call run_tests. If it fails, fix the "
+        "code or the test and call run_tests again."
     )
 
 
@@ -1183,9 +1223,38 @@ def _test_repair_prompt(output: str) -> str:
         "If a test asserts old markup, API shape, or behavior that this goal "
         "intentionally changed, update that test to match the new implementation. "
         "Do not revert the goal. Do not write placeholder or unrelated "
-        "verification tests.\n\n"
+        "verification tests. Do not change the test command so it exits 0 "
+        "without running the failing check.\n\n"
         f"{(output or '').strip()}"
     )
+
+
+def _ensure_test_command(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    agent: CodingAgent,
+    tests_after,
+    *,
+    allow_create_pr: bool,
+):
+    """Create a real test command when the cycle would otherwise skip tests."""
+    if not settings.require_tests or tests_after is not None:
+        return tests_after
+    context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    attempts = max(project.max_repair_attempts, 1)
+    for attempt in range(attempts):
+        log_progress(f"No test command; setting up tests ({attempt + 1}/{attempts})")
+        agent.run(
+            _test_setup_prompt(),
+            context,
+            require_change=True,
+            require_tests=True,
+        )
+        tests_after = _maybe_test(workspace, project, settings, phase="setup")
+        if tests_after is not None:
+            return tests_after
+    return tests_after
 
 
 def _repair_failing_tests(
@@ -1227,13 +1296,12 @@ def _maybe_test(
     *,
     phase: str = "tests",
 ):
-    if not project.test_command:
-        project.test_command = load_project(workspace.root).test_command
-    if not project.test_command:
+    command = project.test_command or load_project(workspace.root).test_command
+    if not command:
         return None
     return run_project_tests(
         workspace,
-        project.test_command,
+        command,
         settings.command_timeout_seconds,
         phase=phase,
     )
@@ -1280,13 +1348,12 @@ def _maybe_lint(
     *,
     phase: str = "lint",
 ):
-    if not project.lint_command:
-        project.lint_command = load_project(workspace.root).lint_command
-    if not project.lint_command:
+    command = project.lint_command or load_project(workspace.root).lint_command
+    if not command:
         return None
     return run_project_lint(
         workspace,
-        project.lint_command,
+        command,
         settings.command_timeout_seconds,
         phase=phase,
     )
@@ -1312,9 +1379,10 @@ def _ensure_lint(
     if lint_after is None or lint_after.ok:
         return lint_after
     log_progress("Lint failed; applying automatic fixes, then repairing remaining errors.")
+    lint_command = project.lint_command or load_project(workspace.root).lint_command
     if apply_ruff_autofix(
         workspace,
-        project.lint_command,
+        lint_command,
         settings.command_timeout_seconds,
     ):
         lint_after = _maybe_lint(workspace, project, settings, phase="autofix")

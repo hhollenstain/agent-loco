@@ -31,7 +31,10 @@ is not a fix.
 - Apply the smallest change that turns the same signal green.
 - Leave a regression test at the public seam (CLI, HTTP, or rendered UI)
   unless the workspace already has one that now fails for this bug.
-- Call `run_tests` after the fix. Then `run_lint` if the project has a
-  linter. Remove any temporary prints or harness files you added.
+- Call `run_tests` after the fix. If there is no test command, add the
+  regression test and write `test_command` first. If `run_tests` fails, fix
+  that failure. Do not replace it with a command that exits 0 without
+  running the check. Then `run_lint` if the project has a linter. Remove
+  any temporary prints or harness files you added.
 
 Do not add logging, flags, or "debug mode" that the goal did not ask for.

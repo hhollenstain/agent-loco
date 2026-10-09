@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from dataclasses import dataclass
 
@@ -20,6 +21,10 @@ class _CachedRun:
 
 
 _CACHE: dict[str, _CachedRun] = {}
+_VACUOUS_TEST_RE = re.compile(
+    r"would be executed|without actually running|tests were not run",
+    re.IGNORECASE,
+)
 
 
 def test_tools(
@@ -77,6 +82,7 @@ def run_project_tests(
     started = time.perf_counter()
     result = run_command(workspace, command, timeout_seconds)
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
+    result = _reject_vacuous_pass(result)
     record_test_run(
         command=command,
         ok=result.ok,
@@ -86,6 +92,19 @@ def run_project_tests(
     )
     _CACHE[str(workspace.root)] = _CachedRun(fingerprint=fingerprint, result=result)
     return result
+
+
+def _reject_vacuous_pass(result: ToolResult) -> ToolResult:
+    """A command that exits 0 without running checks is still a failed test."""
+    if not result.ok or not _VACUOUS_TEST_RE.search(result.output or ""):
+        return result
+    note = (
+        "The test command exited 0 without running tests. "
+        "Make it execute the suite and exit non-zero when a check fails, "
+        "then call run_tests again."
+    )
+    output = f"{(result.output or '').strip()}\n{note}".strip()
+    return ToolResult(False, output)
 
 
 def _active_test_command(workspace: Workspace, test_command: str | None) -> str | None:

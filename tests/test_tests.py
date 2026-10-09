@@ -53,6 +53,18 @@ def test_run_project_tests_reads_a_command_added_during_the_run(tmp_path: Path) 
     assert "ok" in found.output
 
 
+def test_run_project_tests_rejects_a_command_that_does_not_run(tmp_path: Path) -> None:
+    script = tmp_path / "check.sh"
+    script.write_text(
+        "#!/bin/sh\necho 'Tests would be executed in the engine'\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    result = run_project_tests(Workspace(tmp_path), "sh check.sh", 10, phase="agent")
+    assert not result.ok
+    assert "without running tests" in result.output
+
+
 def test_run_project_tests_reruns_after_an_edit(tmp_path: Path) -> None:
     loco = tmp_path / ".loco"
     loco.mkdir()

@@ -113,6 +113,54 @@ def test_cycle_skips_commit_when_tests_still_fail(tmp_path: Path, settings: Sett
     assert not any(event.get("phase") == "before" for event in tests)
 
 
+def test_cycle_sets_up_tests_when_none_are_configured(tmp_path: Path, settings: Settings) -> None:
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text(
+        "name: fixture\nmax_repair_attempts: 1\npublish:\n  enabled: false\ngoals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "app.py",
+                "def add(left, right):\n    return left + right\n",
+                call_id="write-app",
+            ),
+            AssistantTurn(text="Implemented add."),
+            _write_file_turn(
+                "check.py",
+                "from app import add\nassert add(2, 3) == 5\n",
+                call_id="write-check",
+            ),
+            _write_file_turn(
+                ".loco/config.yaml",
+                "name: fixture\n"
+                "test_command: python3 check.py\n"
+                "max_repair_attempts: 1\n"
+                "publish:\n  enabled: false\n"
+                "goals_file: goals.md\n",
+                call_id="write-config",
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[ToolCall(id="run-1", name="run_tests", arguments={})],
+            ),
+            AssistantTurn(text="Added a test command and the check passes."),
+            _review_turn(True, "add is covered by python3 check.py"),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, goal="Prove add(2, 3) is 5")
+    assert result.status == "success"
+    assert result.tests_passed is True
+    assert load_project(tmp_path).test_command == "python3 check.py"
+    assert any(
+        event.get("kind") == "test" and event.get("phase") == "setup" and event.get("ok")
+        for event in result.events
+    )
+
+
 def test_cycle_skips_commit_when_lint_fails(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
     config = tmp_path / ".loco" / "config.yaml"

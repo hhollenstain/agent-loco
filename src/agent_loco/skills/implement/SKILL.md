@@ -36,7 +36,8 @@ and **review** before you stop.
 ## Verify
 
 - After functional edits: call `run_tests` once. If the tree has not changed since the last run, loco reuses that result.
-- If `run_tests` says there is no test command, write `test_command` in `.loco/config.yaml` to the command that runs the tests, then call `run_tests` again.
+- If there is no test command, add a test at the public seam and write `test_command` in `.loco/config.yaml` to the command that runs it, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
+- If `run_tests` fails, fix the code or the test that asserts the old behavior, then call `run_tests` again. Do not change the command so it exits 0 without running the failing check.
 - After tests, call `run_lint`. If it says there is no lint command, write
   `lint_command` in `.loco/config.yaml` to the command that lints this
   project, then call `run_lint` again. A ruff command formats, then checks.
