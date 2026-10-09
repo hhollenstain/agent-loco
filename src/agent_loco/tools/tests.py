@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 
 from agent_loco.progress import record_test_run
+from agent_loco.runtime.project import load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 from agent_loco.tools.files import SKIP_DIR_NAMES
@@ -32,7 +33,9 @@ def test_tools(
             description=(
                 "Run the project's configured test command. "
                 "If the workspace tree has not changed since the last run, "
-                "returns that result without running the suite again."
+                "returns that result without running the suite again. "
+                "If no command is configured, write test_command in "
+                ".loco/config.yaml and call this again."
             ),
             parameters=object_schema({}),
             handler=lambda: run_project_tests(
@@ -49,15 +52,21 @@ def run_project_tests(
     *,
     phase: str = "tests",
 ) -> ToolResult:
-    if not test_command:
-        result = ToolResult(False, "no test command configured for this project")
+    command = _active_test_command(workspace, test_command)
+    if not command:
+        result = ToolResult(
+            False,
+            "no test command configured for this project. "
+            "Write test_command in .loco/config.yaml to the command that runs "
+            "these tests, then call run_tests again.",
+        )
         record_test_run(command="", ok=False, output=result.output, phase=phase)
         return result
-    fingerprint = _tree_fingerprint(workspace, test_command)
+    fingerprint = _tree_fingerprint(workspace, command)
     cached = _CACHE.get(str(workspace.root))
     if cached is not None and cached.fingerprint == fingerprint:
         record_test_run(
-            command=test_command,
+            command=command,
             ok=cached.result.ok,
             output=cached.result.output,
             phase=phase,
@@ -66,10 +75,10 @@ def run_project_tests(
         )
         return cached.result
     started = time.perf_counter()
-    result = run_command(workspace, test_command, timeout_seconds)
+    result = run_command(workspace, command, timeout_seconds)
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
     record_test_run(
-        command=test_command,
+        command=command,
         ok=result.ok,
         output=result.output,
         phase=phase,
@@ -77,6 +86,12 @@ def run_project_tests(
     )
     _CACHE[str(workspace.root)] = _CachedRun(fingerprint=fingerprint, result=result)
     return result
+
+
+def _active_test_command(workspace: Workspace, test_command: str | None) -> str | None:
+    if test_command:
+        return test_command
+    return load_project(workspace.root).test_command
 
 
 def _tree_fingerprint(workspace: Workspace, test_command: str) -> str:

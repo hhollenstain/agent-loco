@@ -1228,6 +1228,8 @@ def _maybe_test(
     phase: str = "tests",
 ):
     if not project.test_command:
+        project.test_command = load_project(workspace.root).test_command
+    if not project.test_command:
         return None
     return run_project_tests(
         workspace,
@@ -1278,6 +1280,8 @@ def _maybe_lint(
     *,
     phase: str = "lint",
 ):
+    if not project.lint_command:
+        project.lint_command = load_project(workspace.root).lint_command
     if not project.lint_command:
         return None
     return run_project_lint(

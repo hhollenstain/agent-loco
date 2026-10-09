@@ -36,6 +36,23 @@ def test_run_project_tests_reuses_result_when_tree_is_unchanged(tmp_path: Path) 
     assert events[1]["phase"] == "after"
 
 
+def test_run_project_tests_reads_a_command_added_during_the_run(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (tmp_path / "check.py").write_text("print('ok')\n", encoding="utf-8")
+    workspace = Workspace(tmp_path)
+    missing = run_project_tests(workspace, None, 10, phase="agent")
+    assert not missing.ok
+    assert missing.output.startswith("no test command configured")
+    (loco / "config.yaml").write_text(
+        "name: demo\ntest_command: python3 check.py\n",
+        encoding="utf-8",
+    )
+    found = run_project_tests(workspace, None, 10, phase="agent")
+    assert found.ok
+    assert "ok" in found.output
+
+
 def test_run_project_tests_reruns_after_an_edit(tmp_path: Path) -> None:
     loco = tmp_path / ".loco"
     loco.mkdir()

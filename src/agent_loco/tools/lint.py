@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_loco.progress import record_lint_run
+from agent_loco.runtime.project import load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 from agent_loco.tools.files import SKIP_DIR_NAMES
@@ -97,7 +98,8 @@ def lint_tools(
                 "then ruff check). Call this after edits and before considering "
                 "a pull request done. If the workspace tree has not changed "
                 "since the last run, returns that result without running the "
-                "linter again."
+                "linter again. If no command is configured, write lint_command "
+                "in .loco/config.yaml and call this again."
             ),
             parameters=object_schema({}),
             handler=lambda: run_project_lint(
@@ -114,15 +116,21 @@ def run_project_lint(
     *,
     phase: str = "lint",
 ) -> ToolResult:
-    if not lint_command:
-        result = ToolResult(False, "no lint command configured for this project")
+    command = _active_lint_command(workspace, lint_command)
+    if not command:
+        result = ToolResult(
+            False,
+            "no lint command configured for this project. "
+            "Write lint_command in .loco/config.yaml to the command that "
+            "lints this project, then call run_lint again.",
+        )
         record_lint_run(command="", ok=False, output=result.output, phase=phase)
         return result
-    fingerprint = _tree_fingerprint(workspace, lint_command)
+    fingerprint = _tree_fingerprint(workspace, command)
     cached = _CACHE.get(str(workspace.root))
     if cached is not None and cached.fingerprint == fingerprint:
         record_lint_run(
-            command=lint_command,
+            command=command,
             ok=cached.result.ok,
             output=cached.result.output,
             phase=phase,
@@ -131,10 +139,10 @@ def run_project_lint(
         )
         return cached.result
     started = time.perf_counter()
-    result = run_command(workspace, lint_command, timeout_seconds)
+    result = run_command(workspace, command, timeout_seconds)
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
     record_lint_run(
-        command=lint_command,
+        command=command,
         ok=result.ok,
         output=result.output,
         phase=phase,
@@ -142,6 +150,12 @@ def run_project_lint(
     )
     _CACHE[str(workspace.root)] = _CachedRun(fingerprint=fingerprint, result=result)
     return result
+
+
+def _active_lint_command(workspace: Workspace, lint_command: str | None) -> str | None:
+    if lint_command:
+        return lint_command
+    return load_project(workspace.root).lint_command
 
 
 def _tree_fingerprint(workspace: Workspace, lint_command: str) -> str:

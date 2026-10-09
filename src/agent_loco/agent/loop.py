@@ -66,6 +66,11 @@ VALIDATE_TESTS_NUDGE = (
     "You changed code but have not called run_tests since the last edit. "
     "Run the project tests and fix failures before summarizing."
 )
+VALIDATE_TESTS_SETUP_NUDGE = (
+    "run_tests cannot pass because this project has no test command. "
+    "Write test_command in .loco/config.yaml to the command that runs the "
+    "tests you added, then call run_tests again."
+)
 VALIDATE_OPS_NUDGE = (
     "You changed Docker, compose, or docs but have not called run_tests since "
     "the last edit. Run tests. Commands in README must exist: use loco clone or "
@@ -220,6 +225,7 @@ class CodingAgent:
         mutated_ops = False
         verified_ui = False
         verified_tests = False
+        tests_need_command = False
         plan_nudges = 0
         unfinished_nudges = 0
         validate_nudges = 0
@@ -324,6 +330,12 @@ class CodingAgent:
                             verified_ui = bool(result.ok)
                         elif call.name == "run_tests":
                             verified_tests = bool(result.ok)
+                            tests_need_command = (not result.ok) and (
+                                result.output or ""
+                            ).startswith("no test command configured")
+                            tests_need_command = (not result.ok) and (
+                                result.output or ""
+                            ).startswith("no test command configured")
                         elif call.name not in VERIFY_TOOLS:
                             inspected = True
                     messages.append(_tool_result_message(call, result.output, native=native))
@@ -375,7 +387,12 @@ class CodingAgent:
                 log.info("nudging agent to run tests after edits")
                 record_event(kind="step", message="Agent skipped tests; continuing.")
                 messages.append({"role": "assistant", "content": turn.text or ""})
-                nudge = VALIDATE_OPS_NUDGE if mutated_ops else VALIDATE_TESTS_NUDGE
+                if tests_need_command:
+                    nudge = VALIDATE_TESTS_SETUP_NUDGE
+                elif mutated_ops:
+                    nudge = VALIDATE_OPS_NUDGE
+                else:
+                    nudge = VALIDATE_TESTS_NUDGE
                 messages.append({"role": "user", "content": _nudge(nudge, goal)})
                 continue
 
