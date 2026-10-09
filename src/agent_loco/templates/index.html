@@ -92,22 +92,54 @@
       padding: 1.25rem 1.5rem;
     }
     .tasks {
+      position: relative;
       padding: 0;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+      display: flex;
+      flex-direction: column;
       min-height: 0;
       overflow: hidden;
     }
+    main.collapsed-runs .run-rail {
+      bottom: auto;
+      width: auto;
+      padding: 0.55rem 0.45rem;
+      align-items: center;
+      background: transparent;
+      border-left: 0;
+      box-shadow: none;
+      overflow: visible;
+    }
+    main.collapsed-runs .run-rail-head {
+      justify-content: center;
+    }
+    main.collapsed-runs .run-rail-head label,
+    main.collapsed-runs .run-rail-actions > :not(.run-rail-toggle),
+    main.collapsed-runs #run-search,
+    main.collapsed-runs .run-filters,
+    main.collapsed-runs #run-list {
+      display: none;
+    }
     .run-stage {
-      display: contents;
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
     }
     .run-detail {
+      flex: 1 1 auto;
       min-width: 0;
       min-height: 0;
       overflow: auto;
       padding: 0.85rem 1.15rem 1.5rem;
     }
     .run-rail {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 4;
+      width: min(22rem, 100%);
       min-width: 0;
       min-height: 0;
       display: flex;
@@ -116,6 +148,7 @@
       overflow: hidden;
       border-left: 1px solid var(--line);
       background: var(--panel);
+      box-shadow: -12px 0 28px rgba(0, 0, 0, 0.28);
       padding: 0.85rem 0.85rem 1rem;
     }
     .run-rail-head {
@@ -123,6 +156,28 @@
       align-items: baseline;
       justify-content: space-between;
       gap: 0.5rem;
+    }
+    .run-rail-toggle {
+      flex: 0 0 auto;
+      width: 2.1rem;
+      min-width: 2.1rem;
+      height: 2.1rem;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--panel-2);
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1.05rem;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .run-rail-toggle:hover, .run-rail-toggle:focus {
+      color: var(--ink);
+      border-color: var(--accent);
     }
     .run-rail-head label,
     .run-rail-head .meta { margin: 0; }
@@ -159,13 +214,8 @@
       overflow: auto;
     }
     @media (max-width: 1100px) {
-      .tasks {
-        grid-template-columns: 1fr;
-        grid-template-rows: minmax(18rem, 46vh) minmax(14rem, 40vh);
-      }
       .run-rail {
-        border-left: 0;
-        border-top: 1px solid var(--line);
+        width: min(22rem, calc(100% - 2.75rem));
       }
     }
     #task-form {
@@ -1616,7 +1666,7 @@
     }
     .task-card .history-line-stats {
       position: absolute;
-      left: 1.5rem;
+      left: 1.2rem;
       bottom: 0.85rem;
       display: flex;
       align-items: center;
@@ -1651,6 +1701,24 @@
       white-space: pre-wrap;
       overflow: hidden;
       color: var(--ink);
+    }
+    .run-rail .task-card > .card-actions .pr-link {
+      margin-right: auto;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .run-rail .task-card > .card-actions .pr-link > span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .run-rail .task .history-line-stats {
+      position: static;
+      left: auto;
+      bottom: auto;
+      display: flex;
+      margin-top: 0.4rem;
+      pointer-events: none;
     }
     .run-rail .task .goal,
     .run-rail .task > p.meta {
@@ -2248,6 +2316,7 @@
           <div class="run-rail-head">
             <label class="label-no-margin" for="run-search">Runs</label>
             <div class="run-rail-actions">
+              <button type="button" class="run-rail-toggle" id="toggle-run-rail" aria-controls="run-list" aria-expanded="true" title="Hide runs">›</button>
               <button type="button" class="run-filter" id="refresh-pr-status">Refresh PRs</button>
               <span class="meta" id="counts"></span>
             </div>
@@ -2393,7 +2462,7 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, openDiffs: new Set(), closedChanges: new Set(), expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, runRailCollapsed: false, openDiffs: new Set(), closedChanges: new Set(), expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("run-list");
     const runDetailEl = document.getElementById("run-detail");
     function activeDetailEl() {
@@ -2405,6 +2474,7 @@
     const searchInput = document.getElementById("run-search");
     const mainEl = document.getElementById("main");
     const toggleBtn = document.getElementById("toggle-sidebar");
+    const toggleRunRailBtn = document.getElementById("toggle-run-rail");
     const pickerEl = document.getElementById("workspace-picker");
     const recentEl = document.getElementById("recent-workspaces");
     const archivedEl = document.getElementById("archived-workspaces");
@@ -3299,6 +3369,13 @@
       if (open) setNotifyPanel(false);
       setSettingsOpen(open);
     });
+    toggleRunRailBtn.addEventListener("click", () => applyRunRail(!state.runRailCollapsed));
+    document.addEventListener("click", (event) => {
+      if (state.runRailCollapsed) return;
+      const rail = document.querySelector(".run-rail");
+      if (rail && rail.contains(event.target)) return;
+      applyRunRail(true);
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (pickerEl.classList.contains("open")) {
@@ -3317,7 +3394,11 @@
         setSettingsOpen(false);
         return;
       }
-      if (notifyPanelOpen()) setNotifyPanel(false);
+      if (notifyPanelOpen()) {
+        setNotifyPanel(false);
+        return;
+      }
+      if (!state.runRailCollapsed) applyRunRail(true);
     });
     notifyToggleEl.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -3812,14 +3893,13 @@
         ? [entry.model || "", entry.base_url || ""].filter(Boolean).join(" · ")
         : (summary.length > reason.length ? summary : (reason || summary));
       const prHtml = prLinkHtml(prUrl(entry));
-      const successActions = `${linesHtml}${updateBtn}`;
+      const actionHtml = `${prHtml}${updateBtn}${rerunBtn}`;
       const goal = goalText(entry);
       const needsClamp = runTextOverflows(goal) || runTextOverflows(detail);
       const expanded = needsClamp && state.expandedRuns.has(run.key);
       const expandBtn = needsClamp
         ? `<button type="button" class="run-expand" data-expand-run="${key}" aria-expanded="${expanded ? "true" : "false"}">${expanded ? "Less" : "More"}</button>`
         : "";
-      const prRow = prHtml ? `<div class="run-pr-row">${prHtml}</div>` : "";
       return `
         <div class="task-card${selected}${expanded ? " expanded" : ""}">
           <button type="button" class="task${selected}" data-run-key="${key}">
@@ -3829,12 +3909,10 @@
             </div>
             <p class="goal">${escapeHtml(goal)}</p>
             <p class="meta">${escapeHtml(detail)}</p>
+            ${linesHtml}
           </button>
           ${expandBtn}
-          ${prRow}
-          ${succeeded && successActions
-            ? `<div class="card-actions">${successActions}</div>`
-            : `${rerunBtn}${linesHtml}`}
+          ${actionHtml ? `<div class="card-actions">${actionHtml}</div>` : ""}
         </div>
       `;
     }
@@ -4974,6 +5052,24 @@
       applySidebar(localStorage.getItem("loco-sidebar-collapsed") === "1");
     } catch (_err) {
       applySidebar(false);
+    }
+
+    function applyRunRail(collapsed) {
+      state.runRailCollapsed = collapsed;
+      mainEl.classList.toggle("collapsed-runs", collapsed);
+      toggleRunRailBtn.textContent = collapsed ? "‹" : "›";
+      toggleRunRailBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      toggleRunRailBtn.title = collapsed ? "Show runs" : "Hide runs";
+      try {
+        localStorage.setItem("loco-runs-collapsed", collapsed ? "1" : "0");
+      } catch (_err) {
+        /* ignore quota / private mode */
+      }
+    }
+    try {
+      applyRunRail(localStorage.getItem("loco-runs-collapsed") === "1");
+    } catch (_err) {
+      applyRunRail(false);
     }
 
     async function queueTask(payload, notice) {
