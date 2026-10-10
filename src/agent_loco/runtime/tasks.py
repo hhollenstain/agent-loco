@@ -93,6 +93,7 @@ class Task:
     branch: str | None = None
     resume_branch: str | None = None
     resume_sha: str | None = None
+    base_branch: str | None = None
     context_window: int | None = None
     continuous: bool = False
     merged: bool = False
@@ -120,6 +121,7 @@ class Task:
             "error": self.error,
             "sha_before": self.sha_before,
             "branch": self.branch,
+            "base_branch": self.base_branch,
             "events": [public_event(event) for event in self.events],
             **token_usage_from_events(self.events),
             "context_window": self.context_window,
@@ -188,6 +190,7 @@ class TaskManager:
         model_api_key: str | None = None,
         resume_branch: str | None = None,
         resume_sha: str | None = None,
+        base_branch: str | None = None,
         continuous: bool = False,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
@@ -212,6 +215,7 @@ class TaskManager:
             model_api_key=selected_key,
             resume_branch=(resume_branch or "").strip() or None,
             resume_sha=(resume_sha or "").strip() or None,
+            base_branch=(base_branch or "").strip() or None,
             branch=(resume_branch or "").strip() or None,
             continuous=continuous,
         )
@@ -408,6 +412,8 @@ class TaskManager:
             sibling_tasks=sibling_task_records(self, task),
             context_window=task.context_window,
             task_id=task.id,
+            base_branch=task.base_branch,
+            keep_branch=bool(task.resume_branch or task.resume_sha),
         )
 
     def _maybe_continue(self, task: Task) -> None:
@@ -429,6 +435,7 @@ class TaskManager:
                 model_name=task.model_name,
                 model_base_url=task.model_base_url,
                 model_api_key=task.model_api_key,
+                base_branch=task.base_branch,
                 continuous=True,
             )
         except RuntimeError as exc:

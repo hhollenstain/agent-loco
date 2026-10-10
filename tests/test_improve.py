@@ -47,6 +47,71 @@ def _broken_project(root: Path) -> None:
     init_git_repo(root)
 
 
+def test_cycle_starts_from_a_clean_head_branch(tmp_path: Path, settings: Settings) -> None:
+    (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    head = current_branch(workspace) or "master"
+    sha = current_sha(workspace) or ""
+    run_git(workspace, ["update-ref", f"refs/remotes/origin/{head}", sha])
+    run_git(workspace, ["checkout", "-b", "feature/wip"])
+    (tmp_path / "app.py").write_text("print('dirty')\n", encoding="utf-8")
+    tight = settings.model_copy(update={"max_iterations": 1})
+    llm = ScriptedClient([AssistantTurn(text="I looked around.")])
+    result = run_cycle(tmp_path, tight, llm, goal="Leave the printed text alone")
+    assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('base')\n"
+    assert current_branch(workspace) == head
+    steps = [event.get("message", "") for event in result.events if event["kind"] == "step"]
+    assert any(f"Starting from a clean {head}" in message for message in steps)
+
+
+def test_cycle_uses_the_branch_named_in_the_goal(tmp_path: Path, settings: Settings) -> None:
+    (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    head = current_branch(workspace) or "master"
+    run_git(workspace, ["checkout", "-b", "feature/login"])
+    (tmp_path / "app.py").write_text("print('feature')\n", encoding="utf-8")
+    run_git(workspace, ["add", "app.py"])
+    run_git(workspace, ["commit", "-m", "feature"])
+    feature = current_sha(workspace) or ""
+    run_git(workspace, ["update-ref", "refs/remotes/origin/feature/login", feature])
+    run_git(workspace, ["checkout", head])
+    tight = settings.model_copy(update={"max_iterations": 1})
+    llm = ScriptedClient([AssistantTurn(text="I looked around.")])
+    run_cycle(tmp_path, tight, llm, goal="Ship the login fix on branch feature/login")
+    assert current_branch(workspace) == "feature/login"
+    assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('feature')\n"
+
+
+def test_cycle_dropdown_branch_overrides_the_goal(tmp_path: Path, settings: Settings) -> None:
+    (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    head = current_branch(workspace) or "master"
+    run_git(workspace, ["checkout", "-b", "feature/login"])
+    (tmp_path / "app.py").write_text("print('feature')\n", encoding="utf-8")
+    run_git(workspace, ["add", "app.py"])
+    run_git(workspace, ["commit", "-m", "feature"])
+    feature = current_sha(workspace) or ""
+    run_git(workspace, ["update-ref", "refs/remotes/origin/feature/login", feature])
+    run_git(workspace, ["checkout", head])
+    tight = settings.model_copy(update={"max_iterations": 1})
+    llm = ScriptedClient([AssistantTurn(text="I looked around.")])
+    run_cycle(
+        tmp_path,
+        tight,
+        llm,
+        goal=f"Start on branch {head}",
+        base_branch="feature/login",
+    )
+    assert current_branch(workspace) == "feature/login"
+    assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('feature')\n"
+
+
 def test_cycle_commits_when_scripted_fix_passes(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
     llm = ScriptedClient(

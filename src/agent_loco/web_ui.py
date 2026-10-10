@@ -59,7 +59,12 @@ from agent_loco.runtime.workspaces import (
     load_workspaces,
     remember_workspace,
 )
-from agent_loco.tools.git import extract_pr_url, pull_request_state
+from agent_loco.tools.git import (
+    extract_pr_url,
+    list_branches,
+    pull_request_state,
+    valid_branch_name,
+)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -165,6 +170,7 @@ class TaskCreate(BaseModel):
     create_pr: bool | None = None
     resume_branch: str | None = None
     resume_sha: str | None = None
+    base_branch: str | None = None
     pr_url: str | None = None
     continuous: bool = False
 
@@ -897,6 +903,22 @@ def create_app(
             return JSONResponse({"error": "task not found or not rerunnable"}, status_code=404)
         return JSONResponse(new_task.to_dict(), status_code=201)
 
+    @app.get("/api/branches")
+    def branches(request: Request, workspace: str | None = None) -> Any:
+        ui: UiState = request.app.state.ui
+        root = Path(workspace or ui.default_workspace).expanduser()
+        if not root.is_dir():
+            return JSONResponse({"error": "workspace is not a directory"}, status_code=400)
+        if not (root / ".git").exists():
+            return {"default": "", "branches": []}
+        try:
+            from agent_loco.sandbox import Workspace
+
+            default, names = list_branches(Workspace(root))
+        except OSError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return {"default": default, "branches": names}
+
     @app.post("/api/tasks")
     def create_task(
         request: Request,
@@ -906,6 +928,10 @@ def create_app(
         body = payload or TaskCreate()
         if body.pr_url and lookup_pull_state(body.pr_url) != "open":
             return JSONResponse({"error": "pull request is not open"}, status_code=409)
+        picked = (body.base_branch or "").strip()
+        if picked and not valid_branch_name(picked):
+            return JSONResponse({"error": f"invalid branch name: {picked}"}, status_code=400)
+        body.base_branch = picked or None
         workspace_raw = body.workspace or ui.default_workspace
         try:
             task = ui.manager.submit(
@@ -918,6 +944,7 @@ def create_app(
                 model_api_key=body.api_key,
                 resume_branch=body.resume_branch,
                 resume_sha=body.resume_sha,
+                base_branch=body.base_branch,
                 continuous=bool(body.continuous),
             )
             ui.remember_server(task.model_base_url, model=task.model_name)

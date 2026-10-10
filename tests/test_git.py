@@ -9,6 +9,7 @@ from agent_loco.sandbox import Workspace
 from agent_loco.tools.git import (
     CO_AUTHORED_BY,
     agent_commit,
+    branch_named_in_goal,
     commit_changes,
     commits_ahead_of_base,
     create_pull_request,
@@ -17,11 +18,14 @@ from agent_loco.tools.git import (
     ensure_pr_branch,
     existing_pull_request,
     extract_pr_url,
+    goal_keeps_current_branch,
     has_changes,
     is_runtime_artifact,
     is_tracked,
+    list_branches,
     merge_pull_request,
     parse_github_remote,
+    prepare_clean_base,
     pull_request_state,
     push_changes,
     resume_workspace,
@@ -445,6 +449,57 @@ def test_resume_workspace_checks_out_feature_branch(tmp_path: Path) -> None:
     result = resume_workspace(workspace, branch="loco/feature")
     assert result.ok
     assert current_branch(workspace) == "loco/feature"
+
+
+def test_branch_named_in_goal_reads_an_explicit_branch() -> None:
+    assert branch_named_in_goal("Fix the start button") is None
+    assert branch_named_in_goal("Work on the branch and ship it") is None
+    assert branch_named_in_goal("Start on branch feature/login") == "feature/login"
+    assert branch_named_in_goal("base branch: release/1.2") == "release/1.2"
+    assert goal_keeps_current_branch("from the current branch create a PR")
+    assert not goal_keeps_current_branch("Start on branch feature/login")
+
+
+def test_prepare_clean_base_uses_origin_head_and_stashes_edits(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    head = current_branch(workspace) or "master"
+    sha = current_sha(workspace) or ""
+    run_git(workspace, ["update-ref", f"refs/remotes/origin/{head}", sha])
+    run_git(workspace, ["checkout", "-b", "feature/wip"])
+    (tmp_path / "app.py").write_text("print('dirty')\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("untracked\n", encoding="utf-8")
+    result = prepare_clean_base(workspace, head)
+    assert result.ok
+    assert current_branch(workspace) == head
+    assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('base')\n"
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "untracked\n"
+    stashes = run_git(workspace, ["stash", "list"])
+    assert "loco: stashed before a clean start" in stashes.stdout
+    default, names = list_branches(workspace)
+    assert default == head
+    assert head in names
+    assert "feature/wip" in names
+
+
+def test_prepare_clean_base_checks_out_a_named_branch(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    head = current_branch(workspace) or "master"
+    run_git(workspace, ["checkout", "-b", "feature/login"])
+    (tmp_path / "app.py").write_text("print('feature')\n", encoding="utf-8")
+    run_git(workspace, ["add", "app.py"])
+    run_git(workspace, ["commit", "-m", "feature"])
+    feature = current_sha(workspace) or ""
+    run_git(workspace, ["update-ref", "refs/remotes/origin/feature/login", feature])
+    run_git(workspace, ["checkout", head])
+    (tmp_path / "app.py").write_text("print('local main')\n", encoding="utf-8")
+    result = prepare_clean_base(workspace, "feature/login")
+    assert result.ok
+    assert current_branch(workspace) == "feature/login"
+    assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('feature')\n"
 
 
 def test_merge_pull_request_calls_gh_squash(tmp_path: Path, monkeypatch) -> None:

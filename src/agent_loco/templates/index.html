@@ -2218,6 +2218,12 @@
       <textarea id="goal" name="goal" placeholder="Leave blank to use .loco/goals.md, failing tests, or keep improving">{{ default_goal }}</textarea>
       <p class="hint" id="enabled-skills-hint"></p>
 
+      <label for="base-branch">Base branch</label>
+      <select id="base-branch" aria-label="Base branch">
+        <option value="">Loading branches…</option>
+      </select>
+      <p class="hint">New tasks start from a clean copy of the head branch. Pick another branch here, or name one in the goal.</p>
+
       <div class="llm-block">
         <p class="llm-heading">
           LLM
@@ -2973,9 +2979,53 @@
       if (opts.close !== false) closePicker();
       resetRunView();
       await refresh();
+      await loadBranches();
       if (opts.close !== false) {
         notify("success", body.current, { title: "Workspace selected" });
       }
+    }
+
+    async function loadBranches() {
+      const select = document.getElementById("base-branch");
+      const workspace = (document.getElementById("workspace") || {}).value || "";
+      if (!select || !workspace) return;
+      const previous = select.value;
+      try {
+        const res = await fetch("/api/branches?workspace=" + encodeURIComponent(workspace));
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Could not list branches");
+        const names = body.branches || [];
+        const head = body.default || "";
+        select.replaceChildren();
+        if (!names.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "No git branch";
+          select.appendChild(option);
+          select.disabled = true;
+          select.dataset.head = "";
+          return;
+        }
+        select.disabled = false;
+        for (const name of names) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name === head ? name + " (head)" : name;
+          select.appendChild(option);
+        }
+        select.dataset.head = head;
+        select.value = names.indexOf(previous) >= 0 ? previous : head;
+      } catch (_err) {
+        select.disabled = true;
+      }
+    }
+
+    function selectedBaseBranch() {
+      const select = document.getElementById("base-branch");
+      if (!select || select.disabled) return undefined;
+      const value = select.value;
+      if (!value || value === select.dataset.head) return undefined;
+      return value;
     }
 
     document.getElementById("open-workspace-picker").addEventListener("click", () => {
@@ -5228,6 +5278,7 @@
           create_pr: document.getElementById("create-pr").checked
             || document.getElementById("keep-improving").checked,
           continuous: document.getElementById("keep-improving").checked,
+          base_branch: selectedBaseBranch(),
         });
       } catch (err) {
         showNotice(errorEl, "error", err.message);
@@ -5479,6 +5530,7 @@
     renderNotificationHistory();
     syncKeepImproving();
     refresh();
+    loadBranches();
     loadRecentWorkspaces().catch(() => {});
     loadModels(false);
     setInterval(refresh, 1000);

@@ -49,6 +49,7 @@ from agent_loco.sandbox import SandboxError, Workspace
 from agent_loco.tools import build_tools
 from agent_loco.tools.git import (
     CO_AUTHORED_BY,
+    branch_named_in_goal,
     checkout_base_branch,
     commit_changes,
     commits_ahead_of_base,
@@ -60,10 +61,12 @@ from agent_loco.tools.git import (
     existing_pull_request,
     extract_pr_url,
     github_owner_repo,
+    goal_keeps_current_branch,
     has_changes,
     is_protected_branch,
     is_tracked,
     merge_pull_request,
+    prepare_clean_base,
     push_changes,
     update_pull_request,
     upstream_state,
@@ -207,6 +210,22 @@ class _EmptyDiffOutcome:
     tests_passed: bool | None
 
 
+def _resolve_start_branch(
+    workspace: Workspace,
+    goal: str | None,
+    selected: str | None,
+    publish_branch: str | None,
+) -> str:
+    """Dropdown selection wins, then a branch named in the goal, then head."""
+    picked = (selected or "").strip()
+    if picked:
+        return picked
+    noted = branch_named_in_goal(goal)
+    if noted:
+        return noted
+    return default_base_branch(workspace, publish_branch)
+
+
 def resolve_create_pr(
     settings: Settings,
     project: ProjectConfig,
@@ -232,6 +251,8 @@ def run_cycle(
     sibling_tasks: list[dict] | None = None,
     context_window: int | None = None,
     task_id: str | None = None,
+    base_branch: str | None = None,
+    keep_branch: bool = False,
 ) -> CycleResult:
     progress = bind_progress()
     token = _TASK_ID.set(task_id)
@@ -248,6 +269,8 @@ def run_cycle(
             sibling_tasks=sibling_tasks,
             context_window=context_window,
             task_id=task_id,
+            base_branch=base_branch,
+            keep_branch=keep_branch,
         )
     finally:
         _PALACE.reset(palace_token)
@@ -267,11 +290,39 @@ def _run_cycle(
     sibling_tasks: list[dict] | None = None,
     context_window: int | None = None,
     task_id: str | None = None,
+    base_branch: str | None = None,
+    keep_branch: bool = False,
 ) -> CycleResult:
     log_progress("Initializing workspace...")
     workspace = Workspace(workspace_path)
-    ensure_run_gitignore(workspace.root)
     project = load_project(workspace.root)
+    stay_here = goal_keeps_current_branch(goal) and not (base_branch or "").strip()
+    if not keep_branch and not stay_here and (workspace.root / ".git").exists():
+        start = _resolve_start_branch(
+            workspace,
+            goal,
+            base_branch,
+            project.publish_branch,
+        )
+        log_progress(f"Starting from a clean {start}...")
+        prepared = prepare_clean_base(workspace, start, project.publish_remote)
+        if not prepared.ok:
+            log_progress(prepared.output)
+            result = CycleResult(
+                status="failed",
+                goal=goal,
+                summary=_failure_notes(prepared.output, None),
+                tests_passed=None,
+                committed=False,
+                published=False,
+                commit_sha=None,
+                reason=prepared.output,
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return result
+        log_progress(prepared.output)
+    ensure_run_gitignore(workspace.root)
     allow_create_pr = resolve_create_pr(settings, project, cli_create_pr)
     tests_before = None
     if goal is None:

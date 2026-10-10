@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.support import init_git_repo
 
 from agent_loco.config import Settings
 from agent_loco.llm.client import model_ids_from_payload, normalize_model_base_url
@@ -536,6 +537,8 @@ def test_web_ui_lists_models_and_queues_with_selection(settings: Settings, tmp_p
         assert home.status_code == 200
         assert b'id="model"' in home.content
         assert b'id="base-url"' in home.content
+        assert b'id="base-branch"' in home.content
+        assert b"function loadBranches(" in home.content
         assert b'id="server-history"' in home.content
         assert b"Load models" in home.content
 
@@ -1780,5 +1783,51 @@ def test_submit_accepts_resume_branch(settings: Settings, tmp_path: Path) -> Non
                 break
             time.sleep(0.05)
         assert seen == ["loco/feature"]
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_branches_api_lists_head_and_accepts_a_selected_base(
+    settings: Settings, tmp_path: Path
+) -> None:
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    seen: list[str | None] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append(task.base_branch)
+        return _ok_result(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        listed = client.get("/api/branches", params={"workspace": str(tmp_path)})
+        assert listed.status_code == 200
+        body = listed.json()
+        assert body["default"]
+        assert body["default"] in body["branches"]
+        rejected = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "nope", "base_branch": "not a branch"},
+        )
+        assert rejected.status_code == 400
+        created = client.post(
+            "/api/tasks",
+            json={
+                "workspace": str(tmp_path),
+                "goal": "Use the other branch",
+                "base_branch": "feature/login",
+                "auto_commit": False,
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["base_branch"] == "feature/login"
+        for _ in range(50):
+            tasks = client.get("/api/tasks").json()
+            if tasks and tasks[0]["status"] not in {"queued", "running"}:
+                break
+            time.sleep(0.05)
+        assert seen == ["feature/login"]
     finally:
         manager.shutdown(wait=False)

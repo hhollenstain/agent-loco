@@ -407,6 +407,137 @@ def resume_workspace(
     return ToolResult(True, current_branch(workspace) or target or "")
 
 
+_BRANCH_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+_GOAL_BRANCH = re.compile(
+    r"(?ix)"
+    r"(?:"
+    r"\b(?:base\s+branch|on\s+branch|from\s+branch|use\s+branch)\s*[:=]?\s*"
+    r"|\bbranch\s*[:=]\s*"
+    r")"
+    r"""[`"']?(?P<name>[A-Za-z0-9][A-Za-z0-9._/-]*)[`"']?"""
+)
+_BRANCH_STOP_WORDS = {"the", "this", "that", "a", "an", "head", "current", "default", "same"}
+_KEEP_CURRENT_BRANCH = re.compile(r"(?i)\b(?:current|this|same) branch\b")
+
+
+def valid_branch_name(name: str) -> bool:
+    if not name or name.upper() == "HEAD" or name.startswith("-") or ".." in name or "@{" in name:
+        return False
+    return bool(_BRANCH_NAME.fullmatch(name))
+
+
+def goal_keeps_current_branch(goal: str | None) -> bool:
+    """True when the goal says to continue on the branch that is already checked out."""
+    return bool(goal and _KEEP_CURRENT_BRANCH.search(goal))
+
+
+def branch_named_in_goal(goal: str | None) -> str | None:
+    """Return a branch the goal text asks to start from."""
+    if not goal:
+        return None
+    for match in _GOAL_BRANCH.finditer(goal):
+        name = match.group("name")
+        if name.lower() in _BRANCH_STOP_WORDS or not valid_branch_name(name):
+            continue
+        return name
+    return None
+
+
+def list_branches(workspace: Workspace) -> tuple[str, list[str]]:
+    """Default head branch, then every local and origin branch."""
+    default = default_base_branch(workspace)
+    listed = run_git(
+        workspace,
+        ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes/origin"],
+    )
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw in (listed.stdout or "").splitlines():
+        ref = raw.strip()
+        if ref.startswith("refs/heads/"):
+            name = ref.removeprefix("refs/heads/")
+        elif ref.startswith("refs/remotes/origin/"):
+            name = ref.removeprefix("refs/remotes/origin/")
+            if name == "HEAD":
+                continue
+        else:
+            continue
+        if not valid_branch_name(name) or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    if default and default not in seen and valid_branch_name(default):
+        names.append(default)
+    names.sort(key=lambda item: (item != default, item.lower()))
+    return default, names
+
+
+def prepare_clean_base(
+    workspace: Workspace,
+    branch: str,
+    remote: str = "origin",
+) -> ToolResult:
+    """Check out `branch` at its remote head, stashing local edits first."""
+    if not (workspace.root / ".git").exists():
+        return ToolResult(True, "not a git repository")
+    target = (branch or "").strip()
+    if not valid_branch_name(target):
+        return ToolResult(False, f"invalid branch name: {target or '(empty)'}")
+    dirty = run_git(workspace, ["status", "--porcelain"])
+    if dirty.returncode != 0:
+        return ToolResult(False, _output(dirty))
+    if (dirty.stdout or "").strip():
+        stashed = run_git(
+            workspace,
+            ["stash", "push", "-m", "loco: stashed before a clean start"],
+        )
+        if stashed.returncode != 0:
+            return ToolResult(False, _output(stashed))
+    _fetch_branch(workspace, remote or "origin", target)
+    remote_name = remote or "origin"
+    remote_ref = f"{remote_name}/{target}"
+    has_remote = (
+        run_git(workspace, ["rev-parse", "--verify", "--quiet", remote_ref]).returncode == 0
+    )
+    has_local = (
+        run_git(
+            workspace,
+            ["show-ref", "--verify", "--quiet", f"refs/heads/{target}"],
+        ).returncode
+        == 0
+    )
+    if has_remote:
+        checked = run_git(workspace, ["checkout", "-B", target, remote_ref])
+        if checked.returncode != 0:
+            return ToolResult(False, _output(checked))
+        return ToolResult(True, f"clean {target} at {remote_ref}")
+    if has_local:
+        checked = run_git(workspace, ["checkout", target])
+        if checked.returncode != 0:
+            return ToolResult(False, _output(checked))
+        return ToolResult(True, f"clean {target}")
+    return ToolResult(False, f"branch not found: {target}")
+
+
+def _fetch_branch(workspace: Workspace, remote: str, branch: str) -> None:
+    import os
+
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        subprocess.run(
+            ["git", "fetch", "--quiet", remote, branch],
+            cwd=workspace.root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+
+
 def default_base_branch(workspace: Workspace, configured: str | None = None) -> str:
     if configured and configured.strip():
         return configured.strip()
