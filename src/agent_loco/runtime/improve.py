@@ -1100,6 +1100,10 @@ def _ensure_goal_met(
     while not verdict.met and attempts < limit:
         attempts += 1
         log_progress(f"Goal retry {attempts}/{limit}: {review_reason(verdict)}")
+        project = load_project(workspace.root)
+        lookup = _needs_validation_lookup(review_reason(verdict), project)
+        if lookup:
+            log_progress("Looking up how to test and preview this stack...")
         work_diff = collect_work_diff(workspace, sha_before, goal=goal)
         follow = agent.run(
             _goal_retry_prompt(
@@ -1108,9 +1112,11 @@ def _ensure_goal_met(
                 work_diff,
                 ui_errors=verdict.ui_errors,
                 stalled=stalls > 0,
+                lookup=lookup,
             ),
             context,
             require_change=True,
+            require_lookup=lookup,
         )
         if follow.summary:
             summary = follow.summary
@@ -1173,6 +1179,13 @@ def _ensure_goal_met(
 GOAL_RETRY_STALL_EXTRA = 2
 
 
+def _needs_validation_lookup(reason: str, project: ProjectConfig) -> bool:
+    text = (reason or "").lower()
+    if project.preview_command:
+        return False
+    return "no preview server" in text or "preview_command" in text
+
+
 def _goal_retry_prompt(
     goal: str,
     reason: str,
@@ -1180,10 +1193,25 @@ def _goal_retry_prompt(
     *,
     ui_errors: list[str] | tuple[str, ...] | None = None,
     stalled: bool = False,
+    lookup: bool = False,
 ) -> str:
     stall = ""
+    if lookup:
+        stall += (
+            "Validation is not configured, so this screen cannot be checked. "
+            "Before other edits, name the language and framework from the repo. "
+            "Call web_search for official docs on testing, linting, and previewing "
+            "or capturing that stack, including the version when the repo states it. "
+            "Call fetch_url on an official page. Call configure_project with the "
+            "commands those docs support: test_command runs the suite and exits "
+            "non-zero on failure, lint_command is the linter when the docs name one, "
+            "and preview_command listens on {port}. A web app serves the app. A "
+            "native or Godot app captures the changed screen and serves that image "
+            "on {port}. Do not invent a command the fetched page does not support. "
+            "Then call review_ui.\n\n"
+        )
     if stalled:
-        stall = (
+        stall += (
             "You inspected the repo on the last retry but did not change files. "
             "This is not done. Call str_replace or write_file now.\n\n"
         )
@@ -1215,8 +1243,10 @@ def _goal_retry_prompt(
         "If this is a UI change, call review_ui after editing, click new tabs, "
         "and fix render errors, 404s, or dead controls. Do not stop while the "
         "page fails to load CSS or JS you added. "
-        "If the rendered UI section says there is no preview server, write "
-        "preview_command in .loco/config.yaml. The command must listen on "
+        "If the rendered UI section says there is no preview server, look up "
+        "how this language or framework is tested and previewed before you "
+        "invent a command. Call web_search, then fetch_url on an official "
+        "docs page, then configure_project. preview_command must listen on "
         "{port} and serve a page that shows the control this goal changes. "
         "For a native or Godot app, capture that screen and serve the image "
         "on the page. Then call review_ui and click the control. A note that "
@@ -1238,13 +1268,16 @@ def _goal_retry_prompt(
 def _test_setup_prompt() -> str:
     return (
         "This project has no test command, so the cycle cannot tell whether "
-        "the goal works. Add a test at the public seam (CLI, HTTP, rendered "
-        "page, or the project's real runner) that fails when the behavior is "
-        "wrong. Write test_command in .loco/config.yaml to the command that "
-        "executes that test. The command must run the suite and exit non-zero "
-        "on failure. Printing that tests would run, or exiting 0 without "
+        "the goal works. Name the language and framework from the repo. Call "
+        "web_search for official docs on how that stack is tested, then "
+        "fetch_url an official page. Add a test at the public seam (CLI, HTTP, "
+        "rendered page, or the project's real runner) that fails when the "
+        "behavior is wrong. Call configure_project with the test_command those "
+        "docs support. The command must run the suite and exit non-zero on "
+        "failure. Printing that tests would run, or exiting 0 without "
         "executing them, is not a test. Call run_tests. If it fails, fix the "
-        "code or the test and call run_tests again."
+        "code or the test and call run_tests again. Do not invent a command "
+        "the fetched page does not support."
     )
 
 
@@ -1281,6 +1314,7 @@ def _ensure_test_command(
             context,
             require_change=True,
             require_tests=True,
+            require_lookup=True,
         )
         tests_after = _maybe_test(workspace, project, settings, phase="setup")
         if tests_after is not None:

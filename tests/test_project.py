@@ -12,6 +12,7 @@ from agent_loco.runtime.project import (
     mark_goal_done,
     render_tree,
     save_guidelines,
+    save_project_commands,
     write_default_project_files,
 )
 
@@ -117,6 +118,35 @@ def test_init_enables_publish_for_a_git_repo(tmp_path: Path) -> None:
     assert project.is_git is True
     assert project.publish_enabled is True
     assert project.create_pr is True
+
+
+def test_save_project_commands_keeps_other_settings(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text(
+        "name: demo\ntest_command: python3 check.py\npublish:\n  enabled: false\n",
+        encoding="utf-8",
+    )
+    written = save_project_commands(
+        tmp_path,
+        preview_command="python3 -m http.server {port}",
+        setup_command="python3 -m pip install -r requirements.txt",
+    )
+    assert written == ["preview_command", "setup_command"]
+    project = load_project(tmp_path)
+    assert project.test_command == "python3 check.py"
+    assert project.preview_command == "python3 -m http.server {port}"
+    assert project.setup_command == "python3 -m pip install -r requirements.txt"
+    assert project.publish_enabled is False
+
+
+def test_save_project_commands_rejects_a_preview_without_a_port(tmp_path: Path) -> None:
+    try:
+        save_project_commands(tmp_path, preview_command="godot --headless")
+    except ValueError as exc:
+        assert "{port}" in str(exc)
+    else:
+        raise AssertionError("preview without {port} was accepted")
 
 
 def test_guidelines_default_until_overridden(tmp_path: Path) -> None:

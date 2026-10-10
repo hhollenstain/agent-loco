@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 
 from agent_loco.progress import record_test_run
-from agent_loco.runtime.project import load_project
+from agent_loco.runtime.project import configured_value, load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 from agent_loco.tools.files import SKIP_DIR_NAMES
@@ -39,8 +39,8 @@ def test_tools(
                 "Run the project's configured test command. "
                 "If the workspace tree has not changed since the last run, "
                 "returns that result without running the suite again. "
-                "If no command is configured, write test_command in "
-                ".loco/config.yaml and call this again."
+                "If no command is configured, look up the official runner and call "
+                "configure_project, then call this again."
             ),
             parameters=object_schema({}),
             handler=lambda: run_project_tests(
@@ -62,8 +62,8 @@ def run_project_tests(
         result = ToolResult(
             False,
             "no test command configured for this project. "
-            "Write test_command in .loco/config.yaml to the command that runs "
-            "these tests, then call run_tests again.",
+            "Look up the official test runner, then call configure_project "
+            "with test_command and run_tests again.",
         )
         record_test_run(command="", ok=False, output=result.output, phase=phase)
         return result
@@ -108,6 +108,9 @@ def _reject_vacuous_pass(result: ToolResult) -> ToolResult:
 
 
 def _active_test_command(workspace: Workspace, test_command: str | None) -> str | None:
+    present, value = configured_value(workspace.root, "test_command")
+    if present:
+        return value
     if test_command:
         return test_command
     return load_project(workspace.root).test_command

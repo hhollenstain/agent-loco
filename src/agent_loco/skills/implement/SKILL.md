@@ -22,6 +22,8 @@ Identify 1–5 files that will be edited. Prefer `str_replace` on existing files
 When the API, architecture, or a best practice is not already in this repo,
 call `web_search` and then `fetch_url` on an official docs page before
 inventing one. Do not guess library APIs or current recommendations.
+That includes how this language or framework is tested, linted, and
+previewed. Call `configure_project` with the commands the docs support.
 
 Follow the other enabled process skills: **explore** before adding structure,
 **debug** when the goal is a failure, **security** on input or secrets,
@@ -36,11 +38,11 @@ and **review** before you stop.
 ## Verify
 
 - After functional edits: call `run_tests` once. If the tree has not changed since the last run, loco reuses that result.
-- If there is no test command, add a test at the public seam and write `test_command` in `.loco/config.yaml` to the command that runs it, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
+- If there is no test command, look up the official test runner, add a test at the public seam, and call `configure_project` with that `test_command`, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
 - If `run_tests` fails, fix the code or the test that asserts the old behavior, then call `run_tests` again. Do not change the command so it exits 0 without running the failing check.
-- After tests, call `run_lint`. If it says there is no lint command, write
-  `lint_command` in `.loco/config.yaml` to the command that lints this
-  project, then call `run_lint` again. A ruff command formats, then checks.
+- After tests, call `run_lint`. If it says there is no lint command, look up
+  the official linter and call `configure_project` with `lint_command`, then
+  call `run_lint` again. A ruff command formats, then checks.
   Fix F401, E501, import order, and any files ruff would reformat before
   stopping.
 - After HTML/CSS/JS/template edits: call `review_ui`, click the new control, fix overlap/404/dead buttons.

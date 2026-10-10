@@ -20,6 +20,8 @@ Call `web_search`, then `fetch_url` on an official page, when you need:
 - Current recommended architecture for a well-known problem
 - Version-specific behavior, deprecations, or security guidance
 - How an official tool, protocol, or language feature is supposed to work
+- How this language or framework should be tested, linted, or previewed
+  when `.loco/config.yaml` has no command for it
 
 Do not search for code that is already in the workspace. Read the repo first.
 
@@ -35,6 +37,10 @@ Do not search for code that is already in the workspace. Read the repo first.
 ## After you read
 
 - Implement from the docs you fetched, not from memory that disagrees with them.
+- When the docs say how to test, lint, or capture this stack, call
+  `configure_project` with those commands. `preview_command` must listen on
+  `{port}`. Do not leave loco validating a Godot, native, or other non-web
+  app with a command you invented.
 - Do not paste long documentation into the repo. Cite the URL in a comment
   only when the call is non-obvious.
 - If search and fetch fail, say so and stop guessing at an invented API.

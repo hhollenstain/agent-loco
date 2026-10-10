@@ -817,6 +817,28 @@ def test_pr_body_omits_unhosted_screenshots() -> None:
     assert ".loco/ui-screenshots" not in body
 
 
+def test_start_preview_uses_a_command_written_after_load(tmp_path: Path, monkeypatch) -> None:
+    from agent_loco.runtime.project import load_project, save_project_commands
+    from agent_loco.runtime.uireview import start_preview
+
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text("name: demo\n", encoding="utf-8")
+    project = load_project(tmp_path)
+    assert project.preview_command is None
+    save_project_commands(tmp_path, preview_command="python3 -m http.server {port}")
+    seen: dict[str, str] = {}
+
+    def fake_start(workspace, command, port):
+        del workspace, port
+        seen["command"] = command
+        return None
+
+    monkeypatch.setattr("agent_loco.runtime.uireview._start_command_preview", fake_start)
+    start_preview(Workspace(tmp_path), project)
+    assert seen["command"] == "python3 -m http.server {port}"
+
+
 def test_load_project_reads_preview_command(tmp_path: Path) -> None:
     loco = tmp_path / ".loco"
     loco.mkdir()

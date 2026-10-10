@@ -63,13 +63,16 @@ done.
 A visual change is not done until something renders it. If `review_ui` says
 there is no preview server, add one before claiming the control works.
 
-- For a web app, write `preview_command` in `.loco/config.yaml`. The command
+- For a web app, call `configure_project` with `preview_command`. The command
   runs with `{port}` replaced and must listen on that port. Example:
-  `python3 -m http.server {port}`.
+  `python3 -m http.server {port}`. Look up the framework's official dev
+  server when this repo does not already name one.
 - The page has to show the control this goal changes and perform the action
   (open the menu, press Start, change the setting). A paragraph that says the
   screen works is not a preview.
-- For a native or Godot app, capture the real scene after the action and
-  serve that image from the preview page. Then call `review_ui`.
+- For a native or Godot app, `web_search` the engine's headless capture docs,
+  `fetch_url` the official page, then `configure_project`. Capture the real
+  scene after the action and serve that image from the preview page. Then
+  call `review_ui`.
 - If the capture is missing, blank, or does not show the action, the goal is
   not met. Fix the app or the preview and call `review_ui` again.

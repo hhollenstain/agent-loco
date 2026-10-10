@@ -44,7 +44,7 @@ that nothing calls.
 
 - After the failing test, implement, then call `run_tests` once more.
   Loco reuses a previous result when the tree has not changed.
-- If there is no test command, add the failing test and write `test_command` in `.loco/config.yaml` to the command that runs it, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
+- If there is no test command, look up the official runner, add the failing test, and call `configure_project` with `test_command`, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
 - If `run_tests` fails, fix the code or the test, then call `run_tests` again. Do not change the command so it exits 0 without running the failing check.
 - Then call `run_lint` if a lint command is configured. Unused imports,
   long lines, and unformatted files must be fixed before a PR.

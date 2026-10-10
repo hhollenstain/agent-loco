@@ -82,6 +82,52 @@ def load_project(root: Path) -> ProjectConfig:
     )
 
 
+def configured_value(root: Path, key: str) -> tuple[bool, str | None]:
+    """Return whether `key` is set in `.loco/config.yaml`, and its string value."""
+    path = Path(root) / ".loco" / "config.yaml"
+    if not path.exists():
+        return False, None
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return False, None
+    if not isinstance(loaded, dict) or key not in loaded:
+        return False, None
+    value = loaded[key]
+    if value is None or value is False or value == "":
+        return True, None
+    return True, str(value)
+
+
+def save_project_commands(root: Path, **commands: str | None) -> list[str]:
+    """Merge test, lint, preview, and setup commands into `.loco/config.yaml`."""
+    allowed = ("test_command", "lint_command", "preview_command", "setup_command")
+    updates = {
+        key: str(value).strip()
+        for key, value in commands.items()
+        if key in allowed and value is not None and str(value).strip()
+    }
+    if not updates:
+        raise ValueError("at least one command is required")
+    preview = updates.get("preview_command")
+    if preview is not None and "{port}" not in preview:
+        raise ValueError("preview_command must include {port}")
+    path = Path(root) / ".loco" / "config.yaml"
+    raw: dict = {}
+    if path.exists():
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if not isinstance(loaded, dict):
+            raise ValueError(f"invalid project config: {path}")
+        raw = loaded
+    raw.update(updates)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(raw, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return list(updates)
+
+
 def _max_repair_attempts(value: object) -> int:
     if value is None or value == "":
         return DEFAULT_MAX_REPAIR_ATTEMPTS

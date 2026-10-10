@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from agent_loco.progress import record_event
-from agent_loco.runtime.project import ProjectConfig
+from agent_loco.runtime.project import ProjectConfig, configured_value
 from agent_loco.sandbox import Workspace
 
 log = logging.getLogger("loco")
@@ -333,7 +333,8 @@ def start_preview(
     port: int | None = None,
 ) -> _Preview | None:
     host_port = port or _free_port()
-    command = getattr(project, "preview_command", None)
+    present, written = configured_value(workspace.root, "preview_command")
+    command = written if present else getattr(project, "preview_command", None)
     if command:
         return _start_command_preview(workspace, str(command), host_port)
     # Never serve agent-loco Jinja templates as static HTML. That captures

@@ -16,7 +16,7 @@ from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
 
-MUTATING_TOOLS = {"write_file", "str_replace"}
+MUTATING_TOOLS = {"write_file", "str_replace", "configure_project"}
 VERIFY_TOOLS = {"review_ui", "run_tests"}
 UI_SUFFIXES = {".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"}
 OPS_NAMES = {
@@ -32,6 +32,7 @@ MAX_REQUIRE_CHANGE_NUDGES = 8
 MAX_UNFINISHED_NUDGES = 4
 MAX_VALIDATE_NUDGES = 4
 MAX_INSPECT_ROUNDS = 3
+MAX_LOOKUP_NUDGES = 2
 CONTINUE_NUDGE = (
     "You have not changed any files that implement the goal. Inspection is over. "
     "Call str_replace on the existing files (or write_file for a new/small file) "
@@ -68,8 +69,16 @@ VALIDATE_TESTS_NUDGE = (
 )
 VALIDATE_TESTS_SETUP_NUDGE = (
     "run_tests cannot pass because this project has no test command. "
-    "Write test_command in .loco/config.yaml to the command that runs the "
-    "tests you added, then call run_tests again."
+    "Call web_search, then fetch_url on an official docs page for this "
+    "stack, then configure_project with the test_command those docs support. "
+    "Call run_tests again."
+)
+LOOKUP_NUDGE = (
+    "This stack is not configured for loco yet. Call web_search for official "
+    "docs on how to test, lint, and preview this language or framework. Then "
+    "fetch_url an official page. Then call configure_project with the commands "
+    "those docs support. preview_command must listen on {port}. Do not invent "
+    "a command the fetched page does not support."
 )
 VALIDATE_OPS_NUDGE = (
     "You changed Docker, compose, or docs but have not called run_tests since "
@@ -138,6 +147,13 @@ def _is_ops_path(path: str) -> bool:
 def _tool_path(arguments: dict) -> str:
     value = arguments.get("path") if isinstance(arguments, dict) else None
     return str(value or "")
+
+
+def _writes_project_config(path: str) -> bool:
+    posix = path.replace("\\", "/").strip()
+    while posix.startswith("./"):
+        posix = posix[2:]
+    return posix == ".loco/config.yaml" or posix.endswith("/.loco/config.yaml")
 
 
 @dataclass
@@ -211,6 +227,7 @@ class CodingAgent:
         *,
         require_change: bool = False,
         require_tests: bool = False,
+        require_lookup: bool = False,
     ) -> AgentResult:
         context = memory_preface(self.palace, goal, context)
         messages: list[dict] = [
@@ -229,7 +246,11 @@ class CodingAgent:
         plan_nudges = 0
         unfinished_nudges = 0
         validate_nudges = 0
+        lookup_nudges = 0
         inspect_rounds = 0
+        looked_up = False
+        fetched_docs = False
+        configured_validation = False
 
         last_text = ""
         last_error: str | None = None
@@ -260,6 +281,10 @@ class CodingAgent:
                     tool_calls += 1
                     result = execute_tool(self.tools, call.name, call.arguments)
                     log.info("tool %s ok=%s", call.name, result.ok)
+                    if call.name == "web_search":
+                        looked_up = True
+                    elif call.name == "fetch_url":
+                        fetched_docs = True
                     log.debug("%s args=%s", call.name, call.arguments)
                     if not result.ok:
                         last_error = (result.output or "")[:200]
@@ -316,11 +341,15 @@ class CodingAgent:
                         # Success resets failure counter
                         failure_tracker.reset()
 
+                        if call.name == "configure_project":
+                            configured_validation = True
                         if call.name in MUTATING_TOOLS:
                             mutated = True
                             wrote = True
                             verified_tests = False
                             tool_path = _tool_path(call.arguments)
+                            if _writes_project_config(tool_path):
+                                configured_validation = True
                             if _is_ui_path(tool_path):
                                 mutated_ui = True
                                 verified_ui = False
@@ -373,6 +402,21 @@ class CodingAgent:
                 record_event(kind="step", message="Agent skipped UI validation; continuing.")
                 messages.append({"role": "assistant", "content": turn.text or ""})
                 messages.append({"role": "user", "content": _nudge(VALIDATE_UI_NUDGE, goal)})
+                continue
+
+            if (
+                require_lookup
+                and not (looked_up and fetched_docs and configured_validation)
+                and lookup_nudges < MAX_LOOKUP_NUDGES
+            ):
+                lookup_nudges += 1
+                log.info("nudging agent to look up validation commands")
+                record_event(
+                    kind="step",
+                    message="Agent skipped docs lookup for test and preview setup; continuing.",
+                )
+                messages.append({"role": "assistant", "content": turn.text or ""})
+                messages.append({"role": "user", "content": _nudge(LOOKUP_NUDGE, goal)})
                 continue
 
             needs_tests = require_tests or mutated_ops

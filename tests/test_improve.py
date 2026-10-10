@@ -129,6 +129,22 @@ def test_cycle_sets_up_tests_when_none_are_configured(tmp_path: Path, settings: 
                 call_id="write-app",
             ),
             AssistantTurn(text="Implemented add."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(id="search-1", name="web_search", arguments={"query": "pytest"})
+                ],
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="fetch-1",
+                        name="fetch_url",
+                        arguments={"url": "https://docs.pytest.org/en/stable/"},
+                    )
+                ],
+            ),
             _write_file_turn(
                 "check.py",
                 "from app import add\nassert add(2, 3) == 5\n",
@@ -1154,6 +1170,91 @@ def test_cycle_rejects_a_visual_goal_when_nothing_renders(
     assert "No preview server" in (result.reason or "")
     assert (result.summary or "").startswith("Failed:")
     assert not (result.summary or "").lower().startswith("i have successfully")
+
+
+def test_cycle_looks_up_preview_command_for_a_visual_goal(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _green_project(tmp_path)
+    config = tmp_path / ".loco" / "config.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "max_repair_attempts: 0\n",
+            "max_repair_attempts: 1\n",
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_ui(workspace, project, goal, **_kwargs):
+        del project, goal
+        if load_project(workspace.root).preview_command:
+            return UiEvidence(ok=True, snapshot="Start game", url="http://127.0.0.1:9/")
+        return UiEvidence(
+            ok=False,
+            notes="No preview server for this workspace. Set preview_command in .loco/config.yaml.",
+        )
+
+    monkeypatch.setattr("agent_loco.runtime.improve.collect_ui_evidence", fake_ui)
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "app.py",
+                "def add(left, right):\n    return left + right  # start\n",
+            ),
+            AssistantTurn(text="The start button still needs a preview."),
+            _review_turn(True, "the start button now runs the game"),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="search-1",
+                        name="web_search",
+                        arguments={"query": "Godot 4 headless screenshot"},
+                    )
+                ],
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="fetch-1",
+                        name="fetch_url",
+                        arguments={"url": "https://docs.godotengine.org/en/stable/"},
+                    )
+                ],
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="config-1",
+                        name="configure_project",
+                        arguments={"preview_command": "python3 -m http.server {port}"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="Configured a preview from the Godot docs."),
+            _review_turn(True, "the start screen is visible"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="The start button does not render the game",
+    )
+    assert result.status == "success"
+    assert load_project(tmp_path).preview_command == "python3 -m http.server {port}"
+    assert load_project(tmp_path).test_command == "python3 check.py"
+    steps = [event.get("message", "") for event in result.events if event["kind"] == "step"]
+    assert any("Looking up how to test and preview" in message for message in steps)
+    prompts = [
+        message.get("content") or ""
+        for call in llm.calls
+        for message in call
+        if isinstance(message.get("content"), str)
+    ]
+    assert any("web_search" in prompt and "configure_project" in prompt for prompt in prompts)
 
 
 def test_cycle_retries_then_opens_pr_when_goal_is_met(

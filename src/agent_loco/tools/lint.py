@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_loco.progress import record_lint_run
-from agent_loco.runtime.project import load_project
+from agent_loco.runtime.project import configured_value, load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
 from agent_loco.tools.files import SKIP_DIR_NAMES
@@ -98,8 +98,8 @@ def lint_tools(
                 "then ruff check). Call this after edits and before considering "
                 "a pull request done. If the workspace tree has not changed "
                 "since the last run, returns that result without running the "
-                "linter again. If no command is configured, write lint_command "
-                "in .loco/config.yaml and call this again."
+                "linter again. If no command is configured, look up the official "
+                "linter and call configure_project, then call this again."
             ),
             parameters=object_schema({}),
             handler=lambda: run_project_lint(
@@ -121,8 +121,8 @@ def run_project_lint(
         result = ToolResult(
             False,
             "no lint command configured for this project. "
-            "Write lint_command in .loco/config.yaml to the command that "
-            "lints this project, then call run_lint again.",
+            "Look up the official linter, then call configure_project with "
+            "lint_command and run_lint again.",
         )
         record_lint_run(command="", ok=False, output=result.output, phase=phase)
         return result
@@ -153,6 +153,9 @@ def run_project_lint(
 
 
 def _active_lint_command(workspace: Workspace, lint_command: str | None) -> str | None:
+    present, value = configured_value(workspace.root, "lint_command")
+    if present:
+        return value
     if lint_command:
         return lint_command
     return load_project(workspace.root).lint_command

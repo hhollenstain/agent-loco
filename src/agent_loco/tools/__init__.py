@@ -3,6 +3,7 @@ from __future__ import annotations
 from agent_loco.sandbox import SandboxError, Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec
 from agent_loco.tools.browser import browser_tools
+from agent_loco.tools.config import config_tools
 from agent_loco.tools.files import file_tools
 from agent_loco.tools.git import git_tools
 from agent_loco.tools.issues import issues_tools
@@ -26,6 +27,7 @@ def build_tools(
 ) -> list[ToolSpec]:
     return [
         *file_tools(workspace),
+        *config_tools(workspace),
         *web_tools(workspace),
         *browser_tools(workspace, goal=goal),
         *shell_tools(workspace, command_timeout_seconds, allow_publish=allow_publish),
