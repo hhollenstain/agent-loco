@@ -45,7 +45,37 @@ def test_is_atem_parse_error() -> None:
             "'parse Glimmer call to read_file: missing ATEM function_calls wrapper'}}"
         )
     )
+    assert is_atem_parse_error(
+        RuntimeError(
+            "Error code: 500 - {'error': {'message': 'XML syntax error on line 3: unexpected EOF'}}"
+        )
+    )
     assert not is_atem_parse_error(RuntimeError("Error code: 500 - backend timeout"))
+
+
+def test_retries_truncated_xml_tool_call(monkeypatch) -> None:
+    monkeypatch.setattr("agent_loco.llm.client.time.sleep", lambda _delay: None)
+    failed = RuntimeError(
+        "Error code: 500 - {'error': {'message': 'XML syntax error on line 3: unexpected EOF'}}"
+    )
+    ok = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="continue", tool_calls=None))],
+        usage=None,
+    )
+    fake = _FakeCompletions([failed, ok])
+    llm = OpenAICompatClient(
+        model="muse-glimmer:latest",
+        base_url="http://127.0.0.1:9/v1",
+        api_key="test",
+    )
+    monkeypatch.setattr(llm.client.chat, "completions", fake)
+    turn = llm.complete(
+        [{"role": "user", "content": "keep going"}],
+        [{"type": "function", "function": {"name": "read_file"}}],
+    )
+    assert turn.text == "continue"
+    assert len(fake.calls) == 2
+    assert fake.calls[0]["messages"] == fake.calls[1]["messages"]
 
 
 def test_glimmer_retries_after_missing_wrapper(monkeypatch) -> None:

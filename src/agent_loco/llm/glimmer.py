@@ -13,6 +13,10 @@ def uses_atem_tools(model: str) -> bool:
 
 
 def is_atem_parse_error(exc: BaseException) -> bool:
-    """Ollama's Glimmer parser 500s when a tool channel has no function_calls wrapper."""
+    """Ollama's Glimmer parser 500s when a tool channel is truncated or unwrapped."""
     text = str(exc)
-    return "ATEM function_calls wrapper" in text or "parse Glimmer call" in text
+    return (
+        "ATEM function_calls wrapper" in text
+        or "parse Glimmer call" in text
+        or "XML syntax error" in text
+    )

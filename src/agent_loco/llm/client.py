@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -16,6 +17,8 @@ from agent_loco.llm.glimmer import ATEM_RETRY_NUDGE, is_atem_parse_error
 log = logging.getLogger("loco")
 
 _WINDOW_CACHE: dict[tuple[str, str], int | None] = {}
+_TRANSIENT_ATTEMPTS = 3
+_TRANSIENT_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504})
 _CONTEXT_KEYS = (
     "context_length",
     "max_model_len",
@@ -65,19 +68,39 @@ class OpenAICompatClient:
         tools: list[dict[str, Any]],
     ) -> AssistantTurn:
         try:
-            return self._complete(messages, tools)
+            return self._complete_with_retry(messages, tools)
         except Exception as exc:
             if not (tools and is_atem_parse_error(exc)):
                 raise
             log.warning("server rejected Glimmer tool call without ATEM wrapper; retrying")
             nudged = [*messages, {"role": "user", "content": ATEM_RETRY_NUDGE}]
             try:
-                return self._complete(nudged, tools)
+                return self._complete_with_retry(nudged, tools)
             except Exception as retry_exc:
                 if not is_atem_parse_error(retry_exc):
                     raise
                 log.warning("Glimmer ATEM retry still rejected; completing without native tools")
-                return self._complete(nudged, [])
+                return self._complete_with_retry(nudged, [])
+
+    def _complete_with_retry(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> AssistantTurn:
+        for attempt in range(1, _TRANSIENT_ATTEMPTS + 1):
+            try:
+                return self._complete(messages, tools)
+            except Exception as exc:
+                if attempt >= _TRANSIENT_ATTEMPTS or not is_transient_llm_error(exc):
+                    raise
+                log.warning(
+                    "model request failed (%s); retrying %s/%s",
+                    exc,
+                    attempt,
+                    _TRANSIENT_ATTEMPTS - 1,
+                )
+                time.sleep(0.5 * attempt)
+        raise RuntimeError("model request failed")
 
     def _complete(
         self,
@@ -126,6 +149,18 @@ class ScriptedClient:
         if not self._turns:
             return AssistantTurn(text="no more scripted turns")
         return self._turns.pop(0)
+
+
+def is_transient_llm_error(exc: BaseException) -> bool:
+    """True when the model server failed in a way a second request may survive."""
+    text = str(exc)
+    if is_atem_parse_error(exc) and "XML syntax error" not in text:
+        return False
+    status = getattr(exc, "status_code", None)
+    if status in _TRANSIENT_STATUS:
+        return True
+    lowered = text.lower()
+    return "xml syntax error" in lowered or "unexpected eof" in lowered
 
 
 def check_model_endpoint(base_url: str, api_key: str, timeout: float = 3.0) -> tuple[bool, str]:
