@@ -57,3 +57,19 @@ done.
   it is open.
 - Call `run_tests` after the layout is clean. If a test asserts the old
   markup this change replaces, update that test to the new public behavior.
+
+## Show the screen
+
+A visual change is not done until something renders it. If `review_ui` says
+there is no preview server, add one before claiming the control works.
+
+- For a web app, write `preview_command` in `.loco/config.yaml`. The command
+  runs with `{port}` replaced and must listen on that port. Example:
+  `python3 -m http.server {port}`.
+- The page has to show the control this goal changes and perform the action
+  (open the menu, press Start, change the setting). A paragraph that says the
+  screen works is not a preview.
+- For a native or Godot app, capture the real scene after the action and
+  serve that image from the preview page. Then call `review_ui`.
+- If the capture is missing, blank, or does not show the action, the goal is
+  not met. Fix the app or the preview and call `review_ui` again.

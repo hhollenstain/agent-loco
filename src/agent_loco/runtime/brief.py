@@ -57,6 +57,7 @@ def build_task_brief(root: Path, goal: str, project) -> str:
         f"Root: {root}",
         f"Test command: {project.test_command or '(none)'}",
         f"Lint command: {project.lint_command or '(none)'}",
+        f"Preview command: {project.preview_command or '(none)'}",
         f"Create PR: {'on' if project.publish_enabled else 'off'} via {project.publish_remote}",
         " (never pushes to main)",
     ]

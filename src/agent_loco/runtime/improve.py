@@ -384,7 +384,7 @@ def _run_cycle(
         result = CycleResult(
             status="failed",
             goal=selected_goal,
-            summary=agent_result.summary,
+            summary=_failure_notes("tests failed; commit skipped", agent_result.summary),
             tests_passed=False,
             committed=False,
             published=False,
@@ -450,7 +450,7 @@ def _run_cycle(
         result = CycleResult(
             status="failed",
             goal=selected_goal,
-            summary=agent_result_summary,
+            summary=_failure_notes(reason, agent_result_summary),
             tests_passed=tests_passed,
             committed=False,
             published=False,
@@ -478,7 +478,10 @@ def _run_cycle(
         result = CycleResult(
             status="failed",
             goal=selected_goal,
-            summary=_with_lint_output(agent_result.summary, lint_output),
+            summary=_failure_notes(
+                _lint_failure_reason(lint_output),
+                _with_lint_output(agent_result.summary, lint_output),
+            ),
             tests_passed=tests_passed,
             committed=False,
             published=False,
@@ -508,7 +511,10 @@ def _run_cycle(
             result = CycleResult(
                 status="failed",
                 goal=selected_goal,
-                summary=agent_result.summary,
+                summary=_failure_notes(
+                    f"could not leave main: {branched.output}",
+                    agent_result.summary,
+                ),
                 tests_passed=tests_passed,
                 committed=False,
                 published=False,
@@ -533,7 +539,7 @@ def _run_cycle(
             result = CycleResult(
                 status="failed",
                 goal=selected_goal,
-                summary=agent_result.summary,
+                summary=_failure_notes(f"commit failed: {commit.output}", agent_result.summary),
                 tests_passed=tests_passed,
                 committed=False,
                 published=False,
@@ -615,7 +621,7 @@ def _publish_pull_request(
             result = CycleResult(
                 status="failed",
                 goal=goal,
-                summary=summary,
+                summary=_failure_notes(f"refusing to push commits on {branch}", summary),
                 tests_passed=tests_passed,
                 committed=committed,
                 published=False,
@@ -641,7 +647,7 @@ def _publish_pull_request(
         result = CycleResult(
             status="failed",
             goal=goal,
-            summary=summary,
+            summary=_failure_notes(f"push failed: {pushed.output}", summary),
             tests_passed=tests_passed,
             committed=committed,
             published=False,
@@ -703,7 +709,7 @@ def _publish_pull_request(
         result = CycleResult(
             status="failed",
             goal=goal,
-            summary=summary,
+            summary=_failure_notes(f"PR failed: {pr.output}", summary),
             tests_passed=tests_passed,
             committed=committed,
             published=False,
@@ -830,7 +836,10 @@ def _handle_empty_diff(
             result = CycleResult(
                 status="failed",
                 goal=goal,
-                summary=summary,
+                summary=_failure_notes(
+                    "tests failed after empty-diff retry; commit skipped",
+                    summary,
+                ),
                 tests_passed=False,
                 committed=False,
                 published=False,
@@ -941,6 +950,22 @@ def _review_goal(
         blocking = ui_evidence.blocking_errors
         smashed = ui_evidence.smashed
     ui_errors = tuple(blocking[:12])
+    missing_preview = (
+        ui_evidence is not None
+        and not ui_evidence.ok
+        and "no preview server" in (ui_evidence.notes or "").lower()
+    )
+    if verdict.met and missing_preview:
+        overridden = GoalReview(
+            False,
+            "No preview server, so the visual change was not shown. "
+            "Set preview_command in .loco/config.yaml to a command that listens on {port} "
+            "and serves the changed screen, then call review_ui.",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
     if verdict.met and blocking:
         first = blocking[0]
         js = bool(ui_evidence and (ui_evidence.page_errors or ui_evidence.console_errors))
@@ -1190,6 +1215,12 @@ def _goal_retry_prompt(
         "If this is a UI change, call review_ui after editing, click new tabs, "
         "and fix render errors, 404s, or dead controls. Do not stop while the "
         "page fails to load CSS or JS you added. "
+        "If the rendered UI section says there is no preview server, write "
+        "preview_command in .loco/config.yaml. The command must listen on "
+        "{port} and serve a page that shows the control this goal changes. "
+        "For a native or Godot app, capture that screen and serve the image "
+        "on the page. Then call review_ui and click the control. A note that "
+        "says the screen works is not validation. "
         "Follow enabled workspace skills. Do not add a helper that nothing calls. "
         "If you edited docs or compose files, the commands must actually exist "
         "(loco clone, docker compose, git clone — never docker clone). Run tests. "
@@ -1314,6 +1345,15 @@ def _lint_failure_reason(output: str, *, limit: int = 400) -> str:
     if len(text) > limit:
         text = text[: limit - 1] + "…"
     return f"lint failed; commit skipped: {text}"
+
+
+def _failure_notes(reason: str, summary: str | None) -> str:
+    """The stored notes for a failed cycle lead with the failure, not a success claim."""
+    lead = f"Failed: {(reason or 'the goal was not met').strip()}"
+    notes = (summary or "").strip()
+    if not notes or notes.lower().startswith("failed:"):
+        return notes or lead
+    return f"{lead}\n\nAgent notes:\n{notes}"
 
 
 def _with_lint_output(summary: str | None, output: str) -> str:

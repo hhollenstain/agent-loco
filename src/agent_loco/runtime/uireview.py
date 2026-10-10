@@ -39,6 +39,11 @@ INTERACTIVE_UI_RE = re.compile(
     r"skill|skills|rules?|guidelines?)\b",
     re.IGNORECASE,
 )
+VISUAL_GOAL_RE = re.compile(
+    r"\b(render(?:ing|ed)?|scene|sprite|display|screenshot|screen shot|"
+    r"visible|visual|button)\b",
+    re.IGNORECASE,
+)
 MAX_SNAPSHOT_CHARS = 6_000
 IGNORABLE_RESOURCE_RE = re.compile(
     r"(?:^|/)(?:favicon\.ico|apple-touch-icon[^/]*|site\.webmanifest|manifest\.json)$",
@@ -187,13 +192,9 @@ class UiEvidence:
 
 
 def ui_review_needed(goal: str, diff: str = "", workspace: Path | None = None) -> bool:
-    goal_is_ui = bool(UI_GOAL_RE.search(goal or ""))
-    diff_is_ui = bool(UI_FILE_RE.search(diff or ""))
-    if diff_is_ui:
+    if UI_FILE_RE.search(diff or ""):
         return True
-    if goal_is_ui and workspace and _has_web_preview(workspace):
-        return True
-    return False
+    return bool(UI_GOAL_RE.search(goal or "") or VISUAL_GOAL_RE.search(goal or ""))
 
 
 def format_ui_evidence(evidence: UiEvidence | None) -> str:

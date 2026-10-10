@@ -377,6 +377,7 @@ def collect_context(
         f"Root: {root}",
         f"Test command: {project.test_command or '(none)'}",
         f"Lint command: {project.lint_command or '(none)'}",
+        f"Preview command: {project.preview_command or '(none)'}",
         f"Create PR: {'on' if publish_on else 'off'} via {project.publish_remote}"
         + (" (git repo)" if project.is_git else ""),
         " (never pushes to main)",

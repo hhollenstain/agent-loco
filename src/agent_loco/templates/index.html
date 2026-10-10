@@ -3891,7 +3891,7 @@
       const summary = String(entry.summary || "").trim();
       const detail = run.kind === "task"
         ? [entry.model || "", entry.base_url || ""].filter(Boolean).join(" · ")
-        : (summary.length > reason.length ? summary : (reason || summary));
+        : (failed ? (reason || summary) : (summary.length > reason.length ? summary : (reason || summary)));
       const prHtml = prLinkHtml(prUrl(entry));
       const actionHtml = `${prHtml}${updateBtn}${rerunBtn}`;
       const goal = goalText(entry);
@@ -4552,10 +4552,20 @@
       el.setAttribute("aria-label", hover);
     }
 
+    function progressNotes(item) {
+      const summary = item.summary ? String(item.summary) : "";
+      const reason = item.reason ? String(item.reason).trim() : "";
+      const failed = item.status === "failed" || item.status === "error";
+      if (!failed || !reason || summary.trim().toLowerCase().startsWith("failed:")) {
+        return summary;
+      }
+      return summary ? "Failed: " + reason + "\n\n" + summary : "Failed: " + reason;
+    }
+
     function renderProgress(item, { running = false } = {}) {
       const events = item.events || [];
       const logs = (item.logs || []).join("\n");
-      const summary = item.summary ? String(item.summary) : "";
+      const summary = progressNotes(item);
       const extra = item.error ? `error: ${item.error}` : "";
       const progressHtml = renderProgressStageBar(events, {
         status: item.status || "",

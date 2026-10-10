@@ -1120,7 +1120,40 @@ def test_cycle_skips_pr_when_goal_is_not_met(
     assert result.published is False
     assert result.committed is False
     assert "goal not met" in (result.reason or "")
+    assert (result.summary or "").startswith("Failed:")
     assert current_branch(Workspace(tmp_path)) in {"main", "master"}
+
+
+def test_cycle_rejects_a_visual_goal_when_nothing_renders(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _broken_project(tmp_path)
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.collect_ui_evidence",
+        lambda *_args, **_kwargs: UiEvidence(
+            ok=False,
+            notes=(
+                "No preview server for this workspace. Set preview_command in .loco/config.yaml."
+            ),
+        ),
+    )
+    llm = ScriptedClient(
+        [
+            _write_file_turn("app.py", "def add(left, right):\n    return left + right\n"),
+            AssistantTurn(text="I have successfully completed the task."),
+            _review_turn(True, "the start button now runs the game"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal="The start button does not render the game",
+    )
+    assert result.status == "failed"
+    assert "No preview server" in (result.reason or "")
+    assert (result.summary or "").startswith("Failed:")
+    assert not (result.summary or "").lower().startswith("i have successfully")
 
 
 def test_cycle_retries_then_opens_pr_when_goal_is_met(

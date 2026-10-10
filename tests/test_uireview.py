@@ -33,6 +33,7 @@ def test_ui_review_needed_for_template_diff_and_ui_goals(tmp_path: Path) -> None
         "diff --git a/src/agent_loco/templates/index.html",
     )
     assert ui_review_needed("Add a progress bar", "", tmp_path)
+    assert ui_review_needed("The game has no rendering and the start button does nothing", "")
     assert not ui_review_needed("update discord.py", "Pipfile.lock hashes changed")
 
 
