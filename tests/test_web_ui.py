@@ -75,6 +75,42 @@ def test_queue_runs_one_at_a_time(settings: Settings, tmp_path: Path) -> None:
         manager.shutdown(wait=False)
 
 
+def test_failed_goal_is_queued_again_without_another_click(
+    settings: Settings, tmp_path: Path
+) -> None:
+    goals: list[str | None] = []
+
+    def runner(task: Task) -> CycleResult:
+        goals.append(task.goal)
+        if len(goals) == 1:
+            return CycleResult(
+                status="failed",
+                goal=task.goal,
+                summary="guarded it",
+                tests_passed=True,
+                committed=False,
+                published=False,
+                commit_sha=None,
+                reason="goal not met; PR skipped: only error handling",
+            )
+        return _ok_result(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    try:
+        manager.submit(tmp_path, 'ERROR: Node not found: "Player"')
+        deadline = time.time() + 3
+        while time.time() < deadline and len(goals) < 2:
+            time.sleep(0.05)
+        assert len(goals) == 2
+        assert goals[1]
+        assert "previous attempt did not fix" in goals[1].lower()
+        assert "only error handling" in goals[1]
+        time.sleep(0.2)
+        assert len(goals) == 2
+    finally:
+        manager.shutdown(wait=False)
+
+
 def test_continuous_queues_next_until_stopped(settings: Settings, tmp_path: Path) -> None:
     holder: list[TaskManager] = []
     runs: list[str] = []

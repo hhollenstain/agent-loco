@@ -115,6 +115,53 @@ _HALF_BAKED_ADDED = re.compile(
 )
 
 
+_FAILURE_GOAL = re.compile(
+    r"(?i)\b(error:|script error|traceback|exception|node not found|not found:|blank screen)\b"
+)
+_GUARD_ADDED = re.compile(
+    r"(?i)(get_node_or_null|push_error|push_warning|\bprint\s*\(|logger\.|"
+    r"==\s*null|!=\s*null|\bis\s+None\b|\bis\s+not\s+None\b)"
+)
+_STRUCTURAL_SUFFIXES = {".tscn", ".tres", ".scn", ".html", ".css", ".vue", ".svelte"}
+
+
+def failure_excerpt(goal: str | None, *, limit: int = 4) -> str:
+    """The error lines from a goal, so a retry fixes that failure."""
+    lines: list[str] = []
+    for raw in (goal or "").splitlines():
+        text = raw.strip()
+        if text and _FAILURE_GOAL.search(text):
+            lines.append(text[:240])
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+def guard_only_fix(diff: str | None, goal: str | None) -> list[str]:
+    """A crash wrapped in a null check or log, without changing what is missing."""
+    if not _FAILURE_GOAL.search(goal or ""):
+        return []
+    path = ""
+    structural = False
+    guards: list[str] = []
+    for line in (diff or "").splitlines():
+        if line.startswith("+++ "):
+            path = line[4:].strip()
+            if path.startswith("b/"):
+                path = path[2:]
+            dot = path.rfind(".")
+            suffix = path[dot:].lower() if dot >= 0 else ""
+            if suffix in _STRUCTURAL_SUFFIXES:
+                structural = True
+            continue
+        if line.startswith("+") and not line.startswith("+++") and _GUARD_ADDED.search(line):
+            guards.append(line[1:].strip()[:160])
+    if structural or len(guards) < 2:
+        return []
+    where = path or "the crashing file"
+    return [f"diff only guards the crash in {where}: {guards[0]}"]
+
+
 def half_baked_diff_markers(diff: str | None) -> list[str]:
     """Added lines that show a stub, mock, or placeholder instead of the real work."""
     hits: list[str] = []

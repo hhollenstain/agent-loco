@@ -28,6 +28,24 @@ from agent_loco.runtime.improve import CycleResult, run_cycle
 
 log = logging.getLogger("loco")
 
+MAX_GOAL_REPAIRS = 2
+
+
+def _repair_goal(goal: str, reason: str) -> str:
+    lead = (
+        "The previous attempt did not fix this. Do not repeat a null check, "
+        "print, or log. Research the error, then change the file that owns "
+        "the missing behavior."
+    )
+    body = goal.strip()
+    if lead.lower() not in body.lower():
+        body = f"{body}\n\n{lead}"
+    why = (reason or "").strip()
+    if why:
+        body = f"{body}\n\nWhy it failed:\n{why}"
+    return body
+
+
 Runner = Callable[["Task"], CycleResult]
 
 
@@ -97,6 +115,7 @@ class Task:
     context_window: int | None = None
     continuous: bool = False
     merged: bool = False
+    repairs: int = 0
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -192,6 +211,7 @@ class TaskManager:
         resume_sha: str | None = None,
         base_branch: str | None = None,
         continuous: bool = False,
+        repairs: int = 0,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
@@ -218,6 +238,7 @@ class TaskManager:
             base_branch=(base_branch or "").strip() or None,
             branch=(resume_branch or "").strip() or None,
             continuous=continuous,
+            repairs=max(0, repairs),
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -417,6 +438,8 @@ class TaskManager:
         )
 
     def _maybe_continue(self, task: Task) -> None:
+        if self._continue_failed_goal(task):
+            return
         if not task.continuous or task.status != "success":
             return
         if not (task.committed or task.published or task.merged):
@@ -440,6 +463,42 @@ class TaskManager:
             )
         except RuntimeError as exc:
             log.warning("could not queue next keep-improving cycle: %s", exc)
+
+    def _continue_failed_goal(self, task: Task) -> bool:
+        """Queue another cycle on the same goal when the last fix missed it."""
+        if task.status != "failed" or not (task.goal or "").strip():
+            return False
+        if "goal not met" not in (task.reason or "").lower():
+            return False
+        if task.repairs >= MAX_GOAL_REPAIRS:
+            return False
+        workspace = Path(task.workspace)
+        with self._lock:
+            if str(workspace.resolve()) in self._continuous_stopped:
+                return False
+        branch = (task.branch or "").strip()
+        if branch in {"", "main", "master", "trunk", "HEAD"}:
+            branch = ""
+        goal = _repair_goal(task.goal or "", task.reason or "")
+        log.info("goal not met: queueing another fix for %s", workspace)
+        try:
+            self.submit(
+                workspace,
+                goal,
+                auto_commit=task.auto_commit,
+                create_pr=task.create_pr,
+                model_name=task.model_name,
+                model_base_url=task.model_base_url,
+                model_api_key=task.model_api_key,
+                resume_branch=branch or None,
+                base_branch=task.base_branch,
+                continuous=task.continuous,
+                repairs=task.repairs + 1,
+            )
+        except RuntimeError as exc:
+            log.warning("could not queue another fix: %s", exc)
+            return False
+        return True
 
     def _resume_workspace(self, task: Task) -> None:
         from agent_loco.sandbox import SandboxError, Workspace

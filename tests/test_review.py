@@ -3,12 +3,35 @@ from __future__ import annotations
 from agent_loco.llm.client import AssistantTurn, ScriptedClient
 from agent_loco.progress import bind_progress, current_events, reset_progress
 from agent_loco.runtime.review import (
+    guard_only_fix,
     half_baked_diff_markers,
     is_open_pr_goal,
     parse_review,
     review_goal,
     review_reason,
 )
+
+
+def test_guard_only_fix_rejects_a_logged_null_check() -> None:
+    diff = (
+        "diff --git a/scripts/main_game.gd b/scripts/main_game.gd\n"
+        "--- a/scripts/main_game.gd\n"
+        "+++ b/scripts/main_game.gd\n"
+        '+player = get_node_or_null("Player")\n'
+        "+if player == null:\n"
+        '+    print("missing")\n'
+    )
+    goal = 'ERROR: Node not found: "Player" at scripts/main_game.gd:60'
+    hits = guard_only_fix(diff, goal)
+    assert hits
+    assert "main_game.gd" in hits[0]
+    scene = diff + (
+        "diff --git a/scenes/main.tscn b/scenes/main.tscn\n"
+        "+++ b/scenes/main.tscn\n"
+        '+[node name="Player" type="Node2D"]\n'
+    )
+    assert guard_only_fix(scene, goal) == []
+    assert guard_only_fix(diff, "Add a score label") == []
 
 
 def test_half_baked_diff_markers_catch_stubs_and_mocks() -> None:

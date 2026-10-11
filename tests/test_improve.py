@@ -112,6 +112,36 @@ def test_cycle_dropdown_branch_overrides_the_goal(tmp_path: Path, settings: Sett
     assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('feature')\n"
 
 
+def test_cycle_rejects_a_null_check_that_hides_the_stated_error(
+    tmp_path: Path, settings: Settings
+) -> None:
+    _green_project(tmp_path)
+    llm = ScriptedClient(
+        [
+            _write_file_turn(
+                "app.py",
+                "def add(left, right):\n"
+                "    return left + right\n"
+                "def ready():\n"
+                "    player = get_node_or_null('Player')\n"
+                "    if player == null:\n"
+                "        print('missing')\n",
+            ),
+            AssistantTurn(text="Guarded the missing player."),
+            _review_turn(True, "the blank screen is fixed"),
+        ]
+    )
+    result = run_cycle(
+        tmp_path,
+        settings,
+        llm,
+        goal='ERROR: Node not found: "Player" at scripts/main_game.gd:60',
+    )
+    assert result.status == "failed"
+    reason = (result.reason or "").lower()
+    assert "null check" in reason or "guards" in reason
+
+
 def test_cycle_commits_when_scripted_fix_passes(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
     llm = ScriptedClient(

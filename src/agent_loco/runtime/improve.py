@@ -25,6 +25,8 @@ from agent_loco.runtime.project import (
 )
 from agent_loco.runtime.review import (
     GoalReview,
+    failure_excerpt,
+    guard_only_fix,
     half_baked_diff_markers,
     incomplete_agent_run,
     invalid_doc_commands,
@@ -388,6 +390,7 @@ def _run_cycle(
     agent_result = agent.run(
         selected_goal,
         collect_context(workspace.root, project, allow_publish=allow_create_pr),
+        require_research=_goal_needs_research(selected_goal),
     )
 
     # Check for compact handoff if max_iterations was hit after changes
@@ -1042,6 +1045,16 @@ def _review_goal(
         overridden = GoalReview(False, unverified, parsed=True, ui_errors=ui_errors)
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
+    guarded = guard_only_fix(diff, goal)
+    if verdict.met and guarded and not existing:
+        overridden = GoalReview(
+            False,
+            f"The diff only hides the failure with a null check or log. {guarded[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
     markers = half_baked_diff_markers(diff)
     if verdict.met and markers and not existing:
         overridden = GoalReview(
@@ -1152,10 +1165,14 @@ def _ensure_goal_met(
         attempts += 1
         log_progress(f"Goal retry {attempts}/{limit}: {review_reason(verdict)}")
         project = load_project(workspace.root)
-        lookup = _needs_validation_lookup(review_reason(verdict), project)
+        work_diff = collect_work_diff(workspace, sha_before, goal=goal)
+        guarded = bool(guard_only_fix(work_diff, goal))
+        lookup = _needs_validation_lookup(review_reason(verdict), project) and not guarded
+        research = guarded or _needs_cause_research(review_reason(verdict))
         if lookup:
             log_progress("Looking up how to test and preview this stack...")
-        work_diff = collect_work_diff(workspace, sha_before, goal=goal)
+        if research:
+            log_progress("Researching the stated failure before another edit...")
         follow = agent.run(
             _goal_retry_prompt(
                 goal,
@@ -1164,10 +1181,12 @@ def _ensure_goal_met(
                 ui_errors=verdict.ui_errors,
                 stalled=stalls > 0,
                 lookup=lookup,
+                research=research,
             ),
             context,
             require_change=True,
             require_lookup=lookup,
+            require_research=research,
         )
         if follow.summary:
             summary = follow.summary
@@ -1230,6 +1249,26 @@ def _ensure_goal_met(
 GOAL_RETRY_STALL_EXTRA = 2
 
 
+def _goal_needs_research(goal: str | None) -> bool:
+    return "previous attempt did not fix" in (goal or "").lower()
+
+
+def _needs_cause_research(reason: str) -> bool:
+    text = (reason or "").lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "error handling",
+            "logging",
+            "null check",
+            "does not actually fix",
+            "without actually fixing",
+            "only hides the failure",
+            "only guards the crash",
+        )
+    )
+
+
 def _needs_validation_lookup(reason: str, project: ProjectConfig) -> bool:
     text = (reason or "").lower()
     if project.preview_command:
@@ -1245,8 +1284,20 @@ def _goal_retry_prompt(
     ui_errors: list[str] | tuple[str, ...] | None = None,
     stalled: bool = False,
     lookup: bool = False,
+    research: bool = False,
 ) -> str:
     stall = ""
+    if research:
+        excerpt = failure_excerpt(goal)
+        failure = f"Failure:\n{excerpt}\n\n" if excerpt else ""
+        stall += (
+            "The last edit did not fix the stated failure. A null check, print, "
+            "or log is not the fix. Call web_search for this error and framework, "
+            "then fetch_url an official page. Change the scene, template, or "
+            "resource that should contain the missing object, or the path that "
+            "points at it. Do not add another guard in the crashing file.\n"
+            f"{failure}"
+        )
     if lookup:
         stall += (
             "Validation is not configured, so this screen cannot be checked. "

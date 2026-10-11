@@ -80,6 +80,12 @@ LOOKUP_NUDGE = (
     "those docs support. preview_command must listen on {port}. Do not invent "
     "a command the fetched page does not support."
 )
+RESEARCH_NUDGE = (
+    "The stated failure is still unfixed. Call web_search for the error and "
+    "this framework, then fetch_url an official page. Edit the scene, template, "
+    "or resource that should contain the missing object. Do not add another "
+    "null check, print, or log in the crashing file."
+)
 VALIDATE_OPS_NUDGE = (
     "You changed Docker, compose, or docs but have not called run_tests since "
     "the last edit. Run tests. Commands in README must exist: use loco clone or "
@@ -228,6 +234,7 @@ class CodingAgent:
         require_change: bool = False,
         require_tests: bool = False,
         require_lookup: bool = False,
+        require_research: bool = False,
     ) -> AgentResult:
         context = memory_preface(self.palace, goal, context)
         messages: list[dict] = [
@@ -402,6 +409,21 @@ class CodingAgent:
                 record_event(kind="step", message="Agent skipped UI validation; continuing.")
                 messages.append({"role": "assistant", "content": turn.text or ""})
                 messages.append({"role": "user", "content": _nudge(VALIDATE_UI_NUDGE, goal)})
+                continue
+
+            if (
+                require_research
+                and not (looked_up and fetched_docs)
+                and lookup_nudges < MAX_LOOKUP_NUDGES
+            ):
+                lookup_nudges += 1
+                log.info("nudging agent to research the stated failure")
+                record_event(
+                    kind="step",
+                    message="Agent skipped research for the stated failure; continuing.",
+                )
+                messages.append({"role": "assistant", "content": turn.text or ""})
+                messages.append({"role": "user", "content": _nudge(RESEARCH_NUDGE, goal)})
                 continue
 
             if (

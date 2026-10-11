@@ -29,12 +29,16 @@ is not a fix.
 ## Fix and lock
 
 - Apply the smallest change that turns the same signal green.
+- A null check, `print`, or log that hides the error is not that change.
+  If the error says something is missing, change the scene, template, or
+  resource that should contain it, or the path that points at it.
+- When the cause is not already in this repo, `web_search` and `fetch_url`
+  an official page before the next edit. Do not guess the same guard again.
 - Leave a regression test at the public seam (CLI, HTTP, or rendered UI)
   unless the workspace already has one that now fails for this bug.
 - Call `run_tests` after the fix. If there is no test command, look up the
   official runner, add the regression test, and call `configure_project`
-  first. If `run_tests` fails, fix
-  that failure. Do not replace it with a command that exits 0 without
+  first. If `run_tests` fails, fix that failure. Do not replace it with a command that exits 0 without
   running the check. Then `run_lint` if the project has a linter. Remove
   any temporary prints or harness files you added.
 
