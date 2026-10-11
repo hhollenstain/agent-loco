@@ -70,9 +70,9 @@ there is no preview server, add one before claiming the control works.
 - The page has to show the control this goal changes and perform the action
   (open the menu, press Start, change the setting). A paragraph that says the
   screen works is not a preview.
-- For a native or Godot app, `web_search` the engine's headless capture docs,
-  `fetch_url` the official page, then `configure_project`. Capture the real
-  scene after the action and serve that image from the preview page. Then
-  call `review_ui`.
+- A project with `project.godot` is previewed by loco. It runs Godot, captures
+  the main scene, and serves that frame on `{port}`. Do not set
+  `preview_command` to `echo` or `sleep`. If the review says Godot was not
+  found, install Godot 4 or set `GODOT_PATH`, then call `review_ui` again.
 - If the capture is missing, blank, or does not show the action, the goal is
   not met. Fix the app or the preview and call `review_ui` again.

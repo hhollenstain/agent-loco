@@ -7,6 +7,7 @@ import re
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -333,6 +334,8 @@ def start_preview(
     port: int | None = None,
 ) -> _Preview | None:
     host_port = port or _free_port()
+    if _is_godot_project(workspace.root):
+        return _start_godot_preview(workspace, host_port)
     present, written = configured_value(workspace.root, "preview_command")
     command = written if present else getattr(project, "preview_command", None)
     if command:
@@ -925,6 +928,112 @@ def _has_web_preview(root: Path) -> bool:
     if config.exists() and "preview_command" in config.read_text(encoding="utf-8"):
         return True
     return _first_html_file(root) is not None
+
+
+def _is_godot_project(root: Path) -> bool:
+    return (root / "project.godot").is_file()
+
+
+def _godot_binary() -> str | None:
+    for key in ("GODOT_PATH", "GODOT"):
+        value = os.environ.get(key, "").strip()
+        if value and os.access(value, os.X_OK):
+            return value
+    found = shutil.which("godot")
+    if found:
+        return found
+    for candidate in (
+        Path("/Applications/Godot.app/Contents/MacOS/Godot"),
+        Path("/usr/local/bin/godot"),
+        Path("/opt/homebrew/bin/godot"),
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def _clip_log(text: str, limit: int = 6000) -> str:
+    body = (text or "").strip()
+    if len(body) <= limit:
+        return body
+    half = limit // 2
+    return f"{body[:half]}\n...\n{body[-half:]}"
+
+
+def _capture_godot_frame(root: Path, directory: Path) -> tuple[Path | None, str]:
+    """Run the project and keep the last movie frame plus the engine log."""
+    binary = _godot_binary()
+    if binary is None:
+        raise RuntimeError("Godot was not found. Install Godot 4 or set GODOT_PATH.")
+    movie = directory / "frame.png"
+    command = [
+        binary,
+        "--path",
+        str(root),
+        "--audio-driver",
+        "Dummy",
+        "--write-movie",
+        str(movie),
+        "--quit-after",
+        "8",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = _clip_log(f"{exc.stdout or ''}\n{exc.stderr or ''}")
+        raise RuntimeError(f"Godot preview timed out.\n{output}") from exc
+    output = _clip_log(f"{completed.stdout or ''}\n{completed.stderr or ''}")
+    frames = sorted(path for path in directory.glob("*.png") if path.name != "frame.png")
+    if not frames and movie.is_file():
+        frames = [movie]
+    if not frames:
+        return None, output
+    latest = frames[-1]
+    if latest != movie:
+        shutil.copyfile(latest, movie)
+    return movie, output
+
+
+def _godot_preview_page(image: Path | None, output: str) -> str:
+    if image is not None and image.is_file():
+        picture = '<img id="godot-frame" alt="Godot scene" src="frame.png" width="800">'
+    else:
+        picture = '<p id="godot-frame-missing">Godot did not write a frame.</p>'
+    log_text = html.escape(output or "Godot produced no output.")
+    return (
+        "<!DOCTYPE html>\n"
+        '<html><head><meta charset="utf-8"><title>Godot preview</title></head>\n'
+        f'<body>\n{picture}\n<pre id="godot-log">{log_text}</pre>\n</body></html>\n'
+    )
+
+
+def _start_godot_preview(workspace: Workspace, port: int) -> _Preview:
+    directory = Path(tempfile.mkdtemp(prefix="loco-godot-"))
+    try:
+        image, output = _capture_godot_frame(workspace.root, directory)
+        (directory / "index.html").write_text(
+            _godot_preview_page(image, output),
+            encoding="utf-8",
+        )
+        preview = _start_static_preview(directory, port, "index.html")
+    except Exception:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+    close_server = preview.close
+
+    def close() -> None:
+        close_server()
+        shutil.rmtree(directory, ignore_errors=True)
+
+    preview.close = close
+    return preview
 
 
 def _is_loco_project(root: Path) -> bool:

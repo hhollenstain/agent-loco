@@ -885,6 +885,55 @@ def test_loco_template_paths_use_the_running_app(tmp_path: Path, monkeypatch) ->
     assert preview.url == "http://127.0.0.1:9/"
 
 
+def test_godot_preview_serves_the_captured_frame(tmp_path: Path, monkeypatch) -> None:
+    import urllib.request
+
+    from agent_loco.runtime.uireview import start_preview
+
+    (tmp_path / "project.godot").write_text('config/name="Demo"\n', encoding="utf-8")
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text(
+        'preview_command: echo "listening" && sleep 3600\n',
+        encoding="utf-8",
+    )
+    fake = tmp_path / "fake-godot"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "movie = Path(args[args.index('--write-movie') + 1])\n"
+        "movie.parent.mkdir(parents=True, exist_ok=True)\n"
+        "(movie.parent / 'frame00000000.png').write_bytes(b'\\x89PNG\\r\\n')\n"
+        "print('SCRIPT ERROR: Node not found: Player', file=sys.stderr)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: str(fake))
+    preview = start_preview(Workspace(tmp_path), load_project(tmp_path))
+    assert preview is not None
+    try:
+        body = urllib.request.urlopen(preview.url, timeout=5).read().decode()
+    finally:
+        preview.close()
+    assert "Node not found: Player" in body
+    assert 'src="frame.png"' in body
+
+
+def test_godot_preview_reports_a_missing_engine(tmp_path: Path, monkeypatch) -> None:
+    from agent_loco.runtime.uireview import start_preview
+
+    (tmp_path / "project.godot").write_text('config/name="Demo"\n', encoding="utf-8")
+    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: None)
+    try:
+        start_preview(Workspace(tmp_path), load_project(tmp_path))
+    except RuntimeError as exc:
+        assert "Godot was not found" in str(exc)
+    else:
+        raise AssertionError("expected a missing Godot error")
+
+
 def test_review_goal_keeps_met_when_iteration_limit_but_ui_verified(
     tmp_path: Path, monkeypatch
 ) -> None:
