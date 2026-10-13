@@ -114,38 +114,37 @@ def test_rerun_on_main_starts_clean_instead_of_resuming_the_dirty_tree(
         manager.shutdown(wait=False)
 
 
-def test_failed_goal_is_queued_again_without_another_click(
+def test_failed_goal_stays_failed_when_nothing_else_is_queued(
     settings: Settings, tmp_path: Path
 ) -> None:
     goals: list[str | None] = []
 
     def runner(task: Task) -> CycleResult:
         goals.append(task.goal)
-        if len(goals) == 1:
-            return CycleResult(
-                status="failed",
-                goal=task.goal,
-                summary="guarded it",
-                tests_passed=True,
-                committed=False,
-                published=False,
-                commit_sha=None,
-                reason="goal not met; PR skipped: only error handling",
-            )
-        return _ok_result(task.goal)
+        return CycleResult(
+            status="failed",
+            goal=task.goal,
+            summary="missed it",
+            tests_passed=True,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="goal not met; PR skipped: only error handling",
+        )
 
     manager = TaskManager(settings, runner=runner)
     try:
         manager.submit(tmp_path, 'ERROR: Node not found: "Player"')
         deadline = time.time() + 3
-        while time.time() < deadline and len(goals) < 2:
+        while time.time() < deadline:
+            if any(task.status == "failed" for task in manager.list()):
+                break
             time.sleep(0.05)
-        assert len(goals) == 2
-        assert goals[1]
-        assert "previous attempt did not fix" in goals[1].lower()
-        assert "only error handling" in goals[1]
         time.sleep(0.2)
-        assert len(goals) == 2
+        assert goals == ['ERROR: Node not found: "Player"']
+        tasks = manager.list()
+        assert len(tasks) == 1
+        assert tasks[0].status == "failed"
     finally:
         manager.shutdown(wait=False)
 
