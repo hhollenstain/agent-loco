@@ -34,6 +34,20 @@ def test_guard_only_fix_rejects_a_logged_null_check() -> None:
     assert guard_only_fix(diff, "Add a score label") == []
 
 
+def test_guard_only_fix_accepts_a_corrected_node_path_with_a_guard() -> None:
+    diff = (
+        "diff --git a/scripts/main_game.gd b/scripts/main_game.gd\n"
+        "+++ b/scripts/main_game.gd\n"
+        "-\t$Player.position += player_velocity * delta\n"
+        "+\tvar player = $GameArea/Player\n"
+        "+\tif player != null:\n"
+        "+\t\tplayer.position += player_velocity * delta\n"
+        "+\t\tprint(player.position)\n"
+    )
+    goal = 'ERROR: Node not found: "Player" (relative to "/root/MainScene")'
+    assert guard_only_fix(diff, goal) == []
+
+
 def test_half_baked_diff_markers_catch_stubs_and_mocks() -> None:
     diff = (
         "diff --git a/src/issues.py b/src/issues.py\n"

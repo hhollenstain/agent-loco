@@ -636,6 +636,15 @@ def test_retry_prompts_forbid_placeholder_work() -> None:
     assert "404 http://127.0.0.1:9/static/theme.css" in broken
     assert "StaticFiles" in broken
     assert "review_ui" in broken
+    same = _goal_retry_prompt(
+        "Fix the player",
+        "still not found",
+        "diff --git a/scripts/main_game.gd",
+        ui_errors=['ERROR: Node not found: "Player"'],
+        repeated=True,
+    )
+    assert "did not change what the review sees" in same
+    assert "different approach" in same
     repair = _test_repair_prompt('AssertionError: id="guidelines"')
     assert "update that test" in repair
     assert "do not revert the goal" in repair.lower()

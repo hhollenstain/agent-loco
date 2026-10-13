@@ -75,6 +75,45 @@ def test_queue_runs_one_at_a_time(settings: Settings, tmp_path: Path) -> None:
         manager.shutdown(wait=False)
 
 
+def test_rerun_on_main_starts_clean_instead_of_resuming_the_dirty_tree(
+    settings: Settings, tmp_path: Path
+) -> None:
+    seen: list[Task] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append(task)
+        return CycleResult(
+            status="failed",
+            goal=task.goal,
+            summary="no",
+            tests_passed=True,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="tests failed; commit skipped",
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    try:
+        first = manager.submit(tmp_path, "Fix the player")
+        deadline = time.time() + 3
+        while time.time() < deadline and first.status != "failed":
+            time.sleep(0.05)
+        first.branch = "main"
+        first.sha_before = "abc123"
+        again = manager.rerun(first.id)
+        assert again is not None
+        assert again.resume_branch is None
+        assert again.resume_sha is None
+        assert again.base_branch == "main"
+        first.branch = "loco/fix-the-player"
+        feature = manager.rerun(first.id)
+        assert feature is not None
+        assert feature.resume_branch == "loco/fix-the-player"
+    finally:
+        manager.shutdown(wait=False)
+
+
 def test_failed_goal_is_queued_again_without_another_click(
     settings: Settings, tmp_path: Path
 ) -> None:

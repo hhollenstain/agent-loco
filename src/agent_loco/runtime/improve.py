@@ -3,16 +3,18 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent_loco.agent.loop import CodingAgent
+from agent_loco.agent.loop import AgentResult, CodingAgent
 from agent_loco.config import Settings
 from agent_loco.llm.client import LLMClient
 from agent_loco.progress import bind_progress, current_events, record_event, reset_progress
 from agent_loco.runtime.importer import goal_headline
+from agent_loco.runtime.plan import GoalPlan, PlanStep, format_plan, ground_plan, plan_goal
 from agent_loco.runtime.polloco_review import blocking_review_findings
 from agent_loco.runtime.project import (
     DEFAULT_MAX_REPAIR_ATTEMPTS,
@@ -23,6 +25,7 @@ from agent_loco.runtime.project import (
     load_project,
     mark_goal_done,
 )
+from agent_loco.runtime.related import format_goal_files
 from agent_loco.runtime.review import (
     GoalReview,
     failure_excerpt,
@@ -386,12 +389,35 @@ def _run_cycle(
         palace=palace,
         context_window=context_window,
     )
+    base_context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    named_files = format_goal_files(workspace.root, selected_goal)
+    plan = None
+    if settings.plan_goals:
+        log_progress("Breaking the goal into steps...")
+        plan = ground_plan(
+            plan_goal(llm, selected_goal, context=base_context, files=named_files),
+            selected_goal,
+            workspace.root,
+        )
+        _log_plan(plan)
+    brief = _brief(plan, named_files, base_context)
     log_progress("Running coding agent...")
-    agent_result = agent.run(
-        selected_goal,
-        collect_context(workspace.root, project, allow_publish=allow_create_pr),
-        require_research=_goal_needs_research(selected_goal),
-    )
+    if plan is not None and plan.steps:
+        agent_result = _run_plan_steps(
+            workspace,
+            agent,
+            plan,
+            selected_goal,
+            brief,
+            sha_before,
+            research=_goal_needs_research(selected_goal),
+        )
+    else:
+        agent_result = agent.run(
+            selected_goal,
+            brief,
+            require_research=_goal_needs_research(selected_goal),
+        )
 
     # Check for compact handoff if max_iterations was hit after changes
     sha = current_sha(workspace)
@@ -408,7 +434,11 @@ def _run_cycle(
         )
         agent_result_2 = agent.run(
             handoff_prompt,
-            collect_context(workspace.root, project, allow_publish=allow_create_pr),
+            _brief(
+                plan,
+                named_files,
+                collect_context(workspace.root, project, allow_publish=allow_create_pr),
+            ),
             require_change=True,
         )
         agent_result = agent_result_2
@@ -486,6 +516,7 @@ def _run_cycle(
         tests_passed,
         allow_create_pr,
         stopped_reason=agent_result.stopped_reason,
+        plan=plan,
     )
     tests_passed = review["tests_passed"]
     agent_result_summary = review["summary"]
@@ -976,6 +1007,7 @@ def _review_goal(
     existing: bool = False,
     upstream: str | None = None,
     stopped_reason: str | None = None,
+    plan: GoalPlan | None = None,
 ) -> GoalReview:
     ui_text = ""
     ui_evidence = None
@@ -997,13 +1029,16 @@ def _review_goal(
         existing=existing,
         upstream=upstream,
         ui_evidence=ui_text or None,
+        plan=format_plan(plan) or None,
     )
     blocking = []
     smashed = []
+    gaps: list[str] = []
     if ui_evidence is not None:
         blocking = ui_evidence.blocking_errors
         smashed = ui_evidence.smashed
-    ui_errors = tuple(blocking[:12])
+        gaps = list(ui_evidence.visual_gaps)
+    ui_errors = tuple([*blocking, *gaps][:12])
     missing_preview = (
         ui_evidence is not None
         and not ui_evidence.ok
@@ -1022,13 +1057,24 @@ def _review_goal(
         return overridden
     if verdict.met and blocking:
         first = blocking[0]
+        engine = bool(ui_evidence and ui_evidence.engine_errors)
         js = bool(ui_evidence and (ui_evidence.page_errors or ui_evidence.console_errors))
-        reason = (
-            f"Rendered UI has JavaScript errors: {first}"
-            if js
-            else f"Rendered UI failed to load a required resource: {first}"
-        )
+        if engine:
+            reason = f"Running the scene still prints an engine error: {first}"
+        elif js:
+            reason = f"Rendered UI has JavaScript errors: {first}"
+        else:
+            reason = f"Rendered UI failed to load a required resource: {first}"
         overridden = GoalReview(False, reason, parsed=True, ui_errors=ui_errors)
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
+    if verdict.met and gaps:
+        overridden = GoalReview(
+            False,
+            f"The captured scene still draws nothing for: {gaps[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
     if verdict.met and smashed:
@@ -1046,7 +1092,14 @@ def _review_goal(
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
     guarded = guard_only_fix(diff, goal)
-    if verdict.met and guarded and not existing:
+    ran_clean = bool(
+        ui_evidence is not None
+        and ui_evidence.ok
+        and (ui_evidence.notes or "").startswith("Godot ran")
+        and not blocking
+        and not gaps
+    )
+    if verdict.met and guarded and not existing and not ran_clean:
         overridden = GoalReview(
             False,
             f"The diff only hides the failure with a null check or log. {guarded[0]}",
@@ -1142,8 +1195,9 @@ def _ensure_goal_met(
     allow_create_pr: bool,
     *,
     stopped_reason: str | None = None,
+    plan: GoalPlan | None = None,
 ) -> dict[str, object]:
-    context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    base_context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     work_diff = collect_work_diff(workspace, sha_before, goal=goal)
     verdict = _review_goal(
         workspace,
@@ -1154,18 +1208,45 @@ def _ensure_goal_met(
         summary,
         tests_passed,
         stopped_reason=stopped_reason,
+        plan=plan,
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     attempts = 0
     stalls = 0
     extra_granted = False
+    replanned = False
     last_diff = work_diff
+    last_errors: tuple[str, ...] = ()
+    previous_reason = review_reason(verdict)
     limit = project.max_repair_attempts
     while not verdict.met and attempts < limit:
+        if attempts >= 1 and _repeated_miss(previous_reason, review_reason(verdict)):
+            log_progress("The same miss came back. Stopping instead of repeating it.")
+            break
+        previous_reason = review_reason(verdict)
         attempts += 1
         log_progress(f"Goal retry {attempts}/{limit}: {review_reason(verdict)}")
         project = load_project(workspace.root)
         work_diff = collect_work_diff(workspace, sha_before, goal=goal)
+        named_files = format_goal_files(workspace.root, goal)
+        repeated = bool(verdict.ui_errors) and tuple(verdict.ui_errors) == last_errors
+        last_errors = tuple(verdict.ui_errors)
+        if settings.plan_goals and attempts >= REPLAN_AFTER and not replanned:
+            replanned = True
+            log_progress("Two retries missed the goal; making a new plan from what failed...")
+            fresh = plan_goal(
+                llm,
+                goal,
+                context=base_context,
+                files=named_files,
+                failure=review_reason(verdict),
+                previous=plan,
+                diff=work_diff,
+            )
+            if fresh is not None:
+                plan = fresh
+                _log_plan(plan)
+        context = _brief(plan, named_files, base_context)
         guarded = bool(guard_only_fix(work_diff, goal))
         lookup = _needs_validation_lookup(review_reason(verdict), project) and not guarded
         research = guarded or _needs_cause_research(review_reason(verdict))
@@ -1182,6 +1263,7 @@ def _ensure_goal_met(
                 stalled=stalls > 0,
                 lookup=lookup,
                 research=research,
+                repeated=repeated,
             ),
             context,
             require_change=True,
@@ -1235,6 +1317,7 @@ def _ensure_goal_met(
             summary,
             tests_passed,
             stopped_reason=follow.stopped_reason,
+            plan=plan,
         )
         log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
     return {
@@ -1247,6 +1330,112 @@ def _ensure_goal_met(
 
 
 GOAL_RETRY_STALL_EXTRA = 2
+REPLAN_AFTER = 2
+
+
+_CHECK_STEP = re.compile(r"\b(run_tests|review_ui)\b", re.IGNORECASE)
+_MISS_MARKS = (
+    "null check",
+    "scene hierarchy",
+    "not found",
+    "missing node",
+    "only hides",
+    "does not address",
+    "does not actually fix",
+)
+
+
+def _is_check_step(step: PlanStep) -> bool:
+    return not step.file and bool(_CHECK_STEP.search(step.do))
+
+
+def _diff_touches(diff: str, filename: str) -> bool:
+    rel = filename.replace("\\", "/").lstrip("./")
+    if not rel:
+        return True
+    text = diff or ""
+    return f"b/{rel}" in text or f"a/{rel}" in text or f"/{rel}" in text or text.endswith(rel)
+
+
+def _step_prompt(goal: str, plan: GoalPlan, index: int) -> str:
+    step = plan.steps[index - 1]
+    later = " Do not start a later step." if index < len(plan.steps) else ""
+    where = f" Edit {step.file}." if step.file else ""
+    check = step.check or "the change is in the file"
+    return (
+        f"Goal:\n{goal.strip()}\n\n"
+        f"Do only step {index} of {len(plan.steps)}.{later}{where}\n"
+        f"Step: {step.do}\n"
+        f"This step is done only when: {check}\n"
+        "A null check, print, or log does not finish this step. "
+        "Do not say the whole task is complete."
+    )
+
+
+def _run_plan_steps(
+    workspace: Workspace,
+    agent: CodingAgent,
+    plan: GoalPlan,
+    goal: str,
+    brief: str,
+    sha_before: str | None,
+    *,
+    research: bool,
+) -> AgentResult:
+    """Carry out one plan step, then the next, after that step's file has changed."""
+    last: AgentResult | None = None
+    notes: list[str] = []
+    total = len(plan.steps)
+    for index, step in enumerate(plan.steps, start=1):
+        log_progress(f"Step {index}/{total}: {step.do}")
+        result = agent.run(
+            _step_prompt(goal, plan, index),
+            brief,
+            require_change=not _is_check_step(step),
+            require_research=research and index == 1,
+        )
+        if step.file and not _is_check_step(step):
+            diff = collect_work_diff(workspace, sha_before, goal=goal)
+            if not _diff_touches(diff, step.file):
+                log_progress(
+                    f"Step {index} did not change {step.file}; editing that file once more."
+                )
+                result = agent.run(
+                    _step_prompt(goal, plan, index)
+                    + f"\nYou have not edited {step.file}. Edit that file now.",
+                    brief,
+                    require_change=True,
+                )
+        last = result
+        if result.summary:
+            notes.append(result.summary)
+    assert last is not None
+    return AgentResult(
+        summary="\n".join(notes) or last.summary,
+        iterations=last.iterations,
+        tool_calls=last.tool_calls,
+        stopped_reason=last.stopped_reason,
+        last_error=last.last_error,
+    )
+
+
+def _repeated_miss(previous: str, current: str) -> bool:
+    left = (previous or "").lower()
+    right = (current or "").lower()
+    return any(mark in left and mark in right for mark in _MISS_MARKS)
+
+
+def _log_plan(plan: GoalPlan | None) -> None:
+    if plan is None:
+        return
+    total = len(plan.steps)
+    for index, step in enumerate(plan.steps, start=1):
+        where = f" [{step.file}]" if step.file else ""
+        log_progress(f"Plan {index}/{total}: {step.do}{where}")
+
+
+def _brief(plan: GoalPlan | None, named_files: str, context: str) -> str:
+    return "\n\n".join(part for part in (format_plan(plan), named_files, context) if part)
 
 
 def _goal_needs_research(goal: str | None) -> bool:
@@ -1285,8 +1474,16 @@ def _goal_retry_prompt(
     stalled: bool = False,
     lookup: bool = False,
     research: bool = False,
+    repeated: bool = False,
 ) -> str:
     stall = ""
+    if repeated:
+        stall += (
+            "Your last edit did not change what the review sees: the same problems "
+            "are still reported. That edit did not reach the cause. Read the files "
+            "listed under 'Files named by the goal' again, find the step of the plan "
+            "that is still not true, and take a different approach to it.\n\n"
+        )
     if research:
         excerpt = failure_excerpt(goal)
         failure = f"Failure:\n{excerpt}\n\n" if excerpt else ""
@@ -1322,13 +1519,15 @@ def _goal_retry_prompt(
     if errors:
         listed = "\n".join(f"- {item}" for item in errors[:12])
         broken = (
-            "\n\nRendered UI still has broken resources. Fix them in this retry. "
-            "A 404 means the HTML/CSS/JS href does not match a file the web "
-            "server actually serves. Do not only create the files; mount or route "
-            "them (FastAPI StaticFiles, express.static, or the project's existing "
-            "static path) or correct the href. Then call review_ui and confirm "
-            "those URLs load.\n"
-            f"Broken resources:\n{listed}"
+            "\n\nThe rendered result still has these problems. Fix each one in this "
+            "retry. An engine error names the node, path, or line that is wrong: "
+            "open the scene or file it points at and correct the structure or the "
+            "path. A node that draws nothing needs something to draw (a texture, "
+            "a shape, or a ColorRect). A 404 means the HTML/CSS/JS href does not "
+            "match a file the web server serves: mount or route it (FastAPI "
+            "StaticFiles, express.static, or the project's existing static path), "
+            "or correct the href. Then call review_ui and confirm the list is empty.\n"
+            f"Problems:\n{listed}"
         )
     return (
         f"{stall}"
@@ -1350,8 +1549,9 @@ def _goal_retry_prompt(
         "invent a command. Call web_search, then fetch_url on an official "
         "docs page, then configure_project. preview_command must listen on "
         "{port} and serve a page that shows the control this goal changes. "
-        "For a native or Godot app, capture that screen and serve the image "
-        "on the page. Then call review_ui and click the control. A note that "
+        "In a Godot project, review_ui runs the scene and lists engine errors "
+        "and nodes that draw nothing; pass the .tscn as path. Then call "
+        "review_ui and click the control. A note that "
         "says the screen works is not validation. "
         "Follow enabled workspace skills. Do not add a helper that nothing calls. "
         "If you edited docs or compose files, the commands must actually exist "

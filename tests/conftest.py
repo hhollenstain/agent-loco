@@ -37,6 +37,7 @@ def settings() -> Settings:
         create_pr=False,
         max_iterations=8,
         command_timeout_seconds=30,
+        plan_goals=False,
         git_author_name="loco-test",
         git_author_email="loco@test.local",
     )

@@ -15,7 +15,9 @@ def browser_tools(workspace: Workspace, goal: str = "") -> list[ToolSpec]:
                 "panel, and report JavaScript errors, dead controls, and crushed/"
                 "zero-size elements. The screenshot is taken after those clicks, so "
                 "the opened panel is visible. Use this after HTML, CSS, JS, or "
-                "template edits. Optional url, HTML path, and extra click selector."
+                "template edits. Optional url, HTML path, and extra click selector. "
+                "In a Godot project it runs the scene in Godot and reports engine "
+                "errors and nodes that draw nothing; pass a .tscn path to pick the scene."
             ),
             parameters=object_schema(
                 {
@@ -25,7 +27,10 @@ def browser_tools(workspace: Workspace, goal: str = "") -> list[ToolSpec]:
                     },
                     "path": {
                         "type": "string",
-                        "description": "Workspace HTML file to serve when url is omitted.",
+                        "description": (
+                            "Workspace HTML file to serve, or a Godot .tscn scene to run, "
+                            "when url is omitted."
+                        ),
                     },
                     "click": {
                         "type": "string",

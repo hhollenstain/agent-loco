@@ -118,7 +118,9 @@ def user_prompt(goal: str, context: str) -> str:
         parts.extend(["", "Workspace context:", context.strip()])
     parts.extend(
         [
-            "Start from this brief. Read at most two files, then edit. Do not list the whole repo.",
+            "Start from this brief. When it has a plan, do the steps in order and "
+            "confirm each step's check before the next. Read the files the goal "
+            "and the plan name, then edit. Do not list the whole repo.",
             "",
             "Work until THIS goal is fully done or you are blocked. Do not leave a "
             "stub, mock, unused form field, unused helper, or a follow-up for a "

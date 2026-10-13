@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     create_pr: bool = True
     watch_interval_seconds: int = Field(default=300, ge=10)
     command_timeout_seconds: int = Field(default=180, ge=5)
+    plan_goals: bool = True
     log_level: str = "INFO"
     git_author_name: str | None = None
     git_author_email: str | None = None

@@ -17,6 +17,9 @@ is not a fix.
    or a single shell invocation that shows the failure.
 3. Run that signal once and keep the output. If you cannot reproduce, stop
    and say what you tried. Do not "fix" a bug you have not seen fail.
+   In a Godot project, `review_ui` with the scene's `.tscn` as `path` runs
+   that scene and lists its engine errors. That is the red signal for a
+   `Node not found` or `null instance` error.
 
 ## Isolate
 
@@ -24,6 +27,9 @@ is not a fix.
   Y will turn this signal green."
 - Use `search_text` and `read_file` on the failing path only. Do not rewrite
   unrelated files.
+- When the error names something missing, read the file that defines it
+  before the file that crashed. A scene file lists every node with its
+  `parent`, so `$Player` fails when `Player` sits under another node.
 - Change one cause at a time. If the signal stays red, revert that guess.
 
 ## Fix and lock

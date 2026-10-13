@@ -137,10 +137,30 @@ def failure_excerpt(goal: str | None, *, limit: int = 4) -> str:
     return "\n".join(lines)
 
 
+_MISSING_NAME = re.compile(r'(?i)not found:?\s*"([^"]+)"')
+_NODE_REF = re.compile(r'\$"?([\w/.%]+)"?|get_node(?:_or_null)?\(\s*"([^"]+)"')
+
+
+def _references(lines: list[str], name: str) -> set[str]:
+    refs: set[str] = set()
+    for line in lines:
+        for match in _NODE_REF.finditer(line):
+            ref = match.group(1) or match.group(2) or ""
+            if ref == name or ref.endswith(f"/{name}"):
+                refs.add(ref)
+    return refs
+
+
 def guard_only_fix(diff: str | None, goal: str | None) -> list[str]:
     """A crash wrapped in a null check or log, without changing what is missing."""
     if not _FAILURE_GOAL.search(goal or ""):
         return []
+    added = [line[1:] for line in (diff or "").splitlines() if line.startswith("+")]
+    removed = [line[1:] for line in (diff or "").splitlines() if line.startswith("-")]
+    for name in set(_MISSING_NAME.findall(goal or "")):
+        moved = {ref for ref in _references(added, name) if ref != name}
+        if moved - _references(removed, name):
+            return []
     path = ""
     structural = False
     guards: list[str] = []
@@ -598,6 +618,7 @@ def review_goal(
     existing: bool = False,
     upstream: str | None = None,
     ui_evidence: str | None = None,
+    plan: str | None = None,
 ) -> GoalReview:
     if is_test_suite_goal(goal) and tests_passed is True:
         verdict = GoalReview(True, "project tests passed after the change")
@@ -622,6 +643,8 @@ def review_goal(
         )
         if upstream:
             user_parts.extend(["", "Upstream:", upstream])
+    if plan and plan.strip():
+        user_parts.extend(["", "The goal is met only when every step's check holds.", plan.strip()])
     user_parts.extend(["", evidence_label, diff.strip() or "(no diff)"])
     if ui_evidence and ui_evidence.strip():
         user_parts.extend(["", ui_evidence.strip()])

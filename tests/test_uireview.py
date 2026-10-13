@@ -921,6 +921,231 @@ def test_godot_preview_serves_the_captured_frame(tmp_path: Path, monkeypatch) ->
     assert 'src="frame.png"' in body
 
 
+def _solid_png(path: Path, width: int, height: int, spot: int = 0) -> None:
+    import struct
+    import zlib
+
+    rows = b""
+    for y in range(height):
+        row = bytearray(b"\x00")
+        for x in range(width):
+            row += b"\xff\x00\x00" if x < spot and y < spot else b"\x4d\x4d\x4d"
+        rows += bytes(row)
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        crc = zlib.crc32(kind + body) & 0xFFFFFFFF
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_frame_blank_share_measures_a_single_color_frame(tmp_path: Path) -> None:
+    from agent_loco.runtime.uireview import frame_blank_share
+
+    blank = tmp_path / "blank.png"
+    _solid_png(blank, 20, 20)
+    drawn = tmp_path / "drawn.png"
+    _solid_png(drawn, 20, 20, spot=10)
+    assert frame_blank_share(blank) == 1.0
+    assert frame_blank_share(drawn) == 0.75
+
+
+def test_godot_engine_errors_keep_the_location() -> None:
+    from agent_loco.runtime.uireview import godot_engine_errors
+
+    output = (
+        'ERROR: Node not found: "Player" (relative to "/root/MainScene").\n'
+        "   at: get_node (scene/main/node.cpp:1976)\n"
+        "SCRIPT ERROR: Invalid access to property or key 'position'.\n"
+        "          at: MainGame._process (res://scripts/main_game.gd:60)\n"
+        'ERROR: Node not found: "Player" (relative to "/root/MainScene").\n'
+        "   at: get_node (scene/main/node.cpp:1976)\n"
+        "Flappy Gary game initialized!\n"
+        "ERROR: 1 resources still in use at exit (run with --verbose for details).\n"
+        "   at: clear (core/io/resource.cpp:822)\n"
+    )
+    errors = godot_engine_errors(output)
+    assert len(errors) == 2
+    assert errors[0].endswith("(at get_node (scene/main/node.cpp:1976))")
+    assert "res://scripts/main_game.gd:60" in errors[1]
+
+
+def test_godot_preview_runs_the_scene_the_goal_names(tmp_path: Path, monkeypatch) -> None:
+    from agent_loco.runtime.uireview import start_preview
+
+    (tmp_path / "project.godot").write_text('run/main_scene="res://scenes/menu.tscn"\n')
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "main_game.gd").write_text("extends Node2D\n")
+    (tmp_path / "scenes").mkdir()
+    (tmp_path / "scenes" / "menu.tscn").write_text('[gd_scene format=3]\n\n[node name="Menu"]\n')
+    (tmp_path / "scenes" / "main_scene.tscn").write_text(
+        "[gd_scene format=3]\n\n"
+        '[node name="MainScene" type="Node2D"]\n\n'
+        '[node name="Player" type="Sprite2D" parent="GameArea"]\n'
+        "position = Vector2(100, 300)\n\n"
+        '[node name="Logo" type="Sprite2D" parent="."]\n'
+        'texture = ExtResource("2")\n'
+    )
+    args_file = tmp_path / "args.txt"
+    fake = tmp_path / "fake-godot"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(args_file)!r}).write_text(' '.join(sys.argv[1:]))\n"
+        'print(\'ERROR: Node not found: "Player" (relative to "/root/MainScene").\')\n'
+        "print('   at: get_node (scene/main/node.cpp:1976)')\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: str(fake))
+    goal = 'Not rendering. ERROR: Node not found: "Player" (relative to "/root/MainScene").'
+    preview = start_preview(Workspace(tmp_path), load_project(tmp_path), goal=goal)
+    assert preview is not None
+    preview.close()
+    assert args_file.read_text().endswith("res://scenes/main_scene.tscn")
+    assert preview.errors == [
+        'ERROR: Node not found: "Player" (relative to "/root/MainScene"). '
+        "(at get_node (scene/main/node.cpp:1976))"
+    ]
+    assert any('Sprite2D "Player"' in gap for gap in preview.gaps)
+    assert not any("Logo" in gap for gap in preview.gaps)
+    assert any("did not write a frame" in gap for gap in preview.gaps)
+    assert preview.notes == "Godot ran res://scenes/main_scene.tscn for 8 frames."
+
+
+def test_godot_preview_runs_the_level_instead_of_the_menu(tmp_path: Path, monkeypatch) -> None:
+    from agent_loco.runtime.uireview import start_preview
+
+    (tmp_path / "project.godot").write_text('run/main_scene="res://scenes/menu.tscn"\n')
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "menu.gd").write_text(
+        "func _on_start_pressed() -> void:\n"
+        '\tget_tree().change_scene_to_file("res://scenes/main_scene.tscn")\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts" / "game.gd").write_text(
+        'func spawn_pipe():\n\tvar pipe = preload("res://scenes/pipe.tscn").instantiate()\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "scenes").mkdir()
+    (tmp_path / "scenes" / "menu.tscn").write_text(
+        "[gd_scene format=3]\n\n"
+        '[ext_resource type="Script" path="res://scripts/menu.gd" id="1"]\n\n'
+        '[node name="Menu" type="Control"]\n'
+        'script = ExtResource("1")\n\n'
+        '[node name="StartButton" type="Button" parent="."]\n'
+        'text = "Start Game"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "scenes" / "main_scene.tscn").write_text(
+        "[gd_scene format=3]\n\n"
+        '[ext_resource type="Script" path="res://scripts/game.gd" id="1"]\n\n'
+        '[node name="MainScene" type="Node2D"]\n'
+        'script = ExtResource("1")\n\n'
+        '[node name="Player" type="Sprite2D" parent="."]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "scenes" / "pipe.tscn").write_text(
+        '[gd_scene format=3]\n\n[node name="Pipe" type="Node2D"]\n\n'
+        '[node name="TopPipe" type="Sprite2D" parent="."]\n',
+        encoding="utf-8",
+    )
+    args_file = tmp_path / "args.txt"
+    fake = tmp_path / "fake-godot"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(args_file)!r}).write_text(' '.join(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: str(fake))
+    preview = start_preview(
+        Workspace(tmp_path),
+        load_project(tmp_path),
+        goal="The player and pipes are a blank screen after you start",
+    )
+    assert preview is not None
+    preview.close()
+    command = args_file.read_text()
+    assert command.endswith("res://scenes/main_scene.tscn")
+    assert "--quit-after 120" in command
+    assert any('Sprite2D "Player"' in gap for gap in preview.gaps)
+    assert any('Sprite2D "TopPipe"' in gap for gap in preview.gaps)
+
+
+def test_review_rejects_a_scene_that_still_prints_engine_errors(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(
+            ok=True,
+            notes="Godot ran res://scenes/main_scene.tscn for 8 frames.",
+            screenshot="frame.png",
+            engine_errors=['ERROR: Node not found: "Player"'],
+        ),
+    )
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    llm = ScriptedClient([AssistantTurn(text='{"met": true, "reason": "fixed the path"}')])
+    token = bind_progress()
+    try:
+        verdict = _review_goal(
+            Workspace(tmp_path),
+            load_project(tmp_path),
+            llm,
+            'The scene is not rendering. ERROR: Node not found: "Player"',
+            "diff --git a/scripts/main_game.gd b/scripts/main_game.gd\n",
+            "Fixed it.",
+            True,
+        )
+    finally:
+        reset_progress(token)
+    assert verdict.met is False
+    assert verdict.reason.startswith("Running the scene still prints an engine error")
+    assert "Engine errors while the scene ran:" in llm.calls[0][-1]["content"]
+
+
+def test_review_rejects_a_render_goal_when_nodes_draw_nothing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agent_loco.runtime.improve.collect_ui_evidence",
+        lambda *args, **kwargs: UiEvidence(
+            ok=True,
+            notes="Godot ran res://scenes/main_scene.tscn for 8 frames.",
+            screenshot="frame.png",
+            visual_gaps=['Sprite2D "Player" in scenes/main_scene.tscn has no texture'],
+        ),
+    )
+    (tmp_path / ".loco").mkdir()
+    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    llm = ScriptedClient([AssistantTurn(text='{"met": true, "reason": "no more errors"}')])
+    token = bind_progress()
+    try:
+        verdict = _review_goal(
+            Workspace(tmp_path),
+            load_project(tmp_path),
+            llm,
+            "The player and background are not rendering",
+            "diff --git a/scripts/main_game.gd b/scripts/main_game.gd\n",
+            "Fixed it.",
+            True,
+        )
+    finally:
+        reset_progress(token)
+    assert verdict.met is False
+    assert "draws nothing" in verdict.reason
+    assert 'Sprite2D "Player"' in verdict.ui_errors[0]
+
+
 def test_godot_preview_reports_a_missing_engine(tmp_path: Path, monkeypatch) -> None:
     from agent_loco.runtime.uireview import start_preview
 

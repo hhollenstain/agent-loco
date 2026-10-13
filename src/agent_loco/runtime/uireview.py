@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import uuid
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from urllib.parse import urljoin, urlparse
 
 from agent_loco.progress import record_event
 from agent_loco.runtime.project import ProjectConfig, configured_value
+from agent_loco.runtime.related import gameplay_scene, goal_scene
 from agent_loco.sandbox import Workspace
 
 log = logging.getLogger("loco")
@@ -160,11 +162,18 @@ class UiEvidence:
     screenshot_filename: str | None = None
     notes: str = ""
     interactive: bool = True
+    engine_errors: list[str] = field(default_factory=list)
+    visual_gaps: list[str] = field(default_factory=list)
 
     @property
     def blocking_errors(self) -> list[str]:
         items = []
-        for item in [*self.page_errors, *self.console_errors, *self.network_failures]:
+        for item in [
+            *self.engine_errors,
+            *self.page_errors,
+            *self.console_errors,
+            *self.network_failures,
+        ]:
             text = str(item).strip()
             if not text or is_generic_resource_console(text):
                 continue
@@ -179,15 +188,25 @@ class UiEvidence:
         bits = ["Rendered UI"]
         if self.title:
             bits.append(self.title)
-        if errors:
-            bits.append(f"{len(errors)} JS error(s)")
+        if self.engine_errors:
+            bits.append(f"{len(self.engine_errors)} engine error(s)")
+        if len(errors) > len(self.engine_errors):
+            bits.append(f"{len(errors) - len(self.engine_errors)} JS error(s)")
+        if self.visual_gaps:
+            bits.append(f"{len(self.visual_gaps)} part(s) drew nothing")
         if self.smashed:
             bits.append(f"{len(self.smashed)} unreadable control(s)")
         if self.dead_controls:
             bits.append(f"{len(self.dead_controls)} dead control(s)")
         if not self.interactive:
             bits.append("static capture, clicks unverified")
-        if not errors and not self.smashed and not self.dead_controls and self.interactive:
+        if (
+            not errors
+            and not self.smashed
+            and not self.dead_controls
+            and not self.visual_gaps
+            and self.interactive
+        ):
             bits.append("no console errors")
         return " · ".join(bits)
 
@@ -208,6 +227,14 @@ def format_ui_evidence(evidence: UiEvidence | None) -> str:
         lines.append(f"Title: {evidence.title}")
     if evidence.notes:
         lines.append(evidence.notes)
+    if evidence.engine_errors:
+        lines.append("Engine errors while the scene ran:")
+        lines.extend(f"- {item}" for item in evidence.engine_errors[:12])
+    elif evidence.notes.startswith("Godot ran"):
+        lines.append("Engine errors while the scene ran: none")
+    if evidence.visual_gaps:
+        lines.append("Parts of the scene that drew nothing:")
+        lines.extend(f"- {item}" for item in evidence.visual_gaps[:12])
     js_errors = [
         item
         for item in [*evidence.page_errors, *evidence.console_errors]
@@ -287,7 +314,7 @@ def collect_ui_evidence(
     target = (url or "").strip()
     try:
         if not target:
-            preview = start_preview(workspace, project, path=path)
+            preview = start_preview(workspace, project, path=path, goal=goal)
             if preview is None:
                 return UiEvidence(
                     ok=False,
@@ -308,6 +335,11 @@ def collect_ui_evidence(
             page.screenshot_filename = screenshot.name
         elif page.screenshot:
             page.screenshot_filename = page.screenshot_filename or Path(page.screenshot).name
+        if preview is not None:
+            page.engine_errors = list(preview.errors)
+            page.visual_gaps = list(preview.gaps)
+            if preview.notes:
+                page.notes = f"{preview.notes} {page.notes}".strip()
         record_event(
             kind="ui",
             ok=page.ok,
@@ -332,10 +364,17 @@ def start_preview(
     *,
     path: str | None = None,
     port: int | None = None,
+    goal: str = "",
 ) -> _Preview | None:
     host_port = port or _free_port()
     if _is_godot_project(workspace.root):
-        return _start_godot_preview(workspace, host_port)
+        scene = None
+        if path and path.endswith((".tscn", ".scn")):
+            scene = f"res://{path.removeprefix('res://').lstrip('/')}"
+        play = gameplay_scene(workspace.root, goal)
+        chosen = scene or play or goal_scene(workspace.root, goal)
+        frames = 120 if chosen and chosen == play and _PLAY_CAPTURE.search(goal) else 8
+        return _start_godot_preview(workspace, host_port, chosen, frames=frames)
     present, written = configured_value(workspace.root, "preview_command")
     command = written if present else getattr(project, "preview_command", None)
     if command:
@@ -960,8 +999,170 @@ def _clip_log(text: str, limit: int = 6000) -> str:
     return f"{body[:half]}\n...\n{body[-half:]}"
 
 
-def _capture_godot_frame(root: Path, directory: Path) -> tuple[Path | None, str]:
-    """Run the project and keep the last movie frame plus the engine log."""
+_GODOT_ERROR = re.compile(r"^\s*(?:SCRIPT ERROR|ERROR|USER ERROR):\s*(.+)$")
+_GODOT_AT = re.compile(r"^\s*at:\s*(.+)$")
+_GODOT_EXIT_NOISE = re.compile(r"(?i)(leaked at exit|still in use at exit)")
+_GODOT_NODE = re.compile(r'^\[node name="([^"]+)"([^\]]*)\]', re.MULTILINE)
+_TEXTURED_TYPES = {"Sprite2D", "Sprite3D", "TextureRect", "AnimatedSprite2D"}
+BLANK_FRAME_SHARE = 0.97
+
+
+def godot_engine_errors(output: str) -> list[str]:
+    """ERROR and SCRIPT ERROR lines from a Godot run, each with its `at:` location."""
+    errors: list[str] = []
+    lines = (output or "").splitlines()
+    for index, line in enumerate(lines):
+        match = _GODOT_ERROR.match(line)
+        if not match or _GODOT_EXIT_NOISE.search(line):
+            continue
+        text = match.group(0).strip()
+        for follow in lines[index + 1 : index + 4]:
+            where = _GODOT_AT.match(follow)
+            if where:
+                text = f"{text} (at {where.group(1).strip()})"
+                break
+        if text not in errors:
+            errors.append(text[:300])
+        if len(errors) >= 12:
+            break
+    return errors
+
+
+def _scene_nodes(text: str) -> list[tuple[str, str, str]]:
+    nodes: list[tuple[str, str, str]] = []
+    matches = list(_GODOT_NODE.finditer(text))
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        body = text[match.end() : end]
+        cut = body.find("\n[")
+        if cut >= 0:
+            body = body[:cut]
+        kind = re.search(r'\btype="([^"]+)"', match.group(2))
+        nodes.append((match.group(1), kind.group(1) if kind else "", body))
+    return nodes
+
+
+_PRELOAD_SCENE = re.compile(r'preload\(\s*"res://([^"]+\.tscn)"\s*\)')
+_PLAY_CAPTURE = re.compile(
+    r"\b(pipes?|after (?:you )?start|blank screen|main level)\b",
+    re.IGNORECASE,
+)
+
+
+def _untextured_in(root: Path, rel: str) -> list[str]:
+    path = root / rel
+    if not rel or not path.is_file():
+        return []
+    gaps: list[str] = []
+    for name, kind, body in _scene_nodes(path.read_text(encoding="utf-8", errors="replace")):
+        if kind in _TEXTURED_TYPES and not re.search(
+            r"^\s*(?:texture|sprite_frames)\s*=", body, re.M
+        ):
+            gaps.append(f'{kind} "{name}" in {rel} has no texture, so it draws nothing')
+    return gaps
+
+
+def godot_untextured_nodes(root: Path, scene: str | None) -> list[str]:
+    """Sprite and TextureRect nodes in the scene, and scenes it spawns, that draw nothing."""
+    rel = (scene or "").removeprefix("res://")
+    if not rel and (root / "project.godot").is_file():
+        main = re.search(
+            r'^(?:run/)?main_scene="res://([^"]+)"',
+            (root / "project.godot").read_text(encoding="utf-8", errors="replace"),
+            re.MULTILINE,
+        )
+        rel = main.group(1) if main else ""
+    gaps = _untextured_in(root, rel)
+    scene_text = ""
+    if rel and (root / rel).is_file():
+        scene_text = (root / rel).read_text(encoding="utf-8", errors="replace")
+    script = re.search(r'\[ext_resource type="Script" path="res://([^"]+)"', scene_text)
+    if script:
+        try:
+            source = (root / script.group(1)).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            source = ""
+        for spawned in _PRELOAD_SCENE.findall(source):
+            if spawned != rel:
+                gaps.extend(_untextured_in(root, spawned))
+    return gaps
+
+
+def _png_rows(path: Path) -> tuple[int, int, list[bytes]] | None:
+    data = path.read_bytes()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    pos = 8
+    width = height = channels = 0
+    chunks: list[bytes] = []
+    while pos + 8 <= len(data):
+        size = int.from_bytes(data[pos : pos + 4], "big")
+        kind = data[pos + 4 : pos + 8]
+        body = data[pos + 8 : pos + 8 + size]
+        pos += 12 + size
+        if kind == b"IHDR":
+            width = int.from_bytes(body[0:4], "big")
+            height = int.from_bytes(body[4:8], "big")
+            depth, color, interlace = body[8], body[9], body[12]
+            channels = {2: 3, 6: 4}.get(color, 0)
+            if depth != 8 or interlace or not channels:
+                return None
+        elif kind == b"IDAT":
+            chunks.append(body)
+        elif kind == b"IEND":
+            break
+    if not width or not height or not chunks:
+        return None
+    raw = zlib.decompress(b"".join(chunks))
+    stride = width * channels
+    rows: list[bytes] = []
+    prior = bytearray(stride)
+    offset = 0
+    for _ in range(height):
+        kind = raw[offset]
+        line = bytearray(raw[offset + 1 : offset + 1 + stride])
+        offset += 1 + stride
+        for i in range(stride):
+            left = line[i - channels] if i >= channels else 0
+            up = prior[i]
+            if kind == 1:
+                line[i] = (line[i] + left) & 0xFF
+            elif kind == 2:
+                line[i] = (line[i] + up) & 0xFF
+            elif kind == 3:
+                line[i] = (line[i] + ((left + up) >> 1)) & 0xFF
+            elif kind == 4:
+                corner = prior[i - channels] if i >= channels else 0
+                guess = left + up - corner
+                pa, pb, pc = abs(guess - left), abs(guess - up), abs(guess - corner)
+                pick = left if pa <= pb and pa <= pc else up if pb <= pc else corner
+                line[i] = (line[i] + pick) & 0xFF
+        rows.append(bytes(line[j] for j in range(stride) if j % channels < 3))
+        prior = line
+    return width, height, rows
+
+
+def frame_blank_share(path: Path) -> float | None:
+    """Share of the frame covered by its single most common color."""
+    try:
+        decoded = _png_rows(path)
+    except (OSError, ValueError, IndexError, zlib.error):
+        return None
+    if decoded is None:
+        return None
+    width, height, rows = decoded
+    counts: dict[bytes, int] = {}
+    for row in rows:
+        for x in range(0, width * 3, 3):
+            pixel = row[x : x + 3]
+            counts[pixel] = counts.get(pixel, 0) + 1
+    return max(counts.values()) / float(width * height)
+
+
+def _capture_godot_frame(
+    root: Path, directory: Path, scene: str | None = None, frames: int = 8
+) -> tuple[Path | None, str]:
+    """Run the scene (or the main scene) and keep the last frame plus the engine log."""
     binary = _godot_binary()
     if binary is None:
         raise RuntimeError("Godot was not found. Install Godot 4 or set GODOT_PATH.")
@@ -975,8 +1176,10 @@ def _capture_godot_frame(root: Path, directory: Path) -> tuple[Path | None, str]
         "--write-movie",
         str(movie),
         "--quit-after",
-        "8",
+        str(frames),
     ]
+    if scene:
+        command.append(scene)
     try:
         completed = subprocess.run(
             command,
@@ -1001,7 +1204,7 @@ def _capture_godot_frame(root: Path, directory: Path) -> tuple[Path | None, str]
     return movie, output
 
 
-def _godot_preview_page(image: Path | None, output: str) -> str:
+def _godot_preview_page(image: Path | None, output: str, scene: str) -> str:
     if image is not None and image.is_file():
         picture = '<img id="godot-frame" alt="Godot scene" src="frame.png" width="800">'
     else:
@@ -1010,16 +1213,30 @@ def _godot_preview_page(image: Path | None, output: str) -> str:
     return (
         "<!DOCTYPE html>\n"
         '<html><head><meta charset="utf-8"><title>Godot preview</title></head>\n'
-        f'<body>\n{picture}\n<pre id="godot-log">{log_text}</pre>\n</body></html>\n'
+        f"<body>\n<h1>Godot ran {html.escape(scene)}</h1>\n{picture}\n"
+        f'<pre id="godot-log">{log_text}</pre>\n</body></html>\n'
     )
 
 
-def _start_godot_preview(workspace: Workspace, port: int) -> _Preview:
+def _start_godot_preview(
+    workspace: Workspace, port: int, scene: str | None, frames: int = 8
+) -> _Preview:
     directory = Path(tempfile.mkdtemp(prefix="loco-godot-"))
+    label = scene or "the main scene"
     try:
-        image, output = _capture_godot_frame(workspace.root, directory)
+        image, output = _capture_godot_frame(workspace.root, directory, scene, frames)
+        gaps = godot_untextured_nodes(workspace.root, scene)
+        if image is None:
+            gaps.append(f"Godot did not write a frame for {label}")
+        else:
+            share = frame_blank_share(image)
+            if share is not None and share >= BLANK_FRAME_SHARE:
+                gaps.append(
+                    f"{int(share * 100)}% of the captured frame of {label} is one color, "
+                    "so almost nothing drew"
+                )
         (directory / "index.html").write_text(
-            _godot_preview_page(image, output),
+            _godot_preview_page(image, output, label),
             encoding="utf-8",
         )
         preview = _start_static_preview(directory, port, "index.html")
@@ -1033,6 +1250,9 @@ def _start_godot_preview(workspace: Workspace, port: int) -> _Preview:
         shutil.rmtree(directory, ignore_errors=True)
 
     preview.close = close
+    preview.errors = godot_engine_errors(output)
+    preview.gaps = gaps
+    preview.notes = f"Godot ran {label} for {frames} frames."
     return preview
 
 
@@ -1177,6 +1397,9 @@ def _free_port() -> int:
 class _Preview:
     url: str
     close: Callable[[], None]
+    errors: list[str] = field(default_factory=list)
+    gaps: list[str] = field(default_factory=list)
+    notes: str = ""
 
 
 def _wait_for_port(port: int, timeout: float = 8.0) -> None:

@@ -17,6 +17,14 @@ Before any tool call, restate the goal in one sentence. This ensures alignment a
 
 Identify 1–5 files that will be edited. Prefer `str_replace` on existing files rather than creating new ones. List these files explicitly before any edit.
 
+## Follow the plan
+
+The cycle breaks the goal into steps before the first edit. Do the current
+step only. Confirm that step's check — the test, the error that must stop,
+or what the screen shows — before the next step. Do not say the task is
+complete while a step's check is still false. A null check, print, or log
+is not a step.
+
 ## Look up unknowns
 
 When the API, architecture, or a best practice is not already in this repo,

@@ -29,6 +29,7 @@ from agent_loco.runtime.improve import CycleResult, run_cycle
 log = logging.getLogger("loco")
 
 MAX_GOAL_REPAIRS = 2
+PROTECTED_BRANCHES = frozenset({"", "main", "master", "trunk", "HEAD"})
 
 
 def _repair_goal(goal: str, reason: str) -> str:
@@ -306,6 +307,11 @@ class TaskManager:
             return None
         resume_branch = old_task.branch
         resume_sha = (from_sha or old_task.commit_sha or old_task.sha_before or "").strip() or None
+        base_branch = old_task.base_branch
+        if (resume_branch or "").strip() in PROTECTED_BRANCHES and not from_sha:
+            base_branch = base_branch or resume_branch
+            resume_branch = None
+            resume_sha = None
         revised = (goal or "").strip()
         create_pr = True if old_task.pr_url else old_task.create_pr
         return self.submit(
@@ -318,6 +324,7 @@ class TaskManager:
             model_api_key=old_task.model_api_key,
             resume_branch=resume_branch,
             resume_sha=resume_sha,
+            base_branch=base_branch,
             continuous=old_task.continuous,
         )
 
@@ -477,7 +484,7 @@ class TaskManager:
             if str(workspace.resolve()) in self._continuous_stopped:
                 return False
         branch = (task.branch or "").strip()
-        if branch in {"", "main", "master", "trunk", "HEAD"}:
+        if branch in PROTECTED_BRANCHES:
             branch = ""
         goal = _repair_goal(task.goal or "", task.reason or "")
         log.info("goal not met: queueing another fix for %s", workspace)
