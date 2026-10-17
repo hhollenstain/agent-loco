@@ -133,6 +133,9 @@
       overflow: auto;
       padding: 0.85rem 1.15rem 1.5rem;
     }
+    main.showing-changes:not(.collapsed-runs) .run-detail {
+      padding-right: calc(min(22rem, 100%) + 0.35rem);
+    }
     .run-rail {
       position: absolute;
       top: 0;
@@ -216,6 +219,9 @@
     @media (max-width: 1100px) {
       .run-rail {
         width: min(22rem, calc(100% - 2.75rem));
+      }
+      main.showing-changes:not(.collapsed-runs) .run-detail {
+        padding-right: calc(min(22rem, 100% - 2.75rem) + 0.35rem);
       }
     }
     #task-form {
@@ -1858,28 +1864,124 @@
       font-variant-numeric: tabular-nums;
     }
     .file-changes {
-      list-style: none;
+      display: grid;
+      grid-template-columns: minmax(13rem, 20rem) minmax(0, 1fr);
+      gap: 0.65rem;
       margin: 0.85rem 0 0;
+      height: min(70vh, 42rem);
+      min-height: 16rem;
+    }
+    .file-change-tree,
+    .file-change-tree ul {
+      list-style: none;
+      margin: 0;
       padding: 0;
+    }
+    .file-change-tree {
+      min-height: 0;
+      overflow: auto;
+      padding: 0.3rem 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0c0e0b;
+    }
+    .file-change-tree ul { padding-left: 0.85rem; }
+    .file-change-file,
+    .file-change-dir {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      width: 100%;
+      min-width: 0;
+      background: transparent;
+      color: var(--ink);
+      border: 0;
+      border-radius: 0;
+      padding: 0.28rem 0.6rem;
+      font: 12.5px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+      font-weight: 450;
+      text-align: left;
+      cursor: pointer;
+    }
+    .file-change-dir {
+      color: var(--muted);
+      font-weight: 650;
+    }
+    .file-change-file:hover,
+    .file-change-dir:hover,
+    .file-change-file:focus,
+    .file-change-dir:focus {
+      background: var(--panel-2);
+      color: var(--ink);
+      outline: none;
+    }
+    .file-change-file[aria-selected="true"] {
+      background: color-mix(in srgb, var(--accent) 22%, #0c0e0b);
+      color: var(--ink);
+    }
+    .file-change-caret {
+      flex: 0 0 auto;
+      width: 0.75rem;
+      color: var(--muted);
+    }
+    .file-change-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-change-view {
+      min-width: 0;
+      min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 0.45rem;
-      max-height: min(70vh, 42rem);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0c0e0b;
+    }
+    .file-change-head {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.55rem;
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .file-change-diff {
+      flex: 1 1 auto;
+      min-height: 0;
       overflow: auto;
+      padding: 0.65rem 0.75rem 0.85rem;
+    }
+    .file-change-diff pre.diff {
+      margin: 0;
+      max-height: none;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+      overflow: visible;
     }
     .file-change-path {
+      min-width: 0;
+      overflow-wrap: anywhere;
       font: 12.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
     }
     .file-change-stats {
       color: var(--muted);
       font-size: 0.72rem;
       font-variant-numeric: tabular-nums;
-      margin-left: 0.5rem;
+      margin-left: auto;
+      white-space: nowrap;
     }
+    .file-change-head .file-change-stats { margin-left: 0; }
     .file-change-stats .diff-add,
     .file-change-stats .diff-del { font-weight: 650; }
     .file-open-link {
-      margin-left: 0.6rem;
+      margin-left: auto;
       font-size: 0.72rem;
       color: var(--accent);
       text-decoration: none;
@@ -1889,7 +1991,29 @@
       white-space: nowrap;
     }
     .file-open-link:hover { border-color: var(--accent); }
-    .file-changes .empty { margin: 0.85rem 0 0; }
+    .file-changes .empty,
+    .file-change-diff .empty { margin: 0; }
+    .file-change-tree,
+    .file-change-diff {
+      scrollbar-width: thin;
+      scrollbar-color: #4a5244 #0c0e0b;
+    }
+    .file-change-tree::-webkit-scrollbar,
+    .file-change-diff::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .file-change-tree::-webkit-scrollbar-thumb,
+    .file-change-diff::-webkit-scrollbar-thumb {
+      background: #4a5244;
+      border-radius: 5px;
+    }
+    @media (max-width: 980px) {
+      .file-changes {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(8rem, 12rem) minmax(0, 1fr);
+      }
+    }
     .ui-screenshots {
       list-style: none;
       margin: 0.85rem 0 0;
@@ -2468,7 +2592,7 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, runRailCollapsed: false, openDiffs: new Set(), closedChanges: new Set(), expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, runRailCollapsed: false, openDiffs: new Set(), selectedChange: "", closedChangeDirs: new Set(), changeJump: false, expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("run-list");
     const runDetailEl = document.getElementById("run-detail");
     function activeDetailEl() {
@@ -2954,7 +3078,8 @@
       syncStatusFilters();
       state.pinnedStage = "";
       state.taskPane = "progress";
-      state.closedChanges = new Set();
+      state.selectedChange = "";
+      state.closedChangeDirs = new Set();
       state.expandedRuns = new Set();
       state.historyToken = "";
       state.history = [];
@@ -3794,7 +3919,8 @@
       state.selectedRunKey = pick ? pick.key : "";
       state.pinnedStage = "";
       state.taskPane = "progress";
-      state.closedChanges = new Set();
+      state.selectedChange = "";
+      state.closedChangeDirs = new Set();
     }
 
     function syncStatusFilters() {
@@ -4341,30 +4467,115 @@
       return `${scheme}://file${absolute.startsWith("/") ? "" : "/"}${absolute}:${line || 1}`;
     }
 
+    function diffStatsHtml(stats, prefix) {
+      const lead = prefix ? escapeHtml(prefix) : "";
+      return `<span class="file-change-stats">${lead}<span class="diff-add">+${stats.added}</span> <span class="diff-del">−${stats.removed}</span></span>`;
+    }
+
+    function changePathParts(path) {
+      const parts = String(path || "file").split(/[/\\]/).filter(Boolean);
+      return parts.length ? parts : [String(path || "file")];
+    }
+
+    function buildChangeTree(groups) {
+      const root = { dirs: new Map(), files: [] };
+      for (const group of groups) {
+        const parts = changePathParts(group.path);
+        let node = root;
+        for (let i = 0; i < parts.length - 1; i += 1) {
+          const name = parts[i];
+          let child = node.dirs.get(name);
+          if (!child) {
+            child = { dirs: new Map(), files: [] };
+            node.dirs.set(name, child);
+          }
+          node = child;
+        }
+        node.files.push({ name: parts[parts.length - 1], group });
+      }
+      return root;
+    }
+
+    function changeNodeStats(node) {
+      const totals = { added: 0, removed: 0 };
+      for (const file of node.files) {
+        const stats = diffStats(fileReviewDiff(file.group).diff);
+        totals.added += stats.added;
+        totals.removed += stats.removed;
+      }
+      for (const child of node.dirs.values()) {
+        const stats = changeNodeStats(child);
+        totals.added += stats.added;
+        totals.removed += stats.removed;
+      }
+      return totals;
+    }
+
+    function latestChange(groups) {
+      return groups.reduce((best, group) => {
+        if (!best) return group;
+        const at = (group.latest && group.latest.at) || "";
+        const bestAt = (best.latest && best.latest.at) || "";
+        return at > bestAt ? group : best;
+      }, null);
+    }
+
+    function renderChangeBranch(node, prefix, selectedPath) {
+      const dirs = [...node.dirs.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
+      let html = "";
+      for (const [name, child] of dirs) {
+        let label = name;
+        let current = child;
+        let dirPath = prefix ? `${prefix}/${name}` : name;
+        while (current.files.length === 0 && current.dirs.size === 1) {
+          const [childName, grand] = current.dirs.entries().next().value;
+          label += `/${childName}`;
+          dirPath += `/${childName}`;
+          current = grand;
+        }
+        const open = !state.closedChangeDirs.has(dirPath);
+        const nested = open ? `<ul>${renderChangeBranch(current, dirPath, selectedPath)}</ul>` : "";
+        html += `<li><button type="button" class="file-change-dir" data-change-dir="${escapeHtml(dirPath)}" aria-expanded="${open ? "true" : "false"}"><span class="file-change-caret" aria-hidden="true">${open ? "▾" : "▸"}</span><span class="file-change-name">${escapeHtml(label)}</span>${diffStatsHtml(changeNodeStats(current))}</button>${nested}</li>`;
+      }
+      for (const file of files) {
+        const path = file.group.path;
+        const selected = path === selectedPath ? "true" : "false";
+        const stats = diffStats(fileReviewDiff(file.group).diff);
+        html += `<li><button type="button" class="file-change-file" data-change-path="${escapeHtml(path)}" aria-selected="${selected}" title="${escapeHtml(path)}"><span class="file-change-name">${escapeHtml(file.name)}</span>${diffStatsHtml(stats)}</button></li>`;
+      }
+      return html;
+    }
+
+    function fileChangeViewHtml(group, root) {
+      const review = fileReviewDiff(group);
+      const stats = diffStats(review.diff);
+      const edits = group.edits.length > 1 ? `${group.edits.length} edits · ` : "";
+      const when = group.latest.at
+        ? `<span class="timeline-when">${escapeHtml(formatTimestamp(group.latest.at) || group.latest.at)}</span>`
+        : "";
+      const url = editorFileUrl(root, group.path, firstChangedLine(review.diff));
+      const openLink = url
+        ? `<a class="file-open-link" href="${escapeHtml(url)}" title="Open in ${escapeHtml(EDITOR_SCHEMES[editorScheme()])}">Open</a>`
+        : "";
+      const body = review.diff
+        ? `<pre class="diff">${renderDiff(review.diff)}</pre>`
+        : `<p class="empty">No diff captured.</p>`;
+      return `<header class="file-change-head">${when}<span class="file-change-path">${escapeHtml(review.action)} ${escapeHtml(group.path)}</span>${diffStatsHtml(stats, edits)}${openLink}</header><div class="file-change-diff" id="file-change-diff">${body}</div>`;
+    }
+
     function renderFileChanges(events, root) {
       const groups = groupedFileChanges(events);
       if (!groups.length) {
         return `<p class="empty">No file changes in this task.</p>`;
       }
-      const items = groups.map((group) => {
-        const key = `changes:${group.path}`;
-        const open = state.closedChanges.has(key) ? "" : " open";
-        const review = fileReviewDiff(group);
-        const stats = diffStats(review.diff);
-        const edits = group.edits.length > 1 ? `${group.edits.length} edits · ` : "";
-        const when = group.latest.at
-          ? `<span class="timeline-when">${escapeHtml(formatTimestamp(group.latest.at) || group.latest.at)}</span>`
-          : "";
-        const body = review.diff
-          ? `<pre class="diff">${renderDiff(review.diff)}</pre>`
-          : `<p class="empty">No diff captured.</p>`;
-        const url = editorFileUrl(root, group.path, firstChangedLine(review.diff));
-        const openLink = url
-          ? `<a class="file-open-link" href="${escapeHtml(url)}" title="Open in ${escapeHtml(EDITOR_SCHEMES[editorScheme()])}">Open</a>`
-          : "";
-        return `<li><details class="timeline-item" data-event-key="${escapeHtml(key)}"${open}><summary>${when}<span class="file-change-path">${escapeHtml(review.action)} ${escapeHtml(group.path)}</span><span class="file-change-stats">${escapeHtml(edits)}<span class="diff-add">+${stats.added}</span> <span class="diff-del">−${stats.removed}</span></span>${openLink}</summary>${body}</details></li>`;
-      }).join("");
-      return `<ol class="file-changes" id="file-changes">${items}</ol>`;
+      const treeNode = buildChangeTree(groups);
+      const selected = groups.find((group) => group.path === state.selectedChange)
+        || latestChange(groups)
+        || groups[0];
+      state.selectedChange = selected.path;
+      const tree = renderChangeBranch(treeNode, "", selected.path);
+      return `<div class="file-changes" id="file-changes"><ul class="file-change-tree" aria-label="Changed files">${tree}</ul><div class="file-change-view" id="file-change-view">${fileChangeViewHtml(selected, root)}</div></div>`;
     }
 
     function taskPaneFromTab(name) {
@@ -4679,13 +4890,15 @@
 
     function progressScroller() {
       if (state.taskPane === "changes") {
-        return document.getElementById("file-changes");
+        return document.getElementById("file-change-diff") || document.getElementById("file-changes");
       }
       return document.getElementById("progress-timeline") || activeDetailEl().querySelector("#log");
     }
 
     function captureProgressScroll() {
       const el = progressScroller();
+      const tree = document.querySelector(".file-change-tree");
+      const treeTop = tree ? tree.scrollTop : 0;
       if (!el) {
         return {
           selected: renderedProgressKey.selected,
@@ -4693,6 +4906,7 @@
           top: 0,
           follow: true,
           hadScroller: false,
+          treeTop,
         };
       }
       const maxScroll = el.scrollHeight - el.clientHeight;
@@ -4702,19 +4916,28 @@
         top: el.scrollTop,
         follow: maxScroll <= 0 || el.scrollTop <= FOLLOW_PX,
         hadScroller: true,
+        treeTop,
       };
     }
 
     function restoreProgressScroll(snap, { running = false } = {}) {
       const el = progressScroller();
+      const jump = Boolean(state.changeJump);
+      state.changeJump = false;
       renderedProgressKey = { selected: state.selected, historyKey: state.selectedHistoryKey };
-      if (!el) return;
       const sameItem = snap
         && snap.selected === state.selected
         && snap.historyKey === state.selectedHistoryKey;
+      const tree = document.querySelector(".file-change-tree");
+      if (tree && sameItem) tree.scrollTop = (snap && snap.treeTop) || 0;
+      if (!el) return;
       if (!sameItem) {
         state.pinnedStage = "";
         if (running) el.scrollTop = 0;
+        return;
+      }
+      if (jump && el.id === "file-change-diff") {
+        el.scrollTop = 0;
         return;
       }
       if (state.pinnedStage) {
@@ -4767,6 +4990,7 @@
     }
 
     function render() {
+      mainEl.classList.toggle("showing-changes", state.taskPane === "changes");
       const scroll = captureProgressScroll();
       const page = { x: window.scrollX, y: window.scrollY };
       const runs = workspaceRuns();
@@ -5010,7 +5234,8 @@
       state.selectedRunKey = button.dataset.runKey;
       state.pinnedStage = "";
       state.taskPane = "progress";
-      state.closedChanges = new Set();
+      state.selectedChange = "";
+      state.closedChangeDirs = new Set();
       render();
     });
 
@@ -5020,6 +5245,25 @@
         if (openLink && el.contains(openLink)) {
           event.preventDefault();
           window.location.href = openLink.getAttribute("href");
+          return;
+        }
+        const changeFile = event.target.closest("[data-change-path]");
+        if (changeFile && el.contains(changeFile)) {
+          event.preventDefault();
+          const path = changeFile.dataset.changePath;
+          if (state.selectedChange === path) return;
+          state.selectedChange = path;
+          state.changeJump = true;
+          render();
+          return;
+        }
+        const changeDir = event.target.closest("[data-change-dir]");
+        if (changeDir && el.contains(changeDir)) {
+          event.preventDefault();
+          const dir = changeDir.dataset.changeDir;
+          if (state.closedChangeDirs.has(dir)) state.closedChangeDirs.delete(dir);
+          else state.closedChangeDirs.add(dir);
+          render();
           return;
         }
         const paneTab = event.target.closest("[data-task-pane]");
@@ -5035,15 +5279,25 @@
         event.preventDefault();
         pinTimelineStage(stage.dataset.stage);
       });
+      el.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+        const current = event.target.closest("[data-change-path]");
+        if (!current || !el.contains(current)) return;
+        const files = [...el.querySelectorAll("[data-change-path]")];
+        const index = files.indexOf(current);
+        const next = event.key === "ArrowDown" ? files[index + 1] : files[index - 1];
+        if (!next) return;
+        event.preventDefault();
+        state.selectedChange = next.dataset.changePath;
+        state.changeJump = true;
+        render();
+        const button = [...el.querySelectorAll("[data-change-path]")].find((item) => item.dataset.changePath === state.selectedChange);
+        if (button) button.focus();
+      });
       el.addEventListener("toggle", (event) => {
         const details = event.target;
         if (!(details instanceof HTMLDetailsElement) || !details.dataset.eventKey) return;
         const key = details.dataset.eventKey;
-        if (key.startsWith("changes:")) {
-          if (details.open) state.closedChanges.delete(key);
-          else state.closedChanges.add(key);
-          return;
-        }
         if (details.open) state.openDiffs.add(key);
         else state.openDiffs.delete(key);
       }, true);

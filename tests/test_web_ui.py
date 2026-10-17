@@ -325,7 +325,11 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'event.kind === "pr"' in home.content
         assert b'event.kind === "ui"' in home.content
         assert b"function renderFileChanges(" in home.content
+        assert b"function renderChangeBranch(" in home.content
         assert b"function fileReviewDiff(" in home.content
+        assert b"file-change-tree" in home.content
+        assert b"file-change-view" in home.content
+        assert b"data-change-path" in home.content
         assert b'data-task-pane="changes"' in home.content
         assert b'data-task-pane="screenshots"' in home.content
         assert b'<link rel="stylesheet" href="/static/themes.css">' in home.content
@@ -1401,6 +1405,8 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
         assert b"Thinking" in home.content
         assert b"timeline-item think" in home.content
         assert b"function renderFileChanges(" in home.content
+        assert b"file-change-tree" in home.content
+        assert b'data-change-path' in home.content
         assert b'data-task-pane="changes"' in home.content
         assert b'data-task-pane="screenshots"' in home.content
         assert b"No file changes in this task." in home.content
