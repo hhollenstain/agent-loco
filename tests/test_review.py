@@ -3,13 +3,42 @@ from __future__ import annotations
 from agent_loco.llm.client import AssistantTurn, ScriptedClient
 from agent_loco.progress import bind_progress, current_events, reset_progress
 from agent_loco.runtime.review import (
+    error_search_needle,
     guard_only_fix,
     half_baked_diff_markers,
     is_open_pr_goal,
+    missing_added_resources,
     parse_review,
     review_goal,
     review_reason,
+    search_uses_error,
 )
+
+
+def test_error_search_uses_the_resource_path_and_line() -> None:
+    log = (
+        "ERROR: Parse Error: Parse error. [Resource file res://main.tscn:17]\n"
+        "   at: _parse_node_tag (scene/resources/resource_format_text.cpp:293)\n"
+        "ERROR: Failed loading scene: res://main.tscn.\n"
+    )
+    assert error_search_needle(log) == "res://main.tscn:17"
+    assert search_uses_error("godot scene not rendering", log) is False
+    assert search_uses_error('Godot "res://main.tscn:17" parse error', log) is True
+    node = 'ERROR: Node not found: "Player" at scripts/main_game.gd:60'
+    assert error_search_needle(node).startswith('Node not found: "Player"')
+
+
+def test_missing_added_resources_flags_a_path_that_is_not_in_the_repo(tmp_path) -> None:
+    diff = (
+        "diff --git a/project.godot b/project.godot\n"
+        "+++ b/project.godot\n"
+        '+run/main_scene="res://scenes/does_not_exist.tscn"\n'
+    )
+    assert missing_added_resources(diff, tmp_path) == ["scenes/does_not_exist.tscn"]
+    (tmp_path / "scenes").mkdir()
+    (tmp_path / "scenes" / "menu.tscn").write_text("[gd_scene]\n", encoding="utf-8")
+    present = diff.replace("does_not_exist.tscn", "menu.tscn")
+    assert missing_added_resources(present, tmp_path) == []
 
 
 def test_guard_only_fix_rejects_a_logged_null_check() -> None:

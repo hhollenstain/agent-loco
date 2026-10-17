@@ -12,6 +12,7 @@ from agent_loco.llm.client import AssistantTurn, LLMClient, ToolCall
 from agent_loco.llm.toolparse import parse_tool_calls
 from agent_loco.progress import record_event, timed_complete
 from agent_loco.runtime.palace import Palace, fit_prompt, memory_preface
+from agent_loco.runtime.review import error_search_needle, search_uses_error
 from agent_loco.tools import ToolSpec, execute_tool
 
 log = logging.getLogger("loco")
@@ -84,7 +85,14 @@ RESEARCH_NUDGE = (
     "The stated failure is still unfixed. Call web_search for the error and "
     "this framework, then fetch_url an official page. Edit the scene, template, "
     "or resource that should contain the missing object. Do not add another "
-    "null check, print, or log in the crashing file."
+    "null check, print, or log in the crashing file. Do not invent a file "
+    "the repo and the docs do not have."
+)
+DOCS_NUDGE = (
+    "Write how to run, build, and test this project into AGENTS.md, using the "
+    "commands from the official page you fetched. Name the real entry scene "
+    "or program and the test command. If that section already matches the "
+    "docs, correct it instead of adding a second copy. Then apply the code fix."
 )
 VALIDATE_OPS_NUDGE = (
     "You changed Docker, compose, or docs but have not called run_tests since "
@@ -235,6 +243,7 @@ class CodingAgent:
         require_tests: bool = False,
         require_lookup: bool = False,
         require_research: bool = False,
+        require_docs: bool = False,
     ) -> AgentResult:
         context = memory_preface(self.palace, goal, context)
         messages: list[dict] = [
@@ -258,6 +267,8 @@ class CodingAgent:
         looked_up = False
         fetched_docs = False
         configured_validation = False
+        wrote_agents = False
+        docs_nudges = 0
 
         last_text = ""
         last_error: str | None = None
@@ -289,7 +300,15 @@ class CodingAgent:
                     result = execute_tool(self.tools, call.name, call.arguments)
                     log.info("tool %s ok=%s", call.name, result.ok)
                     if call.name == "web_search":
-                        looked_up = True
+                        query = str((call.arguments or {}).get("query") or "")
+                        if search_uses_error(query, goal):
+                            looked_up = True
+                        else:
+                            needle = error_search_needle(goal)
+                            record_event(
+                                kind="step",
+                                message=f"Search omitted the error {needle}; use that text.",
+                            )
                     elif call.name == "fetch_url":
                         fetched_docs = True
                     log.debug("%s args=%s", call.name, call.arguments)
@@ -355,6 +374,8 @@ class CodingAgent:
                             wrote = True
                             verified_tests = False
                             tool_path = _tool_path(call.arguments)
+                            if tool_path.replace("\\", "/").endswith("AGENTS.md"):
+                                wrote_agents = True
                             if _writes_project_config(tool_path):
                                 configured_validation = True
                             if _is_ui_path(tool_path):
@@ -423,7 +444,18 @@ class CodingAgent:
                     message="Agent skipped research for the stated failure; continuing.",
                 )
                 messages.append({"role": "assistant", "content": turn.text or ""})
-                messages.append({"role": "user", "content": _nudge(RESEARCH_NUDGE, goal)})
+                messages.append({"role": "user", "content": _nudge(research_nudge(goal), goal)})
+                continue
+
+            if require_docs and not wrote_agents and docs_nudges < 1:
+                docs_nudges += 1
+                log.info("nudging agent to record how to run this project")
+                record_event(
+                    kind="step",
+                    message="Writing how to run and build this project into AGENTS.md.",
+                )
+                messages.append({"role": "assistant", "content": turn.text or ""})
+                messages.append({"role": "user", "content": _nudge(DOCS_NUDGE, goal)})
                 continue
 
             if (
@@ -497,6 +529,16 @@ class CodingAgent:
             stopped_reason="max_iterations",
             last_error=last_error,
         )
+
+
+def research_nudge(goal: str) -> str:
+    needle = error_search_needle(goal)
+    if not needle:
+        return RESEARCH_NUDGE
+    return (
+        f"{RESEARCH_NUDGE} The web_search query must include this exact error "
+        f'text: "{needle}". A paraphrase or a general topic does not count.'
+    )
 
 
 def _nudge(template: str, goal: str) -> str:

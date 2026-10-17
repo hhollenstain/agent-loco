@@ -176,6 +176,25 @@ def test_cycle_stops_when_the_same_miss_comes_back(tmp_path: Path, settings: Set
             AssistantTurn(text="The task is complete."),
             AssistantTurn(text="Noted."),
             AssistantTurn(text="Noted again."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="agents",
+                        name="write_file",
+                        arguments={
+                            "path": "AGENTS.md",
+                            "content": "# How to run\n\ngodot --path .\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Documented how to run."),
+            AssistantTurn(
+                text=None,
+                tool_calls=[ToolCall(id="tests", name="run_tests", arguments={})],
+            ),
+            AssistantTurn(text="Tests still pass."),
             AssistantTurn(text='{"met": false, "reason": "' + miss + ' again"}'),
         ]
     )

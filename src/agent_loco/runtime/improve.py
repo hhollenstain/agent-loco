@@ -28,12 +28,14 @@ from agent_loco.runtime.project import (
 from agent_loco.runtime.related import format_goal_files
 from agent_loco.runtime.review import (
     GoalReview,
+    error_search_needle,
     failure_excerpt,
     guard_only_fix,
     half_baked_diff_markers,
     incomplete_agent_run,
     invalid_doc_commands,
     is_open_pr_goal,
+    missing_added_resources,
     review_goal,
     review_reason,
     unused_new_symbols,
@@ -1128,6 +1130,16 @@ def _review_goal(
         )
         record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
         return overridden
+    missing = missing_added_resources(diff, workspace.root)
+    if verdict.met and missing and not existing:
+        overridden = GoalReview(
+            False,
+            f"diff references a file that is not in the repo: res://{missing[0]}",
+            parsed=True,
+            ui_errors=ui_errors,
+        )
+        record_event(kind="review", attempt=1, met=False, parsed=True, reason=overridden.reason)
+        return overridden
     invented = invalid_doc_commands(diff)
     if verdict.met and invented and not existing:
         overridden = GoalReview(
@@ -1269,6 +1281,7 @@ def _ensure_goal_met(
             require_change=True,
             require_lookup=lookup,
             require_research=research,
+            require_docs=research,
         )
         if follow.summary:
             summary = follow.summary
@@ -1438,24 +1451,36 @@ def _brief(plan: GoalPlan | None, named_files: str, context: str) -> str:
     return "\n\n".join(part for part in (format_plan(plan), named_files, context) if part)
 
 
+_RESEARCH_MARKS = (
+    "previous attempt did not fix",
+    "error handling",
+    "logging",
+    "null check",
+    "does not actually fix",
+    "without actually fixing",
+    "only hides the failure",
+    "only guards the crash",
+    "not found",
+    "engine error",
+    "draws nothing",
+    "scene hierarchy",
+    "not rendering",
+    "blank screen",
+    "not playable",
+)
+
+
+def _needs_research_text(text: str | None) -> bool:
+    body = (text or "").lower()
+    return any(mark in body for mark in _RESEARCH_MARKS)
+
+
 def _goal_needs_research(goal: str | None) -> bool:
-    return "previous attempt did not fix" in (goal or "").lower()
+    return _needs_research_text(goal)
 
 
 def _needs_cause_research(reason: str) -> bool:
-    text = (reason or "").lower()
-    return any(
-        phrase in text
-        for phrase in (
-            "error handling",
-            "logging",
-            "null check",
-            "does not actually fix",
-            "without actually fixing",
-            "only hides the failure",
-            "only guards the crash",
-        )
-    )
+    return _needs_research_text(reason)
 
 
 def _needs_validation_lookup(reason: str, project: ProjectConfig) -> bool:
@@ -1487,13 +1512,21 @@ def _goal_retry_prompt(
     if research:
         excerpt = failure_excerpt(goal)
         failure = f"Failure:\n{excerpt}\n\n" if excerpt else ""
+        needle = error_search_needle(goal)
+        exact = (
+            f' The web_search query must include "{needle}" exactly. Do not search a paraphrase.\n'
+            if needle
+            else ""
+        )
         stall += (
-            "The last edit did not fix the stated failure. A null check, print, "
-            "or log is not the fix. Call web_search for this error and framework, "
-            "then fetch_url an official page. Change the scene, template, or "
-            "resource that should contain the missing object, or the path that "
-            "points at it. Do not add another guard in the crashing file.\n"
-            f"{failure}"
+            "The last edit did not fix the stated failure. Stop repeating it. "
+            "Call web_search for this exact error, then fetch_url an "
+            "official page. Change the scene, template, or resource the docs "
+            "say owns the missing object. Do not add another null check, print, "
+            "or log, and do not invent a file this repo does not have. Write "
+            "how to run, build, and test the project into AGENTS.md from those "
+            "docs when that section is missing or wrong.\n"
+            f"{exact}{failure}"
         )
     if lookup:
         stall += (

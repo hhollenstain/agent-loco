@@ -127,6 +127,30 @@ def test_cycle_rejects_a_null_check_that_hides_the_stated_error(
                 "    if player == null:\n"
                 "        print('missing')\n",
             ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="search",
+                        name="web_search",
+                        arguments={
+                            "query": (
+                                'Godot ERROR: Node not found: "Player" at scripts/main_game.gd:60'
+                            )
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="fetch",
+                        name="fetch_url",
+                        arguments={"url": "https://docs.godotengine.org/en/stable/"},
+                    )
+                ],
+            ),
             AssistantTurn(text="Guarded the missing player."),
             _review_turn(True, "the blank screen is fixed"),
         ]

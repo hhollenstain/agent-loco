@@ -27,7 +27,9 @@ Do not search for code that is already in the workspace. Read the repo first.
 
 ## How to look it up
 
-1. Call `web_search` with the language, library, and version when you know them.
+1. Call `web_search` with the error line itself: the `ERROR:` text, the
+   `res://` path, and the line number. Include an error code when the
+   message has one. Do not replace that text with a general topic.
 2. Prefer official sources in the results: project docs, MDN, language
    references, RFCs, and the library author's site. Skip random SEO blogs
    when an official page is present.
@@ -41,6 +43,9 @@ Do not search for code that is already in the workspace. Read the repo first.
   `configure_project` with those commands. `preview_command` must listen on
   `{port}`. Do not leave loco validating a Godot, native, or other non-web
   app with a command you invented.
-- Do not paste long documentation into the repo. Cite the URL in a comment
-  only when the call is non-obvious.
+- Write how to run, build, and test this project into `AGENTS.md` from the
+  page you fetched. Name the real entry point and the commands. If that
+  section is already there, correct it. Do not paste a long API guide.
+- If the same failure comes back, look it up again before another edit of
+  the same file. Do not repeat a guess the docs do not support.
 - If search and fetch fail, say so and stop guessing at an invented API.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from agent_loco.llm.client import LLMClient
 from agent_loco.progress import record_event, timed_complete
@@ -123,6 +124,58 @@ _GUARD_ADDED = re.compile(
     r"==\s*null|!=\s*null|\bis\s+None\b|\bis\s+not\s+None\b)"
 )
 _STRUCTURAL_SUFFIXES = {".tscn", ".tres", ".scn", ".html", ".css", ".vue", ".svelte"}
+
+
+_ERROR_LINE = re.compile(r"(?i)^(error:|script error:|failed loading\b)")
+_RES_IN_ERROR = re.compile(r"res://[^\s\]]+")
+
+
+def error_search_needle(text: str | None) -> str:
+    """The resource path or error line a lookup must quote, not a paraphrase."""
+    lines: list[str] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line and _ERROR_LINE.search(line):
+            lines.append(line[:240])
+    if not lines:
+        return ""
+
+    def rank(line: str) -> tuple[int, int, int]:
+        return (
+            1 if _RES_IN_ERROR.search(line) else 0,
+            1 if "parse error" in line.lower() else 0,
+            len(line),
+        )
+
+    best = max(lines, key=rank)
+    found = _RES_IN_ERROR.search(best)
+    if found:
+        return found.group(0).rstrip(".,)")
+    return re.sub(r"(?i)^error:\s*", "", best).strip()[:100]
+
+
+def search_uses_error(query: str | None, text: str | None) -> bool:
+    needle = error_search_needle(text)
+    if not needle:
+        return True
+    return needle.lower() in (query or "").lower()
+
+
+_ADDED_RESOURCE = re.compile(r"res://([\w./-]+\.\w+)")
+
+
+def missing_added_resources(diff: str | None, root: Path) -> list[str]:
+    """res:// paths added by the diff that are not files in the workspace."""
+    missing: list[str] = []
+    for line in (diff or "").splitlines():
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        for rel in _ADDED_RESOURCE.findall(line):
+            if rel in missing:
+                continue
+            if not (Path(root) / rel).is_file():
+                missing.append(rel)
+    return missing
 
 
 def failure_excerpt(goal: str | None, *, limit: int = 4) -> str:
