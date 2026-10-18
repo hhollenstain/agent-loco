@@ -377,12 +377,16 @@ def start_preview(
         return _start_godot_preview(workspace, host_port, chosen, frames=frames)
     present, written = configured_value(workspace.root, "preview_command")
     command = written if present else getattr(project, "preview_command", None)
+    # A static file server of this repo is a directory listing, not the app.
+    # Jinja templates render as `{{ ws.name }}` and /static 404s. Review the
+    # running UI instead, even if preview_command was set to http.server.
+    loco_screen = _is_loco_project(workspace.root) and (
+        not path or _is_loco_template_path(workspace, path)
+    )
+    if loco_screen and (not command or _is_static_file_preview(str(command))):
+        return _start_loco_preview(workspace, host_port)
     if command:
         return _start_command_preview(workspace, str(command), host_port)
-    # Never serve agent-loco Jinja templates as static HTML. That captures
-    # `{{ ws.name }}` and 404s /static CSS instead of the running app.
-    if _is_loco_project(workspace.root) and (not path or _is_loco_template_path(workspace, path)):
-        return _start_loco_preview(workspace, host_port)
     if path:
         html_path = workspace.resolve(path)
         if html_path.is_file():
@@ -812,6 +816,16 @@ def _from_eval(
         ok=True,
     )
     evidence.ok = not evidence.blocking_errors and not smashed and not dead
+    if _is_directory_listing(evidence.title, text):
+        evidence.ok = False
+        evidence.title = ""
+        evidence.snapshot = ""
+        evidence.dead_controls = []
+        evidence.smashed = []
+        evidence.notes = (
+            "Preview served a directory listing, not the application. "
+            "This capture is not evidence the goal is unmet. Judge the diff."
+        )
     return evidence
 
 
@@ -1256,6 +1270,23 @@ def _start_godot_preview(
     return preview
 
 
+_STATIC_FILE_PREVIEW = re.compile(r"(?i)(?:^|[;&|]\s*)(?:python3?|py)\s+-m\s+http\.server\b")
+
+
+def _is_static_file_preview(command: str) -> bool:
+    """True when the command only serves files, not the running application."""
+    return bool(_STATIC_FILE_PREVIEW.search(command or ""))
+
+
+def _is_directory_listing(title: str, text: str) -> bool:
+    """Python's http.server index, which is not the application under review."""
+    heading = (title or "").strip().lower()
+    if heading.startswith("directory listing"):
+        return True
+    body = (text or "").lstrip().lower()
+    return body.startswith("directory listing for")
+
+
 def _is_loco_project(root: Path) -> bool:
     return (root / "src" / "agent_loco" / "web_ui.py").is_file() or (
         root / "src" / "agent_loco" / "templates" / "index.html"
@@ -1375,15 +1406,31 @@ def _goal_clicks(root: Path, goal: str) -> list[str]:
         clicks.append("#open-skills")
     if re.search(r"\bsettings?\b", goal, re.I) and not moved_out_of_settings:
         clicks.append("#open-settings")
+    if re.search(
+        r"file\s*manager|filemanager|file[- ]type|file icon|changes tab",
+        goal,
+        re.I,
+    ):
+        clicks.append('[data-task-pane="changes"]')
     return clicks
 
 
 def _review_clicks(root: Path, click: str | None, goal: str = "") -> list[str]:
     clicks: list[str] = []
-    for item in [*_default_clicks(root), click or "", *_goal_clicks(root, goal)]:
+    goal_clicks = _goal_clicks(root, goal)
+    for item in [*_default_clicks(root), click or "", *goal_clicks]:
         text = str(item or "").strip()
         if text and text not in clicks:
             clicks.append(text)
+    # The last click is what the screenshot shows. Repeat a goal pane so the
+    # capture stays on the screen the goal is about.
+    for item in goal_clicks:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        if text in clicks:
+            clicks.remove(text)
+        clicks.append(text)
     return clicks
 
 

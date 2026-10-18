@@ -57,6 +57,28 @@ def test_format_ui_evidence_lists_errors_and_tiny_controls() -> None:
     assert "static dump-dom" in text
 
 
+def test_directory_listing_is_not_treated_as_the_application() -> None:
+    evidence = _from_eval(
+        "http://127.0.0.1:9/",
+        {
+            "title": "Directory listing for /",
+            "text": "Directory listing for /\nindex.html\nsrc/",
+            "errors": [],
+            "elements": [{"tag": "a", "name": "src/", "w": 40, "h": 16}],
+        },
+        page_errors=[],
+        console_errors=[],
+        screenshot=None,
+    )
+    assert evidence.ok is False
+    assert evidence.title == ""
+    assert evidence.snapshot == ""
+    assert "not evidence the goal is unmet" in evidence.notes
+    text = format_ui_evidence(evidence)
+    assert "Directory listing for /" not in text
+    assert "not evidence the goal is unmet" in text
+
+
 def test_from_eval_marks_js_errors_and_zero_size_controls() -> None:
     evidence = _from_eval(
         "http://127.0.0.1:9/",
@@ -459,6 +481,8 @@ def test_agent_prompt_requires_review_ui_after_ui_edits() -> None:
     assert "0x0 or display:none" in REVIEW_SYSTEM
     assert "in a real implementation" in REVIEW_SYSTEM
     assert "owner/repo" in REVIEW_SYSTEM
+    assert "directory listing" in REVIEW_SYSTEM
+    assert "plan can name the wrong file" in REVIEW_SYSTEM
 
 
 def test_resolve_ui_screenshot_serves_unique_and_legacy_pngs(tmp_path: Path) -> None:
@@ -611,6 +635,20 @@ def test_loco_review_clicks_open_goal_panels_last(tmp_path: Path) -> None:
 
     rule_clicks = _review_clicks(tmp_path, None, "Move rules into the left pane")
     assert rule_clicks[-1] == "#open-guidelines"
+
+
+def test_file_manager_goal_leaves_the_changes_pane_open(tmp_path: Path) -> None:
+    from agent_loco.runtime.uireview import _review_clicks
+
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").parent.mkdir(parents=True)
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    clicks = _review_clicks(
+        tmp_path,
+        None,
+        "In the filemanager for changes there should be file type icons",
+    )
+    assert clicks[-1] == '[data-task-pane="changes"]'
+    assert clicks.index('[data-task-pane="progress"]') < clicks.index('[data-task-pane="changes"]')
 
 
 def test_unverified_interactive_ui_requires_skills_click() -> None:
@@ -880,6 +918,43 @@ def test_loco_template_paths_use_the_running_app(tmp_path: Path, monkeypatch) ->
         path="src/agent_loco/templates/index.html",
         port=9,
     )
+    assert calls == ["loco:9"]
+    assert preview is not None
+    assert preview.url == "http://127.0.0.1:9/"
+
+
+def test_loco_preview_ignores_a_static_file_server(tmp_path: Path, monkeypatch) -> None:
+    from agent_loco.runtime.project import load_project, save_project_commands
+    from agent_loco.runtime.uireview import start_preview
+
+    (tmp_path / "src" / "agent_loco").mkdir(parents=True)
+    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text("name: loco\n", encoding="utf-8")
+    save_project_commands(tmp_path, preview_command="python3 -m http.server {port}")
+    calls: list[str] = []
+
+    def fake_loco(ws, port):
+        del ws
+        calls.append(f"loco:{port}")
+
+        class Preview:
+            url = f"http://127.0.0.1:{port}/"
+
+            def close(self) -> None:
+                return None
+
+        return Preview()
+
+    def fake_command(workspace, command, port):
+        del workspace, port
+        calls.append(f"command:{command}")
+        return None
+
+    monkeypatch.setattr("agent_loco.runtime.uireview._start_loco_preview", fake_loco)
+    monkeypatch.setattr("agent_loco.runtime.uireview._start_command_preview", fake_command)
+    preview = start_preview(Workspace(tmp_path), load_project(tmp_path), port=9)
     assert calls == ["loco:9"]
     assert preview is not None
     assert preview.url == "http://127.0.0.1:9/"

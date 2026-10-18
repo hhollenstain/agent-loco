@@ -32,6 +32,12 @@ Rules:
   was clicked and its panel is visible.
 - If capture could not click (static dump-dom) and the goal adds tabs, screenshots,
   or other interactive controls, the goal is unmet.
+- A preview that is a directory listing, a raw file index, or that failed to
+  start is not the application. It is not evidence the goal is unmet. Judge
+  the diff of the files the application serves.
+- The plan can name the wrong file. The goal is met when the requested
+  behavior is in a file the application actually uses, even if a planned
+  path was never created.
 - A summary that claims the work is done does not count unless the diff shows it.
 - If the goal is a GitHub issue, the body and comments are the spec. Matching
   only the title is unmet. The requested behavior must be in the diff.
@@ -697,7 +703,15 @@ def review_goal(
         if upstream:
             user_parts.extend(["", "Upstream:", upstream])
     if plan and plan.strip():
-        user_parts.extend(["", "The goal is met only when every step's check holds.", plan.strip()])
+        user_parts.extend(
+            [
+                "",
+                "The goal is met only when every step's check holds. "
+                "A step that names a file the application does not serve does not "
+                "reject the goal when the same behavior is in the file the app uses.",
+                plan.strip(),
+            ]
+        )
     user_parts.extend(["", evidence_label, diff.strip() or "(no diff)"])
     if ui_evidence and ui_evidence.strip():
         user_parts.extend(["", ui_evidence.strip()])

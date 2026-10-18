@@ -1406,7 +1406,7 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
         assert b"timeline-item think" in home.content
         assert b"function renderFileChanges(" in home.content
         assert b"file-change-tree" in home.content
-        assert b'data-change-path' in home.content
+        assert b"data-change-path" in home.content
         assert b'data-task-pane="changes"' in home.content
         assert b'data-task-pane="screenshots"' in home.content
         assert b"No file changes in this task." in home.content
@@ -1697,6 +1697,29 @@ def test_web_ui_refuses_update_when_pull_request_is_not_open(
             },
         )
         assert queued.status_code == 409
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_file_manager_displays_icons(settings: Settings, tmp_path: Path) -> None:
+    """The changes tree ships SVG file-type icons, including a document for unknown types."""
+
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert home.status_code == 200
+        assert b'class="file-icon"' in home.content
+        assert b'class="file-type-icon"' in home.content
+        assert b"function getFileIconForExtension" in home.content
+        assert b"#f7df1e" in home.content
+        assert b"#3178c6" in home.content
+        assert b"#3776ab" in home.content
+        assert b"#e34c26" in home.content
+        assert b'stroke="currentColor"' in home.content
+        assert b"-terminal" not in home.content
+        assert b"Haskell icon" not in home.content
     finally:
         manager.shutdown(wait=False)
 

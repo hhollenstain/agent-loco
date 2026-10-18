@@ -1924,6 +1924,17 @@
       width: 0.75rem;
       color: var(--muted);
     }
+    .file-icon {
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+    }
+    .file-type-icon {
+      width: 16px;
+      height: 16px;
+      display: block;
+    }
     .file-change-name {
       flex: 1 1 auto;
       min-width: 0;
@@ -4520,6 +4531,295 @@
       }, null);
     }
 
+    function fileTypeSvg(markup) {
+      return `<svg class="file-type-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">${markup}</svg>`;
+    }
+
+    function fileBadge(label, fill, ink) {
+      const wide = label.length >= 3;
+      const size = wide ? 5.1 : 7;
+      const y = wide ? 10.6 : 11.45;
+      return fileTypeSvg(
+        `<rect x="0.7" y="0.7" width="14.6" height="14.6" rx="2.4" fill="${fill}"/>` +
+        `<text x="8" y="${y}" text-anchor="middle" font-size="${size}" font-family="ui-sans-serif, system-ui, sans-serif" font-weight="700" fill="${ink}">${label}</text>`
+      );
+    }
+
+    function fileShield(dark, light) {
+      return fileTypeSvg(
+        `<path fill="${dark}" d="M2.2 1.2 3.1 13.1 8 14.7 12.9 13.1 13.8 1.2z"/>` +
+        `<path fill="${light}" d="M8 2.3v11.2l3.9-1.3.7-9.9z"/>` +
+        `<path fill="#fff" fill-opacity=".9" d="M8 5.7H5.5l.2 1.5H8V8.6H6.1l.3 2.4L8 11.6V5.7z"/>` +
+        `<path fill="#fff" d="M8 5.7v1.5h2.3l-.2 1.4H8v1.5l1.6-.5.2-2.4.2-1.5z"/>`
+      );
+    }
+
+    const FILE_ICON_DEFAULT = fileTypeSvg(
+      `<path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M3.2 1.5h6L12.8 5v9.5H3.2z"/>` +
+      `<path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M9.1 1.7V5h3.5"/>`
+    );
+
+    const FILE_ICON_PICTOGRAMS = {
+      py: fileTypeSvg(
+        `<path fill="#ffd343" d="M7.9 1.1c-1.8 0-1.7.8-1.7.8v1.2h3.4v.5H4.6S2.6 3.4 2.6 6.2v1.9c0 1.1.6 1.6 1.5 1.6h1V8s-.1-1.5 1.5-1.5h2.7s1.4 0 1.4-1.4V2.5s.1-1.4-1.8-1.4zM6.6 2.2c.3 0 .55.22.55.5s-.25.5-.55.5-.55-.22-.55-.5.25-.5.55-.5z"/>` +
+        `<path fill="#3776ab" d="M8.1 14.9c1.8 0 1.7-.8 1.7-.8v-1.2H6.4v-.5h4.9s2 .2 2-2.6V8c0-1.1-.6-1.6-1.5-1.6h-1V8s.1 1.5-1.5 1.5H6.6s-1.4 0-1.4 1.4v2.6s-.1 1.4 1.8 1.4h1.1zm1.3-.9c-.3 0-.55-.22-.55-.5s.25-.5.55-.5.55.22.55.5-.25.5-.55.5z"/>`
+      ),
+      java: fileTypeSvg(
+        `<path fill="#5382a1" d="M4.2 4.2h5.4v5.6a2.7 2.7 0 0 1-5.4 0V4.2z"/>` +
+        `<path fill="none" stroke="#5382a1" stroke-width="1.15" d="M9.6 5.4h1.5a1.8 1.8 0 0 1 0 3.6H9.6"/>` +
+        `<path fill="none" stroke="#f89820" stroke-width="1.05" stroke-linecap="round" d="M5.4 1.4c.4.7.2 1.3-.1 1.8M7.2 1.2c.4.7.2 1.3-.1 1.8M8.8 1.6c.3.6.1 1.1-.1 1.5"/>`
+      ),
+      html: fileShield("#e34c26", "#f16529"),
+      css: fileShield("#264de4", "#2965f1"),
+      scss: fileShield("#bf4080", "#cd6799"),
+      json: fileTypeSvg(
+        `<path fill="none" stroke="#f7df1e" stroke-width="1.45" stroke-linecap="round" d="M6.3 2.8c-1.5.1-2 .9-2 2.1v1.2c0 .8-.5 1.3-1.3 1.5.8.2 1.3.7 1.3 1.5v1.2c0 1.2.5 2 2 2"/>` +
+        `<path fill="none" stroke="#f7df1e" stroke-width="1.45" stroke-linecap="round" d="M9.7 2.8c1.5.1 2 .9 2 2.1v1.2c0 .8.5 1.3 1.3 1.5-.8.2-1.3.7-1.3 1.5v1.2c0 1.2-.5 2-2 2"/>`
+      ),
+      md: fileTypeSvg(
+        `<rect x="1.1" y="2.8" width="13.8" height="10.4" rx="1.4" fill="#083fa1"/>` +
+        `<path fill="#fff" d="M3 11.2V4.8h1.8l1.7 2.7 1.7-2.7H10v6.4H8.4V7.2L6.7 9.6h-.2L4.8 7.2v4z"/>`
+      ),
+      image: fileTypeSvg(
+        `<rect x="1.2" y="2.3" width="13.6" height="11.4" rx="1.5" fill="#1d4ed8"/>` +
+        `<circle cx="5" cy="5.8" r="1.35" fill="#fde68a"/>` +
+        `<path fill="#86efac" d="M1.5 12.4 5.8 8.2l2.5 2.3 2.6-3.2 3.4 5.1z"/>`
+      ),
+      svg: fileTypeSvg(
+        `<rect x="0.7" y="0.7" width="14.6" height="14.6" rx="2.4" fill="#ffb13b"/>` +
+        `<path fill="none" stroke="#1a1a12" stroke-width="1.3" stroke-linecap="round" d="M3.3 11.2c2.4-6 3.2-6.2 4.8-2.2 1.3 3.2 2.1 3.4 4.6-2.6"/>` +
+        `<circle cx="3.3" cy="11.2" r=".95" fill="#1a1a12"/>` +
+        `<circle cx="12.7" cy="6.4" r=".95" fill="#1a1a12"/>`
+      ),
+      audio: fileTypeSvg(
+        `<path fill="#a78bfa" d="M6.4 2.2v7.2a2.25 2.25 0 1 1-1.25-2.02V4.15l6.1-1.45v5.7a2.25 2.25 0 1 1-1.25-2.02V2.35z"/>`
+      ),
+      video: fileTypeSvg(
+        `<rect x="1.2" y="3.1" width="13.6" height="9.8" rx="1.5" fill="#ef4444"/>` +
+        `<path fill="#fff" d="M6.5 5.5v5l4.2-2.5z"/>`
+      ),
+      archive: fileTypeSvg(
+        `<path fill="#d97706" d="M1.8 3.1h12.4l-.8 2.1H2.6z"/>` +
+        `<path fill="#b45309" d="M2.7 5.5h10.6V13H2.7z"/>` +
+        `<path fill="#fde68a" d="M6.5 7.2h3v1.5h-3z"/>`
+      ),
+      pdf: fileTypeSvg(
+        `<path fill="#dc2626" d="M2.6 1.2h6.6L13.4 5.4V14.8H2.6z"/>` +
+        `<path fill="#fecaca" d="M9.2 1.2V5.4h4.2z"/>` +
+        `<path fill="#fff" d="M4.3 8.4h6.4v1.15H4.3zm0 2.15h6.4V11.7H4.3z"/>`
+      ),
+      lock: fileTypeSvg(
+        `<rect x="3" y="7" width="10" height="7.1" rx="1.2" fill="#9ca3af"/>` +
+        `<path fill="none" stroke="#9ca3af" stroke-width="1.5" d="M5.2 7.2V5.3a2.8 2.8 0 0 1 5.6 0v1.9"/>` +
+        `<rect x="7.15" y="9.3" width="1.7" height="2.5" rx=".3" fill="#11140f"/>`
+      ),
+      shell: fileTypeSvg(
+        `<rect x="1.2" y="2.3" width="13.6" height="11.4" rx="1.5" fill="#14532d"/>` +
+        `<path fill="none" stroke="#bbf7d0" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" d="M3.5 6.6 5.7 8.3 3.5 10M7.5 10.2h3.8"/>`
+      ),
+      config: fileTypeSvg(
+        `<path stroke="#94a3b8" stroke-width="1.35" stroke-linecap="round" d="M2 4.2h12M2 8h12M2 11.8h12"/>` +
+        `<circle cx="5.2" cy="4.2" r="1.45" fill="#e2e8f0"/>` +
+        `<circle cx="10.6" cy="8" r="1.45" fill="#e2e8f0"/>` +
+        `<circle cx="6.4" cy="11.8" r="1.45" fill="#e2e8f0"/>`
+      ),
+      database: fileTypeSvg(
+        `<path fill="#d97706" d="M2.8 3.6v8.8c0 1.15 2.3 2 5.2 2s5.2-.85 5.2-2V3.6c0 1.15-2.3 2-5.2 2s-5.2-.85-5.2-2z"/>` +
+        `<ellipse cx="8" cy="3.6" rx="5.2" ry="2" fill="#f59e0b"/>` +
+        `<path fill="none" stroke="#fde68a" stroke-width=".7" d="M2.8 7.2c0 1.15 2.3 2 5.2 2s5.2-.85 5.2-2"/>`
+      ),
+      font: fileTypeSvg(
+        `<path fill="#38bdf8" d="M8 1.8 13.4 14h-2.2L10 11H6L4.8 14H2.6z"/>` +
+        `<path fill="#0c0e0b" d="M6.5 9.3h3L8 5.4z"/>`
+      ),
+      git: fileTypeSvg(
+        `<path fill="none" stroke="#f05033" stroke-width="1.35" stroke-linecap="round" d="M4.8 4.6v4.2c0 1.5 1.2 2.2 3.2 2.2h2.2"/>` +
+        `<circle cx="4.8" cy="3.2" r="1.45" fill="#f05033"/>` +
+        `<circle cx="4.8" cy="12.6" r="1.45" fill="#f05033"/>` +
+        `<circle cx="11.2" cy="11" r="1.45" fill="#f05033"/>`
+      ),
+      docker: fileTypeSvg(
+        `<rect x="1.6" y="6.2" width="2.7" height="2.15" rx=".25" fill="#2496ed"/>` +
+        `<rect x="4.7" y="6.2" width="2.7" height="2.15" rx=".25" fill="#2496ed"/>` +
+        `<rect x="7.8" y="6.2" width="2.7" height="2.15" rx=".25" fill="#2496ed"/>` +
+        `<rect x="4.7" y="3.6" width="2.7" height="2.15" rx=".25" fill="#2496ed"/>` +
+        `<path fill="#2496ed" d="M1.4 9.1h11.8c.4 1.7-.4 3.3-2.3 3.7-1.3.3-2.6 0-3.5-.6-1 .7-2.4.9-3.6.4-2.1-.8-2.8-2.3-2.4-3.5z"/>` +
+        `<path fill="none" stroke="#2496ed" stroke-width=".8" stroke-linecap="round" d="M13.2 8.2c.8-.3 1.5-.1 1.8.5"/>`
+      ),
+    };
+
+    const FILE_ICON_ALIAS = {
+      mjs: "js",
+      cjs: "js",
+      mts: "ts",
+      cts: "ts",
+      pyi: "py",
+      htm: "html",
+      xhtml: "html",
+      sass: "scss",
+      less: "css",
+      yml: "yaml",
+      jpg: "image",
+      jpeg: "image",
+      png: "image",
+      gif: "image",
+      bmp: "image",
+      webp: "image",
+      ico: "image",
+      avif: "image",
+      mp3: "audio",
+      wav: "audio",
+      flac: "audio",
+      ogg: "audio",
+      aac: "audio",
+      m4a: "audio",
+      mp4: "video",
+      avi: "video",
+      mkv: "video",
+      mov: "video",
+      wmv: "video",
+      flv: "video",
+      webm: "video",
+      zip: "archive",
+      tar: "archive",
+      gz: "archive",
+      tgz: "archive",
+      bz2: "archive",
+      xz: "archive",
+      rar: "archive",
+      "7z": "archive",
+      docx: "doc",
+      xlsx: "xls",
+      pptx: "ppt",
+      ini: "config",
+      cfg: "config",
+      conf: "config",
+      htaccess: "config",
+      properties: "config",
+      editorconfig: "config",
+      sh: "shell",
+      bash: "shell",
+      zsh: "shell",
+      fish: "shell",
+      ksh: "shell",
+      ttf: "font",
+      otf: "font",
+      woff: "font",
+      woff2: "font",
+      eot: "font",
+      sql: "database",
+      db: "database",
+      sqlite: "database",
+      gitignore: "git",
+      gitattributes: "git",
+      dockerfile: "docker",
+    };
+
+    const FILE_ICON_BADGES = {
+      js: ["JS", "#f7df1e", "#323330"],
+      jsx: ["JSX", "#61dafb", "#083344"],
+      ts: ["TS", "#3178c6", "#f8fafc"],
+      tsx: ["TSX", "#3178c6", "#f8fafc"],
+      vue: ["VUE", "#41b883", "#f8fafc"],
+      svelte: ["SV", "#ff3e00", "#fff"],
+      c: ["C", "#555555", "#f8fafc"],
+      h: ["H", "#a8b9cc", "#1a1a12"],
+      cpp: ["C++", "#00599c", "#f8fafc"],
+      hpp: ["C++", "#00599c", "#f8fafc"],
+      cc: ["C++", "#00599c", "#f8fafc"],
+      cs: ["C#", "#68217a", "#f8fafc"],
+      go: ["GO", "#00add8", "#f8fafc"],
+      rs: ["RS", "#dea584", "#1a1a12"],
+      rb: ["RB", "#cc342d", "#f8fafc"],
+      php: ["PHP", "#777bb4", "#f8fafc"],
+      swift: ["SW", "#f05138", "#f8fafc"],
+      kt: ["KT", "#7f52ff", "#f8fafc"],
+      dart: ["DT", "#0175c2", "#f8fafc"],
+      lua: ["LUA", "#000080", "#f8fafc"],
+      r: ["R", "#276dc3", "#f8fafc"],
+      scala: ["SC", "#dc322f", "#f8fafc"],
+      hs: ["HS", "#5e5086", "#f8fafc"],
+      ml: ["ML", "#ee6a1a", "#1a1a12"],
+      ex: ["EX", "#6e4a7e", "#f8fafc"],
+      exs: ["EX", "#6e4a7e", "#f8fafc"],
+      elm: ["ELM", "#60b5cc", "#083344"],
+      groovy: ["GR", "#4298b8", "#f8fafc"],
+      pl: ["PL", "#39457e", "#f8fafc"],
+      pm: ["PL", "#39457e", "#f8fafc"],
+      coffee: ["CO", "#2f2625", "#f8fafc"],
+      matlab: ["MA", "#e16737", "#f8fafc"],
+      xml: ["XML", "#0060ac", "#f8fafc"],
+      yaml: ["YML", "#cb171e", "#f8fafc"],
+      toml: ["TML", "#9c4221", "#f8fafc"],
+      txt: ["TXT", "#6b7280", "#f8fafc"],
+      log: ["LOG", "#6b7280", "#f8fafc"],
+      csv: ["CSV", "#217346", "#f8fafc"],
+      ps1: ["PS", "#012456", "#f8fafc"],
+      bat: ["BAT", "#4d7c0f", "#f8fafc"],
+      cmd: ["BAT", "#4d7c0f", "#f8fafc"],
+      doc: ["DOC", "#2b579a", "#f8fafc"],
+      xls: ["XLS", "#217346", "#f8fafc"],
+      ppt: ["PPT", "#d24726", "#f8fafc"],
+      env: ["ENV", "#ecd53f", "#1a1a12"],
+      make: ["MK", "#6d8086", "#f8fafc"],
+      cmake: ["CM", "#064f8c", "#f8fafc"],
+      license: ["LIC", "#6b7280", "#f8fafc"],
+      graphql: ["GQL", "#e10098", "#f8fafc"],
+      gql: ["GQL", "#e10098", "#f8fafc"],
+      proto: ["PB", "#4285f4", "#f8fafc"],
+      wasm: ["WASM", "#654ff0", "#f8fafc"],
+      tf: ["TF", "#844fba", "#f8fafc"],
+      ipynb: ["NB", "#f37626", "#1a1a12"],
+      prisma: ["PR", "#5a67d8", "#f8fafc"],
+      astro: ["AST", "#ff5d01", "#f8fafc"],
+      zig: ["ZG", "#f7a41d", "#1a1a12"],
+      fs: ["FS", "#378bba", "#f8fafc"],
+      clj: ["CLJ", "#63b132", "#1a1a12"],
+      jl: ["JL", "#9558b2", "#f8fafc"],
+      cgi: ["CGI", "#6b7280", "#f8fafc"],
+    };
+
+    function fileIconKey(filename) {
+      const base = String(filename || "").split(/[/\\]/).pop().toLowerCase();
+      const named = {
+        dockerfile: "docker",
+        makefile: "make",
+        gnumakefile: "make",
+        license: "license",
+        licence: "license",
+        copying: "license",
+        gemfile: "rb",
+        rakefile: "rb",
+        "cargo.toml": "rs",
+        "cargo.lock": "rs",
+        "go.mod": "go",
+        "go.sum": "go",
+        "cmakelists.txt": "cmake",
+        ".gitignore": "git",
+        ".gitattributes": "git",
+        ".gitmodules": "git",
+        ".editorconfig": "config",
+        ".npmrc": "config",
+        ".nvmrc": "config",
+      };
+      if (named[base]) return named[base];
+      if (base.startsWith("docker-compose")) return "docker";
+      if (base.startsWith(".env")) return "env";
+      if (base === "license.md" || base === "license.txt") return "license";
+      if (base.endsWith(".d.ts")) return "ts";
+      const dot = base.lastIndexOf(".");
+      if (dot <= 0) return base;
+      return base.slice(dot + 1);
+    }
+
+    function getFileIconForExtension(filename) {
+      const key = FILE_ICON_ALIAS[fileIconKey(filename)] || fileIconKey(filename);
+      if (FILE_ICON_PICTOGRAMS[key]) return FILE_ICON_PICTOGRAMS[key];
+      const badge = FILE_ICON_BADGES[key];
+      if (badge) return fileBadge(badge[0], badge[1], badge[2]);
+      return FILE_ICON_DEFAULT;
+    }
+
     function renderChangeBranch(node, prefix, selectedPath) {
       const dirs = [...node.dirs.entries()].sort((a, b) => a[0].localeCompare(b[0]));
       const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
@@ -4542,7 +4842,8 @@
         const path = file.group.path;
         const selected = path === selectedPath ? "true" : "false";
         const stats = diffStats(fileReviewDiff(file.group).diff);
-        html += `<li><button type="button" class="file-change-file" data-change-path="${escapeHtml(path)}" aria-selected="${selected}" title="${escapeHtml(path)}"><span class="file-change-name">${escapeHtml(file.name)}</span>${diffStatsHtml(stats)}</button></li>`;
+        const icon = getFileIconForExtension(file.name);
+        html += `<li><button type="button" class="file-change-file" data-change-path="${escapeHtml(path)}" aria-selected="${selected}" title="${escapeHtml(path)}"><span class="file-icon">${icon}</span><span class="file-change-name">${escapeHtml(file.name)}</span>${diffStatsHtml(stats)}</button></li>`;
       }
       return html;
     }
