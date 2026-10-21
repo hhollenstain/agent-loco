@@ -78,6 +78,7 @@ from agent_loco.tools.git import (
     update_pull_request,
     upstream_state,
 )
+from agent_loco.tools.kiwi import resolve_kiwifs_prefix
 from agent_loco.tools.lint import apply_ruff_autofix, run_project_lint
 from agent_loco.tools.tests import run_project_tests
 
@@ -371,6 +372,13 @@ def _run_cycle(
         git_author_email=settings.git_author_email,
         allow_publish=False,
         goal=selected_goal,
+        kiwifs_url=settings.kiwifs_url,
+        kiwifs_api_key=settings.kiwifs_api_key,
+        kiwifs_prefix=resolve_kiwifs_prefix(
+            workspace.root,
+            project.kiwifs_prefix,
+            settings.kiwifs_prefix,
+        ),
     )
 
     log_progress(f"Selected goal: {goal_headline(selected_goal)}")

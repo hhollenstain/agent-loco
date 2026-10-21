@@ -37,6 +37,17 @@ class ProjectConfig:
     preview_command: str | None = None
     lint_command: str | None = None
     is_git: bool = False
+    kiwifs_prefix: str | None = None
+
+
+def _kiwifs_prefix(raw: dict) -> str | None:
+    """None means 'use the default project folder'. An explicit empty value writes anywhere."""
+    if "kiwifs_prefix" not in raw:
+        return None
+    value = raw.get("kiwifs_prefix")
+    if value is None or value is False:
+        return ""
+    return str(value).strip()
 
 
 def load_project(root: Path) -> ProjectConfig:
@@ -79,6 +90,7 @@ def load_project(root: Path) -> ProjectConfig:
         preview_command=str(raw["preview_command"]) if raw.get("preview_command") else None,
         lint_command=lint_command,
         is_git=is_git,
+        kiwifs_prefix=_kiwifs_prefix(raw),
     )
 
 
@@ -285,6 +297,7 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "    - polloco\n"
                 "    - tdd\n"
                 "    - ui\n"
+                "    - kiwi\n"
             ),
             encoding="utf-8",
         )

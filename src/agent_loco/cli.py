@@ -22,6 +22,7 @@ from agent_loco.logging import setup_logging
 from agent_loco.runtime.improve import run_cycle
 from agent_loco.runtime.project import write_default_project_files
 from agent_loco.runtime.watch import watch as watch_loop
+from agent_loco.tools.kiwi import check_kiwifs
 
 REQUIRED_ENV_VARS = ["LOCO_MODEL_NAME", "LOCO_MODEL_BASE_URL"]
 
@@ -164,9 +165,20 @@ def doctor() -> None:
 
     ok, detail = check_model_endpoint(settings.model_base_url, settings.model_api_key)
     table.add_row("model endpoint", detail if ok else f"DOWN — {detail}")
+    kiwi_ok, kiwi_detail = check_kiwifs(settings.kiwifs_url, settings.kiwifs_api_key)
+    if not settings.kiwifs_url.strip():
+        table.add_row("kiwifs", "off")
+    else:
+        table.add_row("kiwifs", kiwi_detail if kiwi_ok else f"DOWN — {kiwi_detail}")
     console.print(table)
     for note in hw.notes:
         console.print(f"[yellow]{note}[/yellow]")
+    if settings.kiwifs_url.strip() and not kiwi_ok:
+        console.print(
+            "[yellow]KiwiFS is the project's memory for local models. "
+            "Start it with `kiwifs serve`, or set LOCO_KIWIFS_URL empty "
+            "to turn the tools off.[/yellow]"
+        )
     if not ok:
         raise typer.Exit(code=1)
 

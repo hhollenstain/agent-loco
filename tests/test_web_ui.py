@@ -350,9 +350,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert home.content.index(b'id="run-detail"') < home.content.index(b'id="run-list"')
         assert b"data-main-pane=" not in home.content
         assert b'id="past-runs"' not in home.content
-        assert b'id="running-chicken"' in home.content
-        assert b"function runningChickenHtml(" in home.content
-        assert b"function syncRunningChicken(" in home.content
+        assert b'id="running-chicken"' not in home.content
+        assert b"function runningChickenHtml(" not in home.content
+        assert b"function syncRunningChicken(" not in home.content
         assert b'id="task-tokens"' in home.content
         assert b"data-task-tokens" in home.content
         assert b"function syncTaskTokens(" in home.content

@@ -117,8 +117,9 @@ That writes:
 If `test_command` is omitted, loco infers one (`pytest`, `npm test`, `make test`, `cargo test`, `go test`).
 
 New workspaces enable the bundled process skills: debug, explore, implement,
-research, review, security, tdd, and ui. Turn them on or off in the Skills
-panel. They are the agent's process; they do not add extra tools.
+research, review, security, tdd, ui, and kiwi. Turn them on or off in the Skills
+panel. They are the agent's process. The kiwi skill is the one that tells the
+agent how to use a KiwiFS server.
 
 Publish/create-PR is off until you turn it on in `.loco/config.yaml` or pass `--create-pr`. That option opens a feature branch and pull request; it never pushes to `main`. Commits still require a green test run when `LOCO_REQUIRE_TESTS=true`.
 
@@ -185,6 +186,53 @@ docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent
 
 A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LOCO_MODEL_NAME` if you prefer vLLM or a larger quant. Any server that speaks `/v1/chat/completions` works; set `LOCO_MODEL_BASE_URL` accordingly.
 
+## KiwiFS
+
+Loco keeps project memory in [KiwiFS](https://github.com/kiwifs/kiwifs), a markdown knowledge base with search. A local model cannot hold the repository and a pile of notes in one prompt. The agent asks KiwiFS for a short brief, then writes the conclusion back so the next cycle does not rediscover it.
+
+The default server is the one already running on this machine:
+
+```bash
+curl -sS http://127.0.0.1:3333/api/kiwi/context
+uv run loco doctor
+```
+
+`doctor` reports whether that server answers. `LOCO_KIWIFS_URL` overrides the address. Set it empty to turn the tools off. If the server requires a key, set `LOCO_KIWIFS_API_KEY` (sent as `Authorization: Bearer …`).
+
+### One base, one folder per project
+
+Reads search the whole base, including guides that are already there. Writes stay under `projects/<name>/`, so a cycle cannot overwrite `guides/` or `getting-started/`. For a git repo, `<name>` is the origin repository (`agent-loco` from `github.com/you/agent-loco.git`), including when loco is pointed at a subdirectory. A folder that is not a git repo uses that folder's name. A repo with no remote uses the git root folder's name. Set `kiwifs_prefix` in `.loco/config.yaml` to use a different folder. `LOCO_KIWIFS_PREFIX` does the same when the project config does not. An explicit empty `kiwifs_prefix:` removes the fence and lets writes land anywhere in the base.
+
+New projects enable the bundled `kiwi` skill. On a project that already has `.loco/config.yaml`, add `kiwi` under `skills.enabled`.
+
+### How a small model should use it
+
+The skill says this to the agent. The short version:
+
+1. `kiwi_brief` the question and leave the budget alone. That is a keyword search plus a peek of the top pages, not the pages themselves.
+2. `kiwi_peek` one path, or `kiwi_read` with a `heading`, when the brief is not the answer. Do not read several full pages.
+3. When the next run would otherwise rediscover a fact (the test command, a rejected approach, which file owns the behavior), `kiwi_append` a few lines to `episodes/<date>.md`, or `kiwi_write` `decisions.md`. A note is a few sentences. Do not store diffs, logs, or source files there.
+
+The default brief is 800 tokens. The tool will not return more than 2000.
+
+| Model | Context left for notes | `budget_tokens` |
+| --- | --- | --- |
+| 7B, about 8k | tight | 400–600 |
+| 14B, 16k–32k | the default | 800 |
+| 32B and larger | room to spare | 1200–2000 |
+
+Keyword search does not need a second model. Leave vector search off while the coder model is loaded. An embedding model in Ollama uses the same memory the coder needs, and BM25 on this server is enough to find a page.
+
+### Docker
+
+A container does not see the host's `localhost`. On Docker Desktop, point at the host:
+
+```bash
+export LOCO_KIWIFS_URL=http://host.docker.internal:3333
+```
+
+The Mac compose file uses that address unless `LOCO_KIWIFS_URL` is already set.
+
 ## Safety
 
 - All file and shell tools are rooted in `--workspace`. Path escape is rejected.
@@ -201,7 +249,7 @@ This is still a coding agent with a shell inside a trusted workspace. Do not poi
 
 | Command | Purpose |
 | --- | --- |
-| `loco doctor` | Hardware, git/docker, model health |
+| `loco doctor` | Hardware, git/docker, model health, KiwiFS |
 | `loco init [path]` | Write `.loco/` scaffolding (path must already exist) |
 | `loco clone URL [DIR]` | `git clone` into `DIR` or `./<repo>` and write `.loco/` |
 | `loco run -w PATH -g "..." -m MODEL --base-url URL` | One improve → test → commit cycle |

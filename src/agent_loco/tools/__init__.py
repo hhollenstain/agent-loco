@@ -7,6 +7,7 @@ from agent_loco.tools.config import config_tools
 from agent_loco.tools.files import file_tools
 from agent_loco.tools.git import git_tools
 from agent_loco.tools.issues import issues_tools
+from agent_loco.tools.kiwi import kiwi_tools
 from agent_loco.tools.lint import lint_tools
 from agent_loco.tools.polloco import polloco_tools
 from agent_loco.tools.shell import shell_tools
@@ -24,9 +25,13 @@ def build_tools(
     allow_publish: bool = False,
     goal: str = "",
     lint_command: str | None = None,
+    kiwifs_url: str = "",
+    kiwifs_api_key: str = "",
+    kiwifs_prefix: str = "",
 ) -> list[ToolSpec]:
     return [
         *file_tools(workspace),
+        *kiwi_tools(base_url=kiwifs_url, api_key=kiwifs_api_key, prefix=kiwifs_prefix),
         *config_tools(workspace),
         *web_tools(workspace),
         *browser_tools(workspace, goal=goal),

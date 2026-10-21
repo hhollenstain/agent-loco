@@ -7,3 +7,4 @@ services:
     environment:
       LOCO_MODEL_BASE_URL: ${LOCO_MODEL_BASE_URL:-http://host.docker.internal:11434/v1}
       LOCO_MODEL_NAME: ${LOCO_MODEL_NAME:-qwen2.5-coder:14b}
+      LOCO_KIWIFS_URL: ${LOCO_KIWIFS_URL:-http://host.docker.internal:3333}

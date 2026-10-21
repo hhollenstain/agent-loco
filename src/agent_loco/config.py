@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     model_name: str = "Qwen2.5-Coder:14b"
     model_base_url: str = "http://127.0.0.1:11434/v1"
     model_api_key: str = "ollama"
+    kiwifs_url: str = "http://127.0.0.1:3333"
+    kiwifs_api_key: str = ""
+    kiwifs_prefix: str = ""
     max_iterations: int = Field(default=40, ge=1, le=200)
     auto_commit: bool = True
     require_tests: bool = True
