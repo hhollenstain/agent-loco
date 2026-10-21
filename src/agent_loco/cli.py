@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -40,8 +40,8 @@ def _load_config_file() -> None:
 
     Supports .env, config.yaml, and config.yml in the current directory.
     """
-    yaml = YAML()
-    config_paths = [
+    yaml: YAML = YAML()
+    config_paths: list[Path] = [
         Path.cwd() / ".env",
         Path.cwd() / "config.yaml",
         Path.cwd() / "config.yml",
@@ -82,7 +82,7 @@ def _validate_env(require: bool = True) -> None:
     # Try to load config file first
     _load_config_file()
 
-    missing = [var for var in REQUIRED_ENV_VARS if var not in os.environ]
+    missing: list[str] = [var for var in REQUIRED_ENV_VARS if var not in os.environ]
     if missing:
         console.print("[red]ERROR:[/red] Required environment variables not set:")
         for var in missing:
@@ -92,7 +92,7 @@ def _validate_env(require: bool = True) -> None:
         raise SystemExit(1)
 
 
-def _settings(**overrides: object) -> Settings:
+def _settings(**overrides: dict[str, Any]) -> Settings:
     """Create settings with optional overrides.
 
     Args:
@@ -102,7 +102,7 @@ def _settings(**overrides: object) -> Settings:
     Returns:
         A Settings instance with the overrides applied.
     """
-    settings = Settings()
+    settings: Settings = Settings()
     for key, value in overrides.items():
         if value is not None:
             setattr(settings, key, value)
@@ -137,7 +137,11 @@ def _root(
         ),
     ] = False,
 ) -> None:
-    """Home-lab coding agent."""
+    """Home-lab coding agent.
+
+    This function serves as the main entry point for the CLI application.
+    It handles the --version option and performs no other operations.
+    """
     pass
 
 
