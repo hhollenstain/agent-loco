@@ -59,7 +59,7 @@ def _load_config_file() -> None:
                                 os.environ[key.strip()] = value.strip()
                 else:
                     with open(config_path) as f:
-                        data = yaml.load(f)
+                        data: dict[str, Any] = yaml.load(f)
                         if isinstance(data, dict):
                             for key, value in data.items():
                                 if isinstance(value, (str, int, float, bool)):
@@ -68,6 +68,7 @@ def _load_config_file() -> None:
                 return
             except Exception:
                 console.print(f"[yellow]Warning: Could not load config from {config_path}[/yellow]")
+                return
 
 
 def _validate_env(require: bool = True) -> None:
@@ -75,6 +76,9 @@ def _validate_env(require: bool = True) -> None:
 
     Args:
         require: If False, skip validation to allow UI mode without env vars.
+
+    Returns:
+        None (exits with SystemExit on missing variables)
     """
     if not require:
         return
@@ -112,6 +116,14 @@ def _settings(**overrides: dict[str, Any]) -> Settings:
 
 
 def _llm(settings: Settings) -> OpenAICompatClient:
+    """Create an OpenAI-compatible client with the given settings.
+
+    Args:
+        settings: The configuration settings for the LLM client
+
+    Returns:
+        An OpenAICompatClient instance
+    """
     return OpenAICompatClient(
         model=settings.model_name,
         base_url=settings.model_base_url,
@@ -120,6 +132,14 @@ def _llm(settings: Settings) -> OpenAICompatClient:
 
 
 def _print_version(value: bool) -> None:
+    """Print the version and exit.
+
+    Args:
+        value: Whether to print the version
+
+    Returns:
+        None (exits with typer.Exit)
+    """
     if value:
         console.print(__version__)
         raise typer.Exit()
@@ -141,6 +161,12 @@ def _root(
 
     This function serves as the main entry point for the CLI application.
     It handles the --version option and performs no other operations.
+
+    Args:
+        version: Whether to print the version and exit
+
+    Returns:
+        None
     """
     pass
 
