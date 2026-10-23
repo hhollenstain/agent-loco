@@ -97,3 +97,66 @@ def test_run_help_includes_model_flag(monkeypatch_env_vars: None) -> None:
     assert "--model" in text
     assert "-m" in text
     assert "--base-url" in text
+
+
+@pytest.mark.parametrize(
+    "invalid_args, expected_error",
+    [
+        (["--invalid-option"], "No such option"),
+        (["invalid-command"], "No such command"),
+        (["--unknown-flag"], "No such option"),
+        (["-x"], "No such option"),
+    ],
+)
+def test_invalid_arguments(invalid_args, expected_error) -> None:
+    """Test that invalid CLI arguments result in proper error messages and non-zero exit codes."""
+    result = runner.invoke(app, invalid_args)
+    # Ensure the process exits with non-zero code when invalid arguments are passed
+    assert result.exit_code != 0, f"Expected non-zero exit code for {invalid_args}"
+    assert expected_error in result.stderr
+
+
+def test_invalid_arguments_detailed_messages() -> None:
+    """Test that detailed error messages are displayed for various invalid CLI inputs."""
+    # Test command-level invalid arguments
+    result = runner.invoke(app, ["run", "--invalid-run-option"])
+    assert result.exit_code != 0
+    assert "No such option" in result.stderr or "invalid-run-option" in result.stderr
+
+    # Test that valid commands with invalid options still work properly
+    result = runner.invoke(app, ["watch", "--invalid-watch-option"])
+    assert result.exit_code != 0
+    assert "No such option" in result.stderr
+
+
+def test_invalid_arguments_comprehensive_validation() -> None:
+    """Test comprehensive validation of CLI argument parsing behavior."""
+    # Test with no arguments at all (shows help and exits with code 2)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 2  # Shows help and exits with non-zero code
+
+    # Test with just --help flag
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+
+    # Test invalid top-level commands
+    result = runner.invoke(app, ["nonexistent-command"])
+    assert result.exit_code != 0
+    assert "No such command" in result.stderr
+
+    # Test invalid options at top level
+    result = runner.invoke(app, ["--invalid-flag"])
+    assert result.exit_code != 0
+    assert "No such option" in result.stderr
+
+    # Test invalid subcommand options
+    result = runner.invoke(app, ["run", "--invalid-option"])
+    assert result.exit_code != 0
+    assert "No such option" in result.stderr
+
+    # Test that valid commands still work properly
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+
+    result = runner.invoke(app, ["watch", "--help"])
+    assert result.exit_code == 0
