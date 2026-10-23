@@ -9,8 +9,7 @@ from agent_loco.progress import record_test_run
 from agent_loco.runtime.project import configured_value, load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
-from agent_loco.tools.files import SKIP_DIR_NAMES
-from agent_loco.tools.git import is_runtime_artifact
+from agent_loco.tools.codechange import code_fingerprint, reused_check_result
 from agent_loco.tools.shell import run_command
 
 
@@ -37,8 +36,10 @@ def test_tools(
             name="run_tests",
             description=(
                 "Run the project's configured test command. "
-                "If the workspace tree has not changed since the last run, "
-                "returns that result without running the suite again. "
+                "Call it once after code changes, including changes in another "
+                "project in this workspace. If no code file has changed since "
+                "the last run, this returns that result and does not run the "
+                "suite again. Do not call it again until you edit code. "
                 "If no command is configured, look up the official runner and call "
                 "configure_project, then call this again."
             ),
@@ -78,7 +79,7 @@ def run_project_tests(
             elapsed_ms=0,
             reused=True,
         )
-        return cached.result
+        return reused_check_result("run_tests", cached.result)
     started = time.perf_counter()
     result = run_command(workspace, command, timeout_seconds)
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
@@ -107,6 +108,20 @@ def _reject_vacuous_pass(result: ToolResult) -> ToolResult:
     return ToolResult(False, output)
 
 
+def current_test_result(
+    workspace: Workspace,
+    test_command: str | None,
+) -> ToolResult | None:
+    """The last test result when it already covers the current code. Does not run tests."""
+    command = _active_test_command(workspace, test_command)
+    if not command:
+        return None
+    cached = _CACHE.get(str(workspace.root))
+    if cached is None or cached.fingerprint != _tree_fingerprint(workspace, command):
+        return None
+    return cached.result
+
+
 def _active_test_command(workspace: Workspace, test_command: str | None) -> str | None:
     present, value = configured_value(workspace.root, "test_command")
     if present:
@@ -119,18 +134,6 @@ def _active_test_command(workspace: Workspace, test_command: str | None) -> str 
 def _tree_fingerprint(workspace: Workspace, test_command: str) -> str:
     digest = hashlib.sha256()
     digest.update(test_command.encode("utf-8"))
-    root = workspace.root
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIR_NAMES for part in path.relative_to(root).parts):
-            continue
-        rel = path.relative_to(root).as_posix()
-        if is_runtime_artifact(rel):
-            continue
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        digest.update(f"{rel}:{stat.st_mtime_ns}:{stat.st_size}\n".encode())
+    digest.update(b"\0")
+    digest.update(code_fingerprint(workspace.root).encode("utf-8"))
     return digest.hexdigest()

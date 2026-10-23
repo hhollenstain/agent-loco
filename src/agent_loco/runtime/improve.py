@@ -51,9 +51,14 @@ from agent_loco.runtime.uireview import (
     ui_review_needed,
     unverified_interactive_ui,
 )
-from agent_loco.runtime.workdiff import collect_current_evidence, collect_work_diff
+from agent_loco.runtime.workdiff import (
+    collect_current_evidence,
+    collect_work_diff,
+    nested_projects_changed,
+)
 from agent_loco.sandbox import SandboxError, Workspace
 from agent_loco.tools import build_tools
+from agent_loco.tools.codechange import workspace_fingerprint
 from agent_loco.tools.git import (
     CO_AUTHORED_BY,
     branch_named_in_goal,
@@ -79,8 +84,8 @@ from agent_loco.tools.git import (
     upstream_state,
 )
 from agent_loco.tools.kiwi import resolve_kiwifs_prefix
-from agent_loco.tools.lint import apply_ruff_autofix, run_project_lint
-from agent_loco.tools.tests import run_project_tests
+from agent_loco.tools.lint import apply_ruff_autofix, current_lint_result, run_project_lint
+from agent_loco.tools.tests import current_test_result, run_project_tests
 
 log = logging.getLogger("loco")
 
@@ -412,6 +417,7 @@ def _run_cycle(
         _log_plan(plan)
     brief = _brief(plan, named_files, base_context)
     log_progress("Running coding agent...")
+    code_before_agent = workspace_fingerprint(workspace.root)
     if plan is not None and plan.steps:
         agent_result = _run_plan_steps(
             workspace,
@@ -431,7 +437,7 @@ def _run_cycle(
 
     # Check for compact handoff if max_iterations was hit after changes
     sha = current_sha(workspace)
-    has_work = has_changes(workspace) or bool(sha_before and sha and sha != sha_before)
+    has_work = _has_project_work(workspace, sha_before, sha)
     if agent_result.stopped_reason == "max_iterations" and has_work:
         log_progress("Iteration limit reached; continuing once from a compact handoff.")
         work_diff = collect_work_diff(workspace, sha_before, goal=selected_goal)
@@ -453,8 +459,15 @@ def _run_cycle(
         )
         agent_result = agent_result_2
 
-    log_progress("Running after tests...")
-    tests_after = _maybe_test(workspace, project, settings, phase="after")
+    code_after_agent = workspace_fingerprint(workspace.root)
+    code_changed = code_after_agent != code_before_agent
+    tests_after = _tests_after_edits(
+        workspace,
+        project,
+        settings,
+        tests_before,
+        code_changed=code_changed,
+    )
     tests_after = _ensure_test_command(
         workspace,
         project,
@@ -492,7 +505,7 @@ def _run_cycle(
 
     log_progress("Checking for changes...")
     sha = current_sha(workspace)
-    has_work = has_changes(workspace) or bool(sha_before and sha and sha != sha_before)
+    has_work = _has_project_work(workspace, sha_before, sha)
     if not has_work:
         empty = _handle_empty_diff(
             workspace,
@@ -558,15 +571,25 @@ def _run_cycle(
         return result
     agent_result.summary = agent_result_summary
 
-    log_progress("Running linter before publish...")
-    lint_after = _ensure_lint(
-        workspace,
-        project,
-        settings,
-        agent,
-        allow_create_pr=allow_create_pr,
-        sha_before=sha_before,
-    )
+    code_changed = workspace_fingerprint(workspace.root) != code_before_agent
+    if not code_changed:
+        log_progress("No code changes; skipping lint.")
+        lint_after = None
+    else:
+        covered_lint = current_lint_result(workspace, project.lint_command)
+        if covered_lint is not None and covered_lint.ok:
+            log_progress("Lint already covers this code; not running it again.")
+            lint_after = covered_lint
+        else:
+            log_progress("Running linter before publish...")
+            lint_after = _ensure_lint(
+                workspace,
+                project,
+                settings,
+                agent,
+                allow_create_pr=allow_create_pr,
+                sha_before=sha_before,
+            )
     if lint_after is not None and not lint_after.ok:
         lint_output = (lint_after.output or "").strip()
         log_progress("Lint failed after repairs.")
@@ -902,6 +925,7 @@ def _handle_empty_diff(
             "Agent finished without edits; sending it back to implement "
             f"({attempt + 1}/{project.max_repair_attempts})"
         )
+        before_retry = workspace_fingerprint(workspace.root)
         follow = agent.run(
             _empty_diff_retry_prompt(goal, review_reason(verdict)),
             context,
@@ -909,6 +933,9 @@ def _handle_empty_diff(
         )
         if follow.summary:
             summary = follow.summary
+        if workspace_fingerprint(workspace.root) == before_retry:
+            log_progress("No code changes; not running tests again.")
+            continue
         tests_after = _maybe_test(workspace, project, settings, phase="retry")
         tests_after = _ensure_test_command(
             workspace,
@@ -945,7 +972,7 @@ def _handle_empty_diff(
             _append_to_history(workspace.root, result)
             return _EmptyDiffOutcome(result=result, summary=summary, tests_passed=False)
         sha_now = current_sha(workspace)
-        if has_changes(workspace) or bool(sha_before and sha_now and sha_now != sha_before):
+        if _has_project_work(workspace, sha_before, sha_now):
             log_progress("Agent produced file changes on retry.")
             return _EmptyDiffOutcome(result=None, summary=summary, tests_passed=tests_passed)
 
@@ -1274,6 +1301,7 @@ def _ensure_goal_met(
             log_progress("Looking up how to test and preview this stack...")
         if research:
             log_progress("Researching the stated failure before another edit...")
+        before_retry = workspace_fingerprint(workspace.root)
         follow = agent.run(
             _goal_retry_prompt(
                 goal,
@@ -1293,6 +1321,14 @@ def _ensure_goal_met(
         )
         if follow.summary:
             summary = follow.summary
+        if workspace_fingerprint(workspace.root) == before_retry:
+            log_progress("No code changes; not running tests or another review.")
+            stalls += 1
+            if not extra_granted and attempts >= project.max_repair_attempts:
+                extra_granted = True
+                limit = attempts + GOAL_RETRY_STALL_EXTRA
+                log_progress("Retry made no file changes; continuing instead of giving up.")
+            continue
         tests_after = _maybe_test(workspace, project, settings, phase="retry")
         tests_after = _ensure_test_command(
             workspace,
@@ -1679,11 +1715,15 @@ def _repair_failing_tests(
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     for attempt in range(project.max_repair_attempts):
         log_progress(f"Repair attempt {attempt + 1}/{project.max_repair_attempts}")
+        before_repair = workspace_fingerprint(workspace.root)
         agent.run(
             _test_repair_prompt(tests_after.output),
             context,
             require_change=True,
         )
+        if workspace_fingerprint(workspace.root) == before_repair:
+            log_progress("Repair did not change code; not running tests again.")
+            break
         tests_after = _maybe_test(workspace, project, settings, phase="repair")
         if tests_after is None or tests_after.ok:
             break
@@ -1695,6 +1735,33 @@ def _choose_goal(project: ProjectConfig, tests_before) -> str | None:
         return "Make the project's test suite pass.\n\n" + tests_before.output
     goals = load_goals(project.root, project.goals_file)
     return goals[0] if goals else None
+
+
+def _has_project_work(workspace: Workspace, sha_before: str | None, sha: str | None) -> bool:
+    """Root git changes, plus edits inside another project in this workspace."""
+    if has_changes(workspace) or bool(sha_before and sha and sha != sha_before):
+        return True
+    return nested_projects_changed(workspace)
+
+
+def _tests_after_edits(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    tests_before,
+    *,
+    code_changed: bool,
+):
+    """Run the suite only when this code has not already been tested."""
+    if not code_changed and tests_before is not None:
+        log_progress("No code changes; skipping tests.")
+        return tests_before
+    covered = current_test_result(workspace, project.test_command)
+    if covered is not None:
+        log_progress("Tests already cover this code; not running them again.")
+        return covered
+    log_progress("Running after tests...")
+    return _maybe_test(workspace, project, settings, phase="after")
 
 
 def _maybe_test(
@@ -1812,11 +1879,15 @@ def _ensure_lint(
     for attempt in range(attempts):
         log_progress(f"Lint repair {attempt + 1}/{attempts}")
         log_progress(f"Lint errors to fix:\n{(lint_after.output or '').strip()}")
+        before_repair = workspace_fingerprint(workspace.root)
         agent.run(
             _lint_repair_prompt(lint_after.output),
             context,
             require_change=True,
         )
+        if workspace_fingerprint(workspace.root) == before_repair:
+            log_progress("Lint repair did not change code; not running lint again.")
+            break
         lint_after = _maybe_lint(workspace, project, settings, phase="repair")
         if lint_after is None or lint_after.ok:
             break

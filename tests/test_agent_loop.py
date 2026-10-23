@@ -632,6 +632,65 @@ def test_agent_requires_run_tests_after_readme_edit(tmp_path: Path) -> None:
     assert any("run_tests" in content for content in contents)
 
 
+def test_agent_stops_rerunning_checks_when_code_does_not_change(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    (tmp_path / ".loco").mkdir()
+    marker = tmp_path / ".loco" / "runs.txt"
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "check.py").write_text(
+        "from pathlib import Path\n"
+        "marker = Path('.loco/runs.txt')\n"
+        "count = int(marker.read_text()) if marker.exists() else 0\n"
+        "marker.write_text(str(count + 1))\n",
+        encoding="utf-8",
+    )
+    tools = build_tools(
+        workspace,
+        test_command="python3 check.py",
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="edit-1",
+                        name="write_file",
+                        arguments={"path": "app.py", "content": "x = 2\n"},
+                    )
+                ],
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[ToolCall(id="test-1", name="run_tests", arguments={})],
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[ToolCall(id="test-2", name="run_tests", arguments={})],
+            ),
+            AssistantTurn(
+                text=None,
+                tool_calls=[ToolCall(id="test-3", name="run_tests", arguments={})],
+            ),
+            AssistantTurn(text="still going"),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=8).run("Change x", require_tests=True)
+    assert result.stopped_reason == "completed"
+    assert result.summary == "still going"
+    assert marker.read_text(encoding="utf-8") == "1"
+    nudged = [
+        message["content"]
+        for call in llm.calls
+        for message in call
+        if message.get("role") == "user" and isinstance(message.get("content"), str)
+    ]
+    assert any("Do not call run_tests" in content for content in nudged)
+
+
 def test_agent_verifies_ui_itself_when_it_hits_the_turn_cap(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
     (tmp_path / ".loco").mkdir()

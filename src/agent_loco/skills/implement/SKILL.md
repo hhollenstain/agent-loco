@@ -45,15 +45,15 @@ and **review** before you stop.
 
 ## Verify
 
-- After functional edits: call `run_tests` once. If the tree has not changed since the last run, loco reuses that result.
+- After functional edits: call `run_tests` once. If no code has changed since the last run, including in another project in the workspace, loco does not run the suite again. Do not call it again until you edit code.
 - If there is no test command, look up the official test runner, add a test at the public seam, and call `configure_project` with that `test_command`, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
 - If `run_tests` fails, fix the code or the test that asserts the old behavior, then call `run_tests` again. Do not change the command so it exits 0 without running the failing check.
-- After tests, call `run_lint`. If it says there is no lint command, look up
+- After tests, call `run_lint` once. Do not call it again until code changes. If it says there is no lint command, look up
   the official linter and call `configure_project` with `lint_command`, then
   call `run_lint` again. A ruff command formats, then checks.
   Fix F401, E501, import order, and any files ruff would reformat before
   stopping.
-- After HTML/CSS/JS/template edits: call `review_ui`, click the new control, fix overlap/404/dead buttons.
+- After HTML/CSS/JS/template edits: call `review_ui` once, click the new control, fix overlap/404/dead buttons. Do not call it again until code changes.
 - If a tool fails, change arguments; do not repeat the same failed command.
 
 ## Stop when done

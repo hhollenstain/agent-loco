@@ -10,6 +10,7 @@ from agent_loco.runtime.workdiff import (
     extract_version_changes,
     format_work_diff,
     is_lockfile,
+    nested_projects_changed,
     summarize_lockfile_diff,
     summarize_lockfile_pair,
 )
@@ -173,3 +174,18 @@ def test_collect_current_evidence_includes_goal_package_version(tmp_path: Path) 
     assert "setup.py" in text
     assert "discord.py: 2.7.1" in text
     assert "Current HEAD:" in text
+
+
+def test_collect_work_diff_includes_another_projects_edits(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("root\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    other = tmp_path / "other-app"
+    other.mkdir()
+    (other / "main.py").write_text("x = 1\n", encoding="utf-8")
+    init_git_repo(other)
+    (other / "main.py").write_text("x = 2\n", encoding="utf-8")
+    workspace = Workspace(tmp_path)
+    text = collect_work_diff(workspace, current_sha(workspace), goal="update other-app")
+    assert nested_projects_changed(workspace)
+    assert "Other project other-app" in text
+    assert "x = 2" in text

@@ -25,9 +25,12 @@ Walk the goal (issue body and comments count) and the files you changed:
 - The change matches this repo's existing style and test command.
 - No unused helper: a new function, class, or route that nothing calls.
 - No invented API that you did not see in the repo or in fetched docs.
-- After behavior changes: `run_tests` has run since the last edit.
-- After UI changes: `review_ui` has been called and the new control works.
-- After lint is configured: `run_lint` is clean, including ruff format.
+- After behavior changes: `run_tests` has run since the last code edit.
+  Do not run it again when no code changed, including in other projects.
+- After UI changes: `review_ui` has been called once since the last edit
+  and the new control works. Do not review again until code changes.
+- After lint is configured: `run_lint` is clean since the last code edit,
+  including ruff format. Do not lint again until code changes.
 
 ## If anything fails
 

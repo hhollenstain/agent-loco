@@ -105,6 +105,40 @@ def is_lockfile(path: str) -> bool:
     return name.endswith(".lock")
 
 
+def nested_repos(root: Path) -> list[Path]:
+    """Git repos inside the workspace, not the workspace itself."""
+    found: list[Path] = []
+    _walk_repos(root, root, 0, found)
+    return found
+
+
+def nested_projects_changed(workspace: Workspace) -> bool:
+    """True when another project in this workspace has its own uncommitted work."""
+    for repo in nested_repos(workspace.root):
+        status = run_git(Workspace(repo), ["status", "--porcelain"])
+        if (status.stdout or "").strip():
+            return True
+    return False
+
+
+def nested_project_diff_text(workspace: Workspace, *, limit: int = 6_000) -> str:
+    """Diffs from nested repos so a review can see changes git at the root hides."""
+    parts: list[str] = []
+    used = 0
+    for repo in nested_repos(workspace.root):
+        block = _nested_repo_block(workspace.root, repo)
+        if not block:
+            continue
+        if used + len(block) > limit:
+            remain = limit - used
+            if remain > 80:
+                parts.append(block[:remain] + "\n... truncated")
+            break
+        parts.append(block)
+        used += len(block) + 2
+    return "\n\n".join(parts)
+
+
 def collect_work_diff(
     workspace: Workspace,
     sha_before: str | None,
@@ -138,7 +172,7 @@ def collect_work_diff(
             untracked_parts.append(f"untracked binary: {path}")
             continue
         untracked_parts.append(_format_untracked(path, body, goal=goal))
-    return format_work_diff(
+    body = format_work_diff(
         status=status.stdout,
         name_status=names.stdout,
         unified=diff.stdout,
@@ -146,6 +180,65 @@ def collect_work_diff(
         lock_summaries=lock_summaries,
         goal=goal,
     )
+    nested = nested_project_diff_text(workspace)
+    if not nested:
+        return body
+    if body == "(no diff)":
+        return nested
+    combined = f"{nested}\n\n{body}"
+    if len(combined) > DIFF_LIMIT:
+        return combined[: DIFF_LIMIT - 15] + "\n... truncated"
+    return combined
+
+
+def _walk_repos(root: Path, directory: Path, depth: int, found: list[Path]) -> None:
+    if depth > 3 or len(found) >= 8:
+        return
+    try:
+        children = sorted(directory.iterdir(), key=lambda path: path.name.lower())
+    except OSError:
+        return
+    for child in children:
+        if not child.is_dir() or child.name in SKIP_DIR_NAMES:
+            continue
+        if (child / ".git").exists() and child != root:
+            found.append(child)
+            if len(found) >= 8:
+                return
+            continue
+        _walk_repos(root, child, depth + 1, found)
+
+
+def _nested_repo_block(workspace_root: Path, repo: Path) -> str:
+    nested = Workspace(repo)
+    status = run_git(nested, ["status", "--porcelain"])
+    diff = run_git(nested, ["diff", "HEAD"])
+    untracked = run_git(nested, ["ls-files", "--others", "--exclude-standard"])
+    chunks: list[str] = []
+    if (status.stdout or "").strip():
+        chunks.append(status.stdout.strip())
+    if (diff.stdout or "").strip():
+        chunks.append(diff.stdout.strip())
+    for rel in (untracked.stdout or "").splitlines():
+        path = rel.strip()
+        if not path or is_runtime_artifact(path):
+            continue
+        full = repo / path
+        if not full.is_file():
+            chunks.append(f"untracked: {path}")
+            continue
+        try:
+            text = full.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            chunks.append(f"untracked binary: {path}")
+            continue
+        if len(text) > UNTRACKED_FILE_LIMIT:
+            text = text[:UNTRACKED_FILE_LIMIT] + "\n... truncated"
+        chunks.append(f"--- /dev/null\n+++ b/{path}\n{text}")
+    if not chunks:
+        return ""
+    label = repo.relative_to(workspace_root).as_posix()
+    return f"Other project {label}:\n" + "\n".join(chunks)
 
 
 def collect_current_evidence(

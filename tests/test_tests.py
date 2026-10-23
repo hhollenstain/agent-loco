@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from agent_loco.progress import bind_progress, current_events, reset_progress
@@ -101,4 +102,48 @@ def test_run_project_tests_reruns_after_an_edit(tmp_path: Path) -> None:
     second = run_project_tests(workspace, command, 10, phase="after")
     assert first.ok
     assert second.ok
+    assert marker.read_text(encoding="utf-8") == "2"
+
+
+def test_run_project_tests_ignores_mtime_and_non_code(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    marker = loco / "runs.txt"
+    app = tmp_path / "app.py"
+    app.write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "check.py").write_text(
+        "from pathlib import Path\n"
+        "marker = Path('.loco/runs.txt')\n"
+        "count = int(marker.read_text()) if marker.exists() else 0\n"
+        "marker.write_text(str(count + 1))\n",
+        encoding="utf-8",
+    )
+    workspace = Workspace(tmp_path)
+    command = "python3 check.py"
+    run_project_tests(workspace, command, 10, phase="agent")
+    later = app.stat().st_mtime + 50
+    os.utime(app, (later, later))
+    (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n")
+    run_project_tests(workspace, command, 10, phase="after")
+    assert marker.read_text(encoding="utf-8") == "1"
+
+
+def test_run_project_tests_reruns_when_another_project_changes(tmp_path: Path) -> None:
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    marker = loco / "runs.txt"
+    (tmp_path / "check.py").write_text(
+        "from pathlib import Path\n"
+        "marker = Path('.loco/runs.txt')\n"
+        "count = int(marker.read_text()) if marker.exists() else 0\n"
+        "marker.write_text(str(count + 1))\n",
+        encoding="utf-8",
+    )
+    workspace = Workspace(tmp_path)
+    command = "python3 check.py"
+    run_project_tests(workspace, command, 10, phase="agent")
+    other = tmp_path / "other-app" / "src"
+    other.mkdir(parents=True)
+    (other / "main.py").write_text("print('hi')\n", encoding="utf-8")
+    run_project_tests(workspace, command, 10, phase="after")
     assert marker.read_text(encoding="utf-8") == "2"

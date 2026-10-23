@@ -26,9 +26,10 @@ that nothing calls.
   Wire the API, CLI, or UI the test actually invokes.
 - **One slice at a time.** One seam, one test, one minimal implementation.
 - Do not write all tests first, then all implementation.
-- After the implementation, call `run_tests` once. If the tree has not changed
-  since the last run, loco reuses that result instead of running the suite again.
-  Do not keep calling `run_tests` on an unchanged tree.
+- After the implementation, call `run_tests` once. If no code has changed
+  since the last run, including in another project, loco does not run the
+  suite again. Do not keep calling `run_tests`, `run_lint`, or `review_ui`
+  until you edit code.
 - After tests, call `run_lint` when the project has a lint command. That
   formats with ruff, then checks. Fix every finding, including files that
   would be reformatted. The cycle will not commit or open a PR while lint fails.
@@ -43,7 +44,7 @@ that nothing calls.
 ## In this workspace
 
 - After the failing test, implement, then call `run_tests` once more.
-  Loco reuses a previous result when the tree has not changed.
+  Loco does not run tests again when no code has changed.
 - If there is no test command, look up the official runner, add the failing test, and call `configure_project` with `test_command`, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
 - If `run_tests` fails, fix the code or the test, then call `run_tests` again. Do not change the command so it exits 0 without running the failing check.
 - Then call `run_lint` if a lint command is configured. Unused imports,

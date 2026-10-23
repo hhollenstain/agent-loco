@@ -19,6 +19,7 @@ log = logging.getLogger("loco")
 
 MUTATING_TOOLS = {"write_file", "str_replace", "configure_project"}
 VERIFY_TOOLS = {"review_ui", "run_tests"}
+CHECK_TOOLS = {"review_ui", "run_tests", "run_lint"}
 UI_SUFFIXES = {".html", ".htm", ".css", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"}
 OPS_NAMES = {
     "dockerfile",
@@ -93,6 +94,12 @@ DOCS_NUDGE = (
     "commands from the official page you fetched. Name the real entry scene "
     "or program and the test command. If that section already matches the "
     "docs, correct it instead of adding a second copy. Then apply the code fix."
+)
+STOP_RERUN_NUDGE = (
+    "Lint, tests, and review already ran for the current code. No code file "
+    "has changed since, in this project or any other project in the workspace. "
+    "Do not call run_tests, run_lint, or review_ui again until you edit code. "
+    "If the goal is done, summarize. If it is not, edit the code."
 )
 VALIDATE_OPS_NUDGE = (
     "You changed Docker, compose, or docs but have not called run_tests since "
@@ -269,6 +276,8 @@ class CodingAgent:
         configured_validation = False
         wrote_agents = False
         docs_nudges = 0
+        since_edit: set[str] = set()
+        repeat_only_turns = 0
 
         last_text = ""
         last_error: str | None = None
@@ -295,6 +304,8 @@ class CodingAgent:
                     messages.append({"role": "assistant", "content": turn.text or ""})
                 wrote = False
                 inspected = False
+                turn_new_check = False
+                turn_repeat_check = False
                 for call in calls:
                     tool_calls += 1
                     result = execute_tool(self.tools, call.name, call.arguments)
@@ -373,6 +384,7 @@ class CodingAgent:
                             mutated = True
                             wrote = True
                             verified_tests = False
+                            since_edit.clear()
                             tool_path = _tool_path(call.arguments)
                             if tool_path.replace("\\", "/").endswith("AGENTS.md"):
                                 wrote_agents = True
@@ -395,9 +407,25 @@ class CodingAgent:
                             ).startswith("no test command configured")
                         elif call.name not in VERIFY_TOOLS:
                             inspected = True
+                    if call.name in CHECK_TOOLS:
+                        if call.name in since_edit and not wrote:
+                            turn_repeat_check = True
+                        else:
+                            since_edit.add(call.name)
+                            turn_new_check = True
                     messages.append(_tool_result_message(call, result.output, native=native))
                 if wrote:
                     inspect_rounds = 0
+                    repeat_only_turns = 0
+                elif turn_repeat_check and not turn_new_check:
+                    if repeat_only_turns == 0:
+                        repeat_only_turns = 1
+                        log.info("nudging agent to stop re-running checks")
+                        record_event(
+                            kind="step",
+                            message="Checks already cover this code; not running them again.",
+                        )
+                        messages.append({"role": "user", "content": _nudge(STOP_RERUN_NUDGE, goal)})
                 elif inspected and not mutated:
                     inspect_rounds += 1
                     if inspect_rounds >= MAX_INSPECT_ROUNDS:

@@ -10,8 +10,7 @@ from agent_loco.progress import record_lint_run
 from agent_loco.runtime.project import configured_value, load_project
 from agent_loco.sandbox import Workspace
 from agent_loco.tools.base import ToolResult, ToolSpec, object_schema
-from agent_loco.tools.files import SKIP_DIR_NAMES
-from agent_loco.tools.git import is_runtime_artifact
+from agent_loco.tools.codechange import code_fingerprint, reused_check_result
 from agent_loco.tools.shell import run_command
 
 _RUFF_ARROW_PATH = re.compile(r"-->\s+([^:\s]+):\d+")
@@ -95,10 +94,11 @@ def lint_tools(
             name="run_lint",
             description=(
                 "Run the project's configured linter (for example ruff format "
-                "then ruff check). Call this after edits and before considering "
-                "a pull request done. If the workspace tree has not changed "
-                "since the last run, returns that result without running the "
-                "linter again. If no command is configured, look up the official "
+                "then ruff check). Call this once after code changes, including "
+                "changes in another project in this workspace. If no code file "
+                "has changed since the last run, returns that result without "
+                "running the linter again. Do not call it again until you edit "
+                "code. If no command is configured, look up the official "
                 "linter and call configure_project, then call this again."
             ),
             parameters=object_schema({}),
@@ -137,7 +137,7 @@ def run_project_lint(
             elapsed_ms=0,
             reused=True,
         )
-        return cached.result
+        return reused_check_result("run_lint", cached.result)
     started = time.perf_counter()
     result = run_command(workspace, command, timeout_seconds)
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
@@ -152,6 +152,20 @@ def run_project_lint(
     return result
 
 
+def current_lint_result(
+    workspace: Workspace,
+    lint_command: str | None,
+) -> ToolResult | None:
+    """The last lint result when it already covers the current code. Does not run lint."""
+    command = _active_lint_command(workspace, lint_command)
+    if not command:
+        return None
+    cached = _CACHE.get(str(workspace.root))
+    if cached is None or cached.fingerprint != _tree_fingerprint(workspace, command):
+        return None
+    return cached.result
+
+
 def _active_lint_command(workspace: Workspace, lint_command: str | None) -> str | None:
     present, value = configured_value(workspace.root, "lint_command")
     if present:
@@ -164,18 +178,6 @@ def _active_lint_command(workspace: Workspace, lint_command: str | None) -> str 
 def _tree_fingerprint(workspace: Workspace, lint_command: str) -> str:
     digest = hashlib.sha256()
     digest.update(lint_command.encode("utf-8"))
-    root = workspace.root
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIR_NAMES for part in path.relative_to(root).parts):
-            continue
-        rel = path.relative_to(root).as_posix()
-        if is_runtime_artifact(rel):
-            continue
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        digest.update(f"{rel}:{stat.st_mtime_ns}:{stat.st_size}\n".encode())
+    digest.update(b"\0")
+    digest.update(code_fingerprint(workspace.root).encode("utf-8"))
     return digest.hexdigest()
