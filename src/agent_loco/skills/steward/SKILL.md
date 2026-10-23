@@ -13,8 +13,10 @@ experience. One change per cycle. Do not boil the ocean.
 
 ## Pick one gap
 
-Review the tree, README, UI, tests, and docs. Choose **one** concrete
-improvement that is missing today:
+Review the tree, README, UI, tests, and docs, and the recent commits.
+Choose **one** concrete improvement that is missing today. Do not pick a
+change those commits already made. Do not sweep docstrings or type hints
+through a file that already has them.
 
 - A best practice this stack already uses elsewhere but this file skips
 - A UX gap: unclear copy, a dead control, missing empty state, crushed

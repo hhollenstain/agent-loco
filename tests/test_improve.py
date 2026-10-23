@@ -750,6 +750,9 @@ def test_cycle_continuous_proposes_when_goals_are_empty(tmp_path: Path, settings
         [
             AssistantTurn(text=("GOAL: Add a module docstring to app.py\n\nDocument add().")),
             AssistantTurn(
+                text='{"accept": true, "reason": "app.py has no module docstring", "goal": ""}'
+            ),
+            AssistantTurn(
                 text=None,
                 tool_calls=[
                     ToolCall(

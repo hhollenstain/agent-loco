@@ -24,7 +24,7 @@ from agent_loco.runtime.project import write_default_project_files
 from agent_loco.runtime.watch import watch as watch_loop
 from agent_loco.tools.kiwi import check_kiwifs
 
-REQUIRED_ENV_VARS = ["LOCO_MODEL_NAME", "LOCO_MODEL_BASE_URL"]
+REQUIRED_ENV_VARS: list[str] = ["LOCO_MODEL_NAME", "LOCO_MODEL_BASE_URL"]
 
 
 app = typer.Typer(
@@ -176,10 +176,10 @@ def doctor() -> None:
     """Report hardware, tooling, and model-endpoint health."""
     _load_config_file()
     _validate_env()
-    settings = _settings()
+    settings: Settings = _settings()
     hw = detect_hardware()
 
-    table = Table(title="agent-loco doctor")
+    table: Table = Table(title="agent-loco doctor")
     table.add_column("Check")
     table.add_column("Value")
     table.add_row("os", f"{hw.os_name}/{hw.arch}")
@@ -193,8 +193,12 @@ def doctor() -> None:
     table.add_row("model url", settings.model_base_url)
     table.add_row("model name", settings.model_name)
 
+    ok: bool
+    detail: str
     ok, detail = check_model_endpoint(settings.model_base_url, settings.model_api_key)
     table.add_row("model endpoint", detail if ok else f"DOWN — {detail}")
+    kiwi_ok: bool
+    kiwi_detail: str
     kiwi_ok, kiwi_detail = check_kiwifs(settings.kiwifs_url, settings.kiwifs_api_key)
     if not settings.kiwifs_url.strip():
         table.add_row("kiwifs", "off")
@@ -222,7 +226,7 @@ def init(
 ) -> None:
     """Create .loco/config.yaml and .loco/goals.md in a project."""
     _validate_env()
-    created = write_default_project_files(workspace)
+    created: list[Path] | None = write_default_project_files(workspace)
     if created:
         for path in created:
             console.print(f"created {path}")
@@ -243,17 +247,17 @@ def clone(
     from agent_loco.runtime.workspaces import clone_workspace
 
     if dest is None:
-        parent = Path.cwd()
-        name = None
+        parent: Path = Path.cwd()
+        name: str | None = None
     else:
         target = dest.expanduser()
-        parent = target.parent
-        name = target.name
+        parent: Path = target.parent
+        name: str | None = target.name
         if not parent.exists():
             console.print(f"parent does not exist: {parent}")
             raise typer.Exit(code=1)
     try:
-        cloned = clone_workspace(url, parent, name=name)
+        cloned: dict[str, Any] = clone_workspace(url, parent, name=name)
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -323,7 +327,7 @@ def run(
 ) -> None:
     """Run one improve → test → commit cycle against a project."""
     _validate_env(require=not web_ui)
-    settings = _settings(
+    settings: Settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
         create_pr=create_pr,
@@ -401,7 +405,7 @@ def watch_command(
     ] = False,
 ) -> None:
     """Keep improving a project on an interval."""
-    settings = _settings(
+    settings: Settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
         watch_interval_seconds=interval,
@@ -457,7 +461,7 @@ def ui_command(
     a .env, config.yaml, or config.yml file if present, but does not fail if
     they are missing. Users can configure settings via the UI.
     """
-    settings = _settings(
+    settings: Settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
         create_pr=create_pr,
