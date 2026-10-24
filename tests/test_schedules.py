@@ -1,0 +1,310 @@
+from __future__ import annotations
+
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from agent_loco.config import Settings
+from agent_loco.runtime.improve import CycleResult
+from agent_loco.runtime.schedules import (
+    ScheduleClock,
+    claim_due,
+    cron_expression,
+    human_cadence,
+    list_schedules,
+    next_occurrence,
+    upsert_schedule,
+)
+from agent_loco.runtime.tasks import Task, TaskManager
+from agent_loco.web_ui import create_app
+
+
+def _local(year: int, month: int, day: int, hour: int, minute: int) -> datetime:
+    zone = datetime.now().astimezone().tzinfo
+    return datetime(year, month, day, hour, minute, tzinfo=zone)
+
+
+def _daily(hour: int = 9, minute: int = 0) -> dict:
+    return {"kind": "daily", "hour": hour, "minute": minute, "weekdays": [0, 1, 2, 3, 4]}
+
+
+def test_cadence_reads_as_a_sentence_and_a_cron_expression() -> None:
+    hourly = {"kind": "hourly", "minute": 15, "hour": 0, "weekdays": []}
+    assert human_cadence(hourly) == "Every hour at :15"
+    assert cron_expression(hourly) == "15 * * * *"
+    assert human_cadence({"kind": "hourly", "minute": 0, "hour": 0, "weekdays": []}) == "Every hour"
+
+    daily = _daily(9, 0)
+    assert human_cadence(daily) == "Every day at 9:00 AM"
+    assert cron_expression(daily) == "0 9 * * *"
+
+    weekdays = {"kind": "weekly", "hour": 8, "minute": 30, "weekdays": [0, 1, 2, 3, 4]}
+    assert human_cadence(weekdays) == "Weekdays at 8:30 AM"
+    assert cron_expression(weekdays) == "30 8 * * 1,2,3,4,5"
+
+    monday = {"kind": "weekly", "hour": 12, "minute": 0, "weekdays": [0]}
+    assert human_cadence(monday) == "Every Monday at 12:00 PM"
+    assert cron_expression(monday) == "0 12 * * 1"
+
+    sunday = {"kind": "weekly", "hour": 18, "minute": 5, "weekdays": [6]}
+    assert human_cadence(sunday) == "Every Sunday at 6:05 PM"
+    assert cron_expression(sunday) == "5 18 * * 0"
+
+
+def test_next_occurrence_is_strictly_after_the_given_time() -> None:
+    after = _local(2026, 10, 23, 9, 30)
+    hourly = next_occurrence(
+        {"kind": "hourly", "minute": 15, "hour": 0, "weekdays": []},
+        after,
+    )
+    assert hourly == after.replace(hour=10, minute=15, second=0, microsecond=0)
+
+    daily = next_occurrence(_daily(9, 0), after)
+    assert daily == after.replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=1)
+
+    same_minute = next_occurrence(_daily(9, 30), after)
+    assert same_minute == after.replace(second=0, microsecond=0) + timedelta(days=1)
+
+    weekly = next_occurrence(
+        {"kind": "weekly", "hour": 8, "minute": 0, "weekdays": [0]},
+        after,
+    )
+    assert weekly.weekday() == 0
+    assert weekly.hour == 8
+    assert weekly.minute == 0
+    assert 1 <= (weekly.date() - after.date()).days <= 7
+
+
+def test_claim_due_queues_one_run_and_does_not_overlap(tmp_path: Path) -> None:
+    saved = upsert_schedule(
+        tmp_path,
+        {
+            "name": "Job search",
+            "goal": "Look up new jobs",
+            "workspace": str(tmp_path),
+            "enabled": True,
+            "cadence": _daily(8, 0),
+        },
+    )
+    paused = upsert_schedule(
+        tmp_path,
+        {
+            "name": "Paused",
+            "goal": "Stay quiet",
+            "workspace": str(tmp_path),
+            "enabled": False,
+            "cadence": _daily(8, 0),
+        },
+    )
+    later = datetime.now().astimezone() + timedelta(days=3)
+    launched: list[str] = []
+
+    def remember(schedule: dict) -> None:
+        launched.append(schedule["id"])
+
+    clock = ScheduleClock(tmp_path, remember, lambda _task: None)
+
+    assert clock.tick(later) == 1
+    assert launched == [saved["id"]]
+    assert clock.tick(later) == 0
+    assert claim_due(tmp_path, later) == []
+    stored = {item["id"]: item for item in list_schedules(tmp_path)}
+    assert stored[paused["id"]]["runs"] == []
+    assert stored[saved["id"]]["runs"][0]["status"] == "queued"
+    assert datetime.fromisoformat(stored[saved["id"]]["next_run_at"]) > later
+
+
+def _ok(goal: str | None = None) -> CycleResult:
+    return CycleResult(
+        status="success",
+        goal=goal,
+        summary="Found three roles.",
+        tests_passed=True,
+        committed=False,
+        published=False,
+        commit_sha=None,
+        reason="completed",
+    )
+
+
+def test_schedule_api_saves_updates_runs_and_lists_results(
+    settings: Settings, tmp_path: Path
+) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert b'id="app-switch"' in page.content
+        assert b'id="mode-projects"' in page.content
+        assert b'id="mode-schedules"' in page.content
+        assert b'id="schedules-app"' in page.content
+        assert b"/api/schedules" in page.content
+
+        missing = client.post(
+            "/api/schedules",
+            json={
+                "name": "",
+                "goal": "Look up jobs",
+                "workspace": str(tmp_path),
+                "cadence": _daily(),
+            },
+        )
+        assert missing.status_code == 400
+
+        created = client.post(
+            "/api/schedules",
+            json={
+                "name": "Job search",
+                "goal": "Look up new jobs and write a short report.",
+                "workspace": str(tmp_path),
+                "enabled": True,
+                "auto_commit": False,
+                "create_pr": False,
+                "cadence": {
+                    "kind": "weekly",
+                    "hour": 8,
+                    "minute": 0,
+                    "weekdays": [0, 1, 2, 3, 4],
+                },
+            },
+        )
+        assert created.status_code == 200
+        body = created.json()
+        assert body["label"] == "Weekdays at 8:00 AM"
+        assert body["cron"] == "0 8 * * 1,2,3,4,5"
+        assert body["runs"] == []
+
+        updated = client.patch(
+            f"/api/schedules/{body['id']}",
+            json={
+                "name": "Job search",
+                "goal": "Look up new jobs and write a short report.",
+                "workspace": str(tmp_path),
+                "enabled": True,
+                "cadence": _daily(7, 15),
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["label"] == "Every day at 7:15 AM"
+
+        ran = client.post(f"/api/schedules/{body['id']}/run")
+        assert ran.status_code == 200
+        assert ran.json()["runs"][0]["status"] in {"queued", "running", "success"}
+
+        deadline = time.time() + 3
+        latest = ran.json()["runs"][0]
+        while time.time() < deadline and latest["status"] != "success":
+            time.sleep(0.05)
+            listed = client.get("/api/schedules")
+            assert listed.status_code == 200
+            latest = listed.json()["schedules"][0]["runs"][0]
+        assert latest["status"] == "success"
+        assert latest["summary"] == "Found three roles."
+
+        again = client.post(f"/api/schedules/{body['id']}/run")
+        assert again.status_code == 200
+
+        removed = client.delete(f"/api/schedules/{body['id']}")
+        assert removed.status_code == 200
+        assert client.get("/api/schedules").json()["schedules"] == []
+        assert client.delete(f"/api/schedules/{body['id']}").status_code == 404
+        home = page.content
+        assert b'id="target-files"' in home
+        assert b"schedule-target" in home
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_file_schedule_saves_documents_outside_a_project(
+    settings: Settings, tmp_path: Path
+) -> None:
+    seen: list[Task] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append(task)
+        (Path(task.workspace) / "jobs.csv").write_text("role,company\n", encoding="utf-8")
+        return _ok(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        missing = client.post(
+            "/api/schedules",
+            json={
+                "name": "Repo bot",
+                "goal": "Fix the build",
+                "kind": "project",
+                "workspace": str(tmp_path / "missing"),
+                "cadence": _daily(),
+            },
+        )
+        assert missing.status_code == 400
+
+        created = client.post(
+            "/api/schedules",
+            json={
+                "name": "Job search",
+                "goal": "Search for new jobs and save them as jobs.csv.",
+                "kind": "files",
+                "workspace": "",
+                "auto_commit": True,
+                "create_pr": True,
+                "cadence": _daily(8, 0),
+            },
+        )
+        assert created.status_code == 200
+        body = created.json()
+        assert body["kind"] == "files"
+        assert body["auto_commit"] is False
+        assert body["create_pr"] is False
+        assert body["files"] == []
+        folder = Path(body["workspace"])
+        assert folder.is_dir()
+        assert folder.name == body["id"]
+
+        reports = tmp_path / "reports"
+        moved = client.patch(
+            f"/api/schedules/{body['id']}",
+            json={
+                "name": "Job search",
+                "goal": "Search for new jobs and save them as jobs.csv.",
+                "kind": "files",
+                "workspace": str(reports),
+                "cadence": _daily(8, 0),
+            },
+        )
+        assert moved.status_code == 200
+        assert Path(moved.json()["workspace"]) == reports.resolve()
+
+        ran = client.post(f"/api/schedules/{body['id']}/run")
+        assert ran.status_code == 200
+        deadline = time.time() + 3
+        latest: dict = {}
+        while time.time() < deadline:
+            latest = client.get("/api/schedules").json()["schedules"][0]
+            if latest["runs"] and latest["runs"][0]["status"] == "success" and latest["files"]:
+                break
+            time.sleep(0.05)
+        assert latest["files"][0]["name"] == "jobs.csv"
+        assert seen[0].auto_commit is False
+        assert seen[0].create_pr is False
+        assert "not a software project" in (seen[0].goal or "")
+        assert "jobs.csv" in (seen[0].goal or "")
+        downloaded = client.get(
+            f"/api/schedules/{body['id']}/file",
+            params={"path": "jobs.csv"},
+        )
+        assert downloaded.status_code == 200
+        assert downloaded.content.startswith(b"role,company")
+        escaped = client.get(
+            f"/api/schedules/{body['id']}/file",
+            params={"path": "../schedules.json"},
+        )
+        assert escaped.status_code == 404
+    finally:
+        manager.shutdown(wait=False)

@@ -33,6 +33,19 @@ from agent_loco.runtime.project import (
     guidelines_are_custom,
     save_guidelines,
 )
+from agent_loco.runtime.schedules import (
+    ScheduleClock,
+    attach_task,
+    delete_schedule,
+    fail_run,
+    file_task_goal,
+    get_schedule,
+    list_schedules,
+    resolve_output_file,
+    start_run,
+    sync_runs,
+    upsert_schedule,
+)
 from agent_loco.runtime.servers import (
     list_known_servers,
     load_selection,
@@ -243,6 +256,24 @@ class WorkspaceClone(BaseModel):
     parent: str | None = None
     name: str | None = None
     guidelines: str | None = None
+
+
+class ScheduleCadence(BaseModel):
+    kind: str
+    minute: int = 0
+    hour: int = 9
+    weekdays: list[int] = []
+
+
+class ScheduleWrite(BaseModel):
+    name: str
+    goal: str
+    workspace: str = ""
+    kind: str = "project"
+    enabled: bool = True
+    auto_commit: bool = False
+    create_pr: bool = False
+    cadence: ScheduleCadence
 
 
 class UiState:
@@ -1256,8 +1287,128 @@ def create_app(
             return JSONResponse({"error": str(exc)}, status_code=400)
         return _workspace_payload(ui)
 
+    @app.get("/api/schedules", response_model=None)
+    def list_schedule_route(request: Request) -> Any:
+        ui: UiState = request.app.state.ui
+        root = Path(ui.store_root)
+        sync_runs(root, _task_lookup(ui.manager))
+        return {"schedules": list_schedules(root)}
+
+    @app.post("/api/schedules", response_model=None)
+    def create_schedule_route(request: Request, payload: ScheduleWrite) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            return upsert_schedule(Path(ui.store_root), payload.model_dump())
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.patch("/api/schedules/{schedule_id}", response_model=None)
+    def update_schedule_route(request: Request, schedule_id: str, payload: ScheduleWrite) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            return upsert_schedule(Path(ui.store_root), payload.model_dump(), schedule_id)
+        except KeyError:
+            return JSONResponse({"error": "Schedule not found."}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.delete("/api/schedules/{schedule_id}", response_model=None)
+    def delete_schedule_route(request: Request, schedule_id: str) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            delete_schedule(Path(ui.store_root), schedule_id)
+        except KeyError:
+            return JSONResponse({"error": "Schedule not found."}, status_code=404)
+        return {"ok": True}
+
+    @app.get("/api/schedules/{schedule_id}/file", response_model=None)
+    def schedule_file(request: Request, schedule_id: str, path: str = "") -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            schedule = get_schedule(Path(ui.store_root), schedule_id)
+        except KeyError:
+            return JSONResponse({"error": "Schedule not found."}, status_code=404)
+        target = resolve_output_file(schedule, path)
+        if target is None:
+            return JSONResponse({"error": "File not found."}, status_code=404)
+        return FileResponse(target, filename=target.name)
+
+    @app.post("/api/schedules/{schedule_id}/run", response_model=None)
+    def run_schedule_route(request: Request, schedule_id: str) -> Any:
+        ui: UiState = request.app.state.ui
+        root = Path(ui.store_root)
+        try:
+            schedule = start_run(root, schedule_id, datetime.now().astimezone())
+        except KeyError:
+            return JSONResponse({"error": "Schedule not found."}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        _launch_scheduled_run(ui, schedule)
+        sync_runs(root, _task_lookup(ui.manager))
+        try:
+            return get_schedule(root, schedule_id)
+        except KeyError:
+            return JSONResponse({"error": "Schedule not found."}, status_code=404)
+
+    _bind_schedule_clock(app)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     return app
+
+
+def _task_lookup(manager: TaskManager):
+    def lookup(task_id: str) -> dict | None:
+        task = manager.get(task_id)
+        if task is None:
+            return None
+        return {
+            "status": task.status,
+            "summary": task.summary or "",
+            "error": task.error or "",
+            "finished_at": task.finished_at,
+        }
+
+    return lookup
+
+
+def _launch_scheduled_run(ui: UiState, schedule: dict) -> None:
+    runs = schedule.get("runs") or []
+    if not runs:
+        return
+    run_id = str(runs[0].get("id") or "")
+    if not run_id:
+        return
+    root = Path(ui.store_root)
+    goal = schedule.get("goal")
+    auto_commit = bool(schedule.get("auto_commit"))
+    create_pr = bool(schedule.get("create_pr"))
+    if schedule.get("kind") == "files":
+        goal = file_task_goal(str(goal or ""))
+        auto_commit = False
+        create_pr = False
+    try:
+        task = ui.manager.submit(
+            Path(str(schedule.get("workspace") or "")),
+            goal,
+            auto_commit=auto_commit,
+            create_pr=create_pr,
+        )
+    except Exception as exc:
+        fail_run(root, str(schedule.get("id") or ""), run_id, str(exc))
+        return
+    attach_task(root, str(schedule.get("id") or ""), run_id, task.id)
+
+
+def _bind_schedule_clock(app: FastAPI) -> None:
+    ui: UiState = app.state.ui
+
+    def on_due(schedule: dict) -> None:
+        _launch_scheduled_run(ui, schedule)
+
+    app.state.schedules = ScheduleClock(
+        Path(ui.store_root),
+        on_due,
+        _task_lookup(ui.manager),
+    )
 
 
 def _created_at_from_run_id(stem: str) -> str | None:
@@ -1294,9 +1445,11 @@ def serve(
         access_log=False,
     )
     server = uvicorn.Server(config)
+    app.state.schedules.start()
     try:
         server.run()
     except KeyboardInterrupt:
         pass
     finally:
+        app.state.schedules.stop()
         manager.shutdown(wait=False)

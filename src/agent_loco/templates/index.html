@@ -2209,6 +2209,47 @@
   </style>
 </head>
 <body>
+  <script>
+    function restoreAppMode() {
+      try {
+        if (localStorage.getItem("loco-app-mode") === "schedules") {
+          document.documentElement.dataset.appMode = "schedules";
+        }
+      } catch (err) {
+        return;
+      }
+    }
+    restoreAppMode();
+  </script>
+  <div class="app-switch" id="app-switch">
+    <button type="button" class="app-switch-tab" id="app-switch-tab" aria-expanded="false" aria-controls="app-switch-rail" aria-label="Switch app" title="Switch app">
+      <svg viewBox="0 0 8 16" aria-hidden="true">
+        <path d="M2 2.5 6 8 2 13.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    </button>
+    <nav class="app-switch-rail" id="app-switch-rail" aria-label="App mode">
+      <div class="app-switch-rail-inner">
+        <button type="button" class="app-mode" id="mode-projects" data-mode="projects" aria-pressed="true" title="Projects">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="6" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+            <circle cx="6" cy="18" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+            <circle cx="17" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+            <path d="M6 8.2v7.6M6 12h5.2A4.8 4.8 0 0 0 16 7.2V6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+          </svg>
+          <span>Projects</span>
+        </button>
+        <button type="button" class="app-mode" id="mode-schedules" data-mode="schedules" aria-pressed="false" title="Scheduled tasks">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 4.5 8.2 7M19 4.5 15.8 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            <circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+            <path d="M12 13V9.8M12 13l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            <path d="M8.2 19.2 6.6 21M15.8 19.2 17.4 21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+          </svg>
+          <span>Schedules</span>
+        </button>
+      </div>
+    </nav>
+  </div>
   {% set ws_kind = 'github' if workspace_git_remote and 'github.com' in (workspace_git_remote|lower) else ('git' if workspace_is_git else 'folder') %}
   {% set ws_kind_label = 'GitHub repository' if ws_kind == 'github' else ('Git repository' if ws_kind == 'git' else 'Local folder') %}
   <nav class="workspace-tabs" id="workspace-tabs" aria-label="Workspaces">
@@ -2417,6 +2458,91 @@
       </div>
     </section>
   </main>
+  <section class="schedules-app" id="schedules-app" aria-label="Scheduled tasks">
+    <aside class="schedules-list">
+      <div class="schedules-head">
+        <h1>Scheduled tasks</h1>
+        <button type="button" class="secondary" id="new-schedule">New</button>
+      </div>
+      <p class="hint">Run a goal in a project, or save a CSV and documents on their own.</p>
+      <div id="schedule-list"></div>
+    </aside>
+    <div class="schedules-detail">
+      <h2 id="schedule-heading">New schedule</h2>
+      <p class="hint" id="schedule-next">Choose when it runs. You can change it later and read each result here.</p>
+      <form id="schedule-form">
+        <label for="schedule-name">Name</label>
+        <input id="schedule-name" type="text" maxlength="80" placeholder="Weekday job search" autocomplete="off">
+        <label for="schedule-goal">What should it do?</label>
+        <textarea id="schedule-goal" rows="6" placeholder="Look up new jobs that match this project and write a short report of what you found."></textarea>
+        <label>Where it runs</label>
+        <div class="cadence-choices">
+          <button type="button" class="secondary schedule-target" id="target-project" data-target="project" aria-pressed="true">Project</button>
+          <button type="button" class="secondary schedule-target" id="target-files" data-target="files" aria-pressed="false">Files</button>
+        </div>
+        <div id="schedule-project-fields">
+          <label for="schedule-workspace">Project</label>
+          <select id="schedule-workspace" aria-label="Project"></select>
+        </div>
+        <div id="schedule-files-fields" hidden>
+          <label for="schedule-output">Save files in</label>
+          <input id="schedule-output" type="text" spellcheck="false" placeholder="Leave blank to keep them with this schedule">
+          <p class="hint">A job search, CSV, or other documents. This does not need a git project.</p>
+        </div>
+        <label>How often</label>
+        <div class="cadence-choices">
+          <button type="button" class="secondary cadence-choice" id="cadence-hourly" data-kind="hourly" aria-pressed="false">Hourly</button>
+          <button type="button" class="secondary cadence-choice" id="cadence-daily" data-kind="daily" aria-pressed="true">Daily</button>
+          <button type="button" class="secondary cadence-choice" id="cadence-weekly" data-kind="weekly" aria-pressed="false">Weekly</button>
+        </div>
+        <div id="cadence-minute-field" hidden>
+          <label for="cadence-minute">Minute past the hour</label>
+          <input id="cadence-minute" type="number" min="0" max="59" value="0">
+        </div>
+        <div id="cadence-time-field">
+          <label for="cadence-time">Time</label>
+          <input id="cadence-time" type="time" value="09:00">
+        </div>
+        <div id="cadence-weekdays" hidden>
+          <label>Days</label>
+          <div class="weekday-row">
+            <button type="button" class="secondary weekday" data-weekday="0" aria-pressed="true">Mon</button>
+            <button type="button" class="secondary weekday" data-weekday="1" aria-pressed="true">Tue</button>
+            <button type="button" class="secondary weekday" data-weekday="2" aria-pressed="true">Wed</button>
+            <button type="button" class="secondary weekday" data-weekday="3" aria-pressed="true">Thu</button>
+            <button type="button" class="secondary weekday" data-weekday="4" aria-pressed="true">Fri</button>
+            <button type="button" class="secondary weekday" data-weekday="5" aria-pressed="false">Sat</button>
+            <button type="button" class="secondary weekday" data-weekday="6" aria-pressed="false">Sun</button>
+          </div>
+        </div>
+        <p id="cadence-label">Every day at 9:00 AM</p>
+        <p class="hint" id="cadence-cron">0 9 * * *</p>
+        <div class="checks">
+          <label>
+            <input id="schedule-enabled" type="checkbox" checked> enabled
+          </label>
+          <span id="schedule-project-options">
+            <label>
+              <input id="schedule-commit" type="checkbox"> commit if tests pass
+            </label>
+            <label>
+              <input id="schedule-pr" type="checkbox"> create pull request
+            </label>
+          </span>
+        </div>
+        <div class="schedule-actions">
+          <button type="submit" id="save-schedule">Save schedule</button>
+          <button type="button" class="secondary" id="run-schedule" disabled>Run now</button>
+          <button type="button" class="secondary" id="delete-schedule" disabled>Delete</button>
+        </div>
+        <div class="notice-slot" id="schedule-error"></div>
+      </form>
+      <div id="schedule-results">
+        <h3>Results</h3>
+        <p class="hint" id="schedule-results-empty">Save the schedule, then run it or wait for the next time.</p>
+      </div>
+    </div>
+  </section>
   <div class="modal-backdrop" id="workspace-picker" role="dialog" aria-modal="true" aria-labelledby="workspace-picker-title" hidden>
     <div class="modal">
       <h2 id="workspace-picker-title">Choose a workspace</h2>
@@ -5981,6 +6107,532 @@
       loadGitHubIssues(workspaceEl.value);
     });
 
+    const APP_MODE_KEY = "loco-app-mode";
+    const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const scheduleListEl = document.getElementById("schedule-list");
+    const scheduleFormEl = document.getElementById("schedule-form");
+    const scheduleNameEl = document.getElementById("schedule-name");
+    const scheduleGoalEl = document.getElementById("schedule-goal");
+    const scheduleWorkspaceEl = document.getElementById("schedule-workspace");
+    const scheduleOutputEl = document.getElementById("schedule-output");
+    const scheduleEnabledEl = document.getElementById("schedule-enabled");
+    const scheduleCommitEl = document.getElementById("schedule-commit");
+    const schedulePrEl = document.getElementById("schedule-pr");
+    const cadenceMinuteEl = document.getElementById("cadence-minute");
+    const cadenceTimeEl = document.getElementById("cadence-time");
+    const cadenceLabelEl = document.getElementById("cadence-label");
+    const cadenceCronEl = document.getElementById("cadence-cron");
+    const scheduleHeadingEl = document.getElementById("schedule-heading");
+    const scheduleNextEl = document.getElementById("schedule-next");
+    const scheduleErrorEl = document.getElementById("schedule-error");
+    const scheduleResultsEl = document.getElementById("schedule-results");
+    const runScheduleBtn = document.getElementById("run-schedule");
+    const deleteScheduleBtn = document.getElementById("delete-schedule");
+    const appSwitchEl = document.getElementById("app-switch");
+    let scheduleState = { items: [], selectedId: "", listKey: "", resultKey: "" };
+    let scheduleDraft = blankCadence();
+
+    function blankCadence() {
+      return { id: "", kind: "daily", hour: 9, minute: 0, weekdays: [0, 1, 2, 3, 4], target: "project" };
+    }
+
+    function currentAppMode() {
+      return document.documentElement.dataset.appMode === "schedules" ? "schedules" : "projects";
+    }
+
+    function setAppSwitchOpen(open) {
+      appSwitchEl.classList.toggle("open", open);
+      document.querySelector(".app-switch-tab").setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function setAppMode(mode) {
+      const next = mode === "schedules" ? "schedules" : "projects";
+      if (next === "schedules") {
+        document.documentElement.dataset.appMode = "schedules";
+      } else {
+        delete document.documentElement.dataset.appMode;
+      }
+      try {
+        localStorage.setItem(APP_MODE_KEY, next);
+      } catch (err) {
+        /* keep the mode for this page even if storage is blocked */
+      }
+      document.title = next === "schedules" ? "loco — scheduled tasks" : "loco — task runner";
+      for (const button of document.querySelectorAll(".app-mode")) {
+        button.setAttribute("aria-pressed", button.dataset.mode === next ? "true" : "false");
+      }
+      setAppSwitchOpen(false);
+      if (appSwitchEl.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
+      if (next === "schedules") {
+        loadScheduleWorkspaces()
+          .then(() => refreshSchedules())
+          .catch((err) => showNotice(scheduleErrorEl, "error", err.message));
+      }
+    }
+
+    function initAppMode() {
+      const saved = currentAppMode();
+      document.title = saved === "schedules" ? "loco — scheduled tasks" : "loco — task runner";
+      for (const button of document.querySelectorAll(".app-mode")) {
+        button.setAttribute("aria-pressed", button.dataset.mode === saved ? "true" : "false");
+        button.addEventListener("click", () => setAppMode(button.dataset.mode));
+      }
+      document.querySelector(".app-switch-tab").addEventListener("click", () => {
+        const open = !appSwitchEl.classList.contains("open");
+        setAppSwitchOpen(open);
+        if (open) {
+          const current = document.querySelector('.app-mode[aria-pressed="true"]');
+          if (current) current.focus();
+        }
+      });
+      appSwitchEl.addEventListener("mouseleave", () => setAppSwitchOpen(false));
+      document.addEventListener("click", (event) => {
+        if (!appSwitchEl.contains(event.target)) setAppSwitchOpen(false);
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") setAppSwitchOpen(false);
+      });
+    }
+
+    function clockLabel(hour, minute) {
+      const suffix = hour < 12 ? "AM" : "PM";
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+    }
+
+    function describeCadence(cadence) {
+      const minute = Number(cadence.minute) || 0;
+      if (cadence.kind === "hourly") {
+        if (minute === 0) return "Every hour";
+        return `Every hour at :${String(minute).padStart(2, "0")}`;
+      }
+      const clock = clockLabel(Number(cadence.hour) || 0, minute);
+      if (cadence.kind === "daily") return `Every day at ${clock}`;
+      const names = (cadence.weekdays || [])
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((day) => WEEKDAY_NAMES[day])
+        .filter(Boolean);
+      if (!names.length) return "Pick at least one day.";
+      if (names.length === 7) return `Every day at ${clock}`;
+      if (names.join() === "Monday,Tuesday,Wednesday,Thursday,Friday") return `Weekdays at ${clock}`;
+      if (names.join() === "Saturday,Sunday") return `Weekends at ${clock}`;
+      if (names.length === 1) return `Every ${names[0]} at ${clock}`;
+      if (names.length === 2) return `Every ${names[0]} and ${names[1]} at ${clock}`;
+      return `Every ${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]} at ${clock}`;
+    }
+
+    function cronText(cadence) {
+      const minute = Number(cadence.minute) || 0;
+      if (cadence.kind === "hourly") return `${minute} * * * *`;
+      const hour = Number(cadence.hour) || 0;
+      if (cadence.kind === "daily") return `${minute} ${hour} * * *`;
+      const days = (cadence.weekdays || []).map((day) => (Number(day) + 1) % 7).sort((a, b) => a - b);
+      return `${minute} ${hour} * * ${days.join(",")}`;
+    }
+
+    function readCadenceFromForm() {
+      const kind = scheduleDraft.kind;
+      let hour = scheduleDraft.hour;
+      let minute = scheduleDraft.minute;
+      if (kind === "hourly") {
+        minute = Number(cadenceMinuteEl.value);
+        if (!Number.isFinite(minute)) minute = 0;
+      } else {
+        const parts = (cadenceTimeEl.value || "09:00").split(":");
+        hour = Number(parts[0]);
+        minute = Number(parts[1]);
+        if (!Number.isFinite(hour)) hour = 9;
+        if (!Number.isFinite(minute)) minute = 0;
+      }
+      return {
+        kind,
+        hour,
+        minute,
+        weekdays: scheduleDraft.weekdays.slice().sort((a, b) => a - b),
+      };
+    }
+
+    function syncCadenceControls() {
+      const kind = scheduleDraft.kind;
+      for (const button of document.querySelectorAll(".cadence-choice")) {
+        button.setAttribute("aria-pressed", button.dataset.kind === kind ? "true" : "false");
+      }
+      document.getElementById("cadence-minute-field").hidden = kind !== "hourly";
+      document.getElementById("cadence-time-field").hidden = kind === "hourly";
+      document.getElementById("cadence-weekdays").hidden = kind !== "weekly";
+      for (const button of document.querySelectorAll(".weekday")) {
+        const day = Number(button.dataset.weekday);
+        button.setAttribute("aria-pressed", scheduleDraft.weekdays.includes(day) ? "true" : "false");
+      }
+      const cadence = readCadenceFromForm();
+      cadenceLabelEl.textContent = describeCadence(cadence);
+      cadenceCronEl.textContent = cronText(cadence);
+      syncTargetControls();
+    }
+
+    function syncTargetControls() {
+      const files = scheduleDraft.target === "files";
+      for (const button of document.querySelectorAll(".schedule-target")) {
+        button.setAttribute("aria-pressed", button.dataset.target === scheduleDraft.target ? "true" : "false");
+      }
+      document.getElementById("schedule-project-fields").hidden = files;
+      document.getElementById("schedule-files-fields").hidden = !files;
+      document.getElementById("schedule-project-options").hidden = files;
+      scheduleGoalEl.placeholder = files
+        ? "Search for new jobs and save them as jobs.csv."
+        : "Look up new jobs that match this project and write a short report of what you found.";
+    }
+
+    function formatWhen(iso) {
+      if (!iso) return "";
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return iso;
+      return date.toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+
+    function folderName(path) {
+      const parts = String(path || "").split(/[/\\]/).filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : path;
+    }
+
+    function ensureWorkspaceOption(path) {
+      if (!path) return;
+      const existing = Array.from(scheduleWorkspaceEl.options).some((option) => option.value === path);
+      if (existing) return;
+      const option = document.createElement("option");
+      option.value = path;
+      option.textContent = folderName(path);
+      scheduleWorkspaceEl.append(option);
+    }
+
+    async function loadScheduleWorkspaces() {
+      const res = await fetch("/api/workspaces");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Could not load projects");
+      const selected = scheduleWorkspaceEl.value;
+      scheduleWorkspaceEl.replaceChildren();
+      for (const item of body.workspaces || []) {
+        const option = document.createElement("option");
+        option.value = item.path;
+        option.textContent = item.name || folderName(item.path);
+        scheduleWorkspaceEl.append(option);
+      }
+      if (selected) ensureWorkspaceOption(selected);
+      if (selected) scheduleWorkspaceEl.value = selected;
+      else if (workspaceEl.value) {
+        ensureWorkspaceOption(workspaceEl.value);
+        scheduleWorkspaceEl.value = workspaceEl.value;
+      }
+    }
+
+    function runStatusLabel(status) {
+      if (status === "success") return "Finished";
+      if (status === "failed" || status === "error") return "Failed";
+      if (status === "running") return "Running";
+      if (status === "queued") return "Queued";
+      if (status === "skipped") return "Skipped";
+      return status || "";
+    }
+
+    function renderScheduleResults(item, force) {
+      const runs = (item && item.runs) || [];
+      const files = (item && item.files) || [];
+      const key = runs.map((run) => [run.id, run.status, run.summary, run.error].join(":")).join("|")
+        + "#" + files.map((file) => file.name).join(",");
+      if (!force && key === scheduleState.resultKey && scheduleResultsEl.childElementCount) return;
+      scheduleState.resultKey = key;
+      scheduleResultsEl.replaceChildren();
+      const heading = document.createElement("h3");
+      heading.textContent = "Results";
+      scheduleResultsEl.append(heading);
+      if (!item) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.id = "schedule-results-empty";
+        empty.textContent = "Save the schedule, then run it or wait for the next time.";
+        scheduleResultsEl.append(empty);
+        return;
+      }
+      if (!runs.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No runs yet.";
+        scheduleResultsEl.append(empty);
+      }
+      for (const run of runs) {
+        const row = document.createElement("article");
+        row.className = "schedule-run";
+        const status = document.createElement("div");
+        status.className = `schedule-run-status ${run.status || ""}`;
+        const when = formatWhen(run.finished_at || run.started_at);
+        status.textContent = when ? `${runStatusLabel(run.status)} · ${when}` : runStatusLabel(run.status);
+        row.append(status);
+        const text = run.summary || run.error;
+        if (text) {
+          const body = document.createElement("p");
+          body.textContent = text;
+          row.append(body);
+        }
+        scheduleResultsEl.append(row);
+      }
+      if (!item || item.kind !== "files") return;
+      const folder = document.createElement("p");
+      folder.className = "hint";
+      folder.textContent = item.workspace ? `Saved in ${item.workspace}` : "Files are saved with this schedule.";
+      scheduleResultsEl.append(folder);
+      if (!files.length) return;
+      const list = document.createElement("ul");
+      list.className = "schedule-files";
+      for (const file of files) {
+        const itemRow = document.createElement("li");
+        const link = document.createElement("a");
+        const query = new URLSearchParams({ path: file.name });
+        link.href = `/api/schedules/${encodeURIComponent(item.id)}/file?${query}`;
+        link.textContent = file.name;
+        itemRow.append(link);
+        list.append(itemRow);
+      }
+      scheduleResultsEl.append(list);
+    }
+
+    function renderScheduleList() {
+      const key = scheduleState.items.map((item) => {
+        const latest = (item.runs || [])[0] || {};
+        return [item.id, item.kind, item.name, item.label, item.enabled, item.next_run_at, latest.status].join("|");
+      }).join("\n");
+      if (key === scheduleState.listKey && scheduleListEl.childElementCount) {
+        for (const button of scheduleListEl.querySelectorAll(".schedule-row")) {
+          button.classList.toggle("is-selected", button.dataset.id === scheduleState.selectedId);
+        }
+        return;
+      }
+      scheduleState.listKey = key;
+      scheduleListEl.replaceChildren();
+      if (!scheduleState.items.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No schedules yet.";
+        scheduleListEl.append(empty);
+        return;
+      }
+      for (const item of scheduleState.items) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "schedule-row";
+        button.dataset.id = item.id;
+        button.classList.toggle("is-selected", item.id === scheduleState.selectedId);
+        const name = document.createElement("span");
+        name.textContent = item.name;
+        const meta = document.createElement("span");
+        meta.className = "schedule-row-meta";
+        const when = item.enabled ? `Next ${formatWhen(item.next_run_at)}` : "Paused";
+        const where = item.kind === "files" ? "Files" : folderName(item.workspace);
+        meta.textContent = `${where} · ${item.label} · ${when}`;
+        button.append(name, meta);
+        button.addEventListener("click", () => selectSchedule(item.id));
+        scheduleListEl.append(button);
+      }
+    }
+
+    function fillScheduleForm(item) {
+      scheduleDraft = {
+        id: item.id,
+        kind: item.cadence.kind,
+        hour: item.cadence.hour,
+        minute: item.cadence.minute,
+        weekdays: (item.cadence.weekdays || []).map(Number),
+        target: item.kind === "files" ? "files" : "project",
+      };
+      scheduleNameEl.value = item.name;
+      scheduleGoalEl.value = item.goal;
+      scheduleEnabledEl.checked = !!item.enabled;
+      scheduleCommitEl.checked = !!item.auto_commit;
+      schedulePrEl.checked = !!item.create_pr;
+      if (item.kind === "files") {
+        scheduleOutputEl.value = item.workspace || "";
+      } else {
+        scheduleOutputEl.value = "";
+        ensureWorkspaceOption(item.workspace);
+        scheduleWorkspaceEl.value = item.workspace;
+      }
+      cadenceTimeEl.value = `${String(item.cadence.hour).padStart(2, "0")}:${String(item.cadence.minute).padStart(2, "0")}`;
+      cadenceMinuteEl.value = String(item.cadence.minute);
+      scheduleHeadingEl.textContent = item.name;
+      scheduleNextEl.textContent = item.enabled
+        ? `Next run ${formatWhen(item.next_run_at)}.`
+        : "Paused. It stays off until you turn it on.";
+      runScheduleBtn.disabled = false;
+      deleteScheduleBtn.disabled = false;
+      syncCadenceControls();
+      renderScheduleResults(item, true);
+    }
+
+    function blankScheduleForm() {
+      scheduleState.selectedId = "";
+      scheduleDraft = blankCadence();
+      scheduleNameEl.value = "";
+      scheduleGoalEl.value = "";
+      scheduleEnabledEl.checked = true;
+      scheduleCommitEl.checked = false;
+      schedulePrEl.checked = false;
+      scheduleOutputEl.value = "";
+      cadenceTimeEl.value = "09:00";
+      cadenceMinuteEl.value = "0";
+      scheduleHeadingEl.textContent = "New schedule";
+      scheduleNextEl.textContent = "Choose when it runs. You can change it later and read each result here.";
+      runScheduleBtn.disabled = true;
+      deleteScheduleBtn.disabled = true;
+      if (workspaceEl.value) {
+        ensureWorkspaceOption(workspaceEl.value);
+        scheduleWorkspaceEl.value = workspaceEl.value;
+      }
+      syncCadenceControls();
+      renderScheduleResults(null, true);
+      renderScheduleList();
+    }
+
+    function selectSchedule(id) {
+      scheduleState.selectedId = id;
+      const item = scheduleState.items.find((entry) => entry.id === id);
+      renderScheduleList();
+      if (item) fillScheduleForm(item);
+    }
+
+    function schedulePayload() {
+      const files = scheduleDraft.target === "files";
+      return {
+        name: scheduleNameEl.value.trim(),
+        goal: scheduleGoalEl.value.trim(),
+        kind: files ? "files" : "project",
+        workspace: files ? scheduleOutputEl.value.trim() : scheduleWorkspaceEl.value,
+        enabled: scheduleEnabledEl.checked,
+        auto_commit: files ? false : scheduleCommitEl.checked,
+        create_pr: files ? false : schedulePrEl.checked,
+        cadence: readCadenceFromForm(),
+      };
+    }
+
+    async function refreshSchedules() {
+      const res = await fetch("/api/schedules");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Could not load schedules");
+      scheduleState.items = body.schedules || [];
+      renderScheduleList();
+      const current = scheduleState.items.find((item) => item.id === scheduleState.selectedId);
+      if (current) renderScheduleResults(current);
+    }
+
+    async function saveSchedule(event) {
+      event.preventDefault();
+      clearNotice(scheduleErrorEl);
+      const payload = schedulePayload();
+      const id = scheduleDraft.id;
+      const res = await fetch(id ? `/api/schedules/${encodeURIComponent(id)}` : "/api/schedules", {
+        method: id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Could not save schedule");
+      scheduleState.selectedId = body.id;
+      scheduleState.listKey = "";
+      await refreshSchedules();
+      const saved = scheduleState.items.find((item) => item.id === body.id) || body;
+      fillScheduleForm(saved);
+      notify("success", saved.label, { title: "Schedule saved" });
+    }
+
+    async function runScheduleNow() {
+      if (!scheduleDraft.id) return;
+      clearNotice(scheduleErrorEl);
+      const res = await fetch(`/api/schedules/${encodeURIComponent(scheduleDraft.id)}/run`, {
+        method: "POST",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Could not run schedule");
+      scheduleState.listKey = "";
+      await refreshSchedules();
+      const started = scheduleState.items.find((item) => item.id === body.id) || body;
+      fillScheduleForm(started);
+      notify("queued", started.name, { title: "Schedule started" });
+    }
+
+    async function deleteSchedule() {
+      if (!scheduleDraft.id) return;
+      const ok = window.confirm("Delete this schedule? Past results in loco's list are removed.");
+      if (!ok) return;
+      clearNotice(scheduleErrorEl);
+      const res = await fetch(`/api/schedules/${encodeURIComponent(scheduleDraft.id)}`, { method: "DELETE" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Could not delete schedule");
+      scheduleState.listKey = "";
+      await refreshSchedules();
+      blankScheduleForm();
+      notify("info", "Schedule deleted", { title: "Scheduled tasks" });
+    }
+
+    function initSchedules() {
+      document.getElementById("new-schedule").addEventListener("click", () => {
+        clearNotice(scheduleErrorEl);
+        blankScheduleForm();
+        scheduleNameEl.focus();
+      });
+      for (const button of document.querySelectorAll(".cadence-choice")) {
+        button.addEventListener("click", () => {
+          scheduleDraft.kind = button.dataset.kind;
+          syncCadenceControls();
+        });
+      }
+      for (const button of document.querySelectorAll(".schedule-target")) {
+        button.addEventListener("click", () => {
+          scheduleDraft.target = button.dataset.target;
+          syncTargetControls();
+        });
+      }
+      for (const button of document.querySelectorAll(".weekday")) {
+        button.addEventListener("click", () => {
+          const day = Number(button.dataset.weekday);
+          const days = new Set(scheduleDraft.weekdays);
+          if (days.has(day)) days.delete(day);
+          else days.add(day);
+          scheduleDraft.weekdays = Array.from(days).sort((a, b) => a - b);
+          syncCadenceControls();
+        });
+      }
+      cadenceTimeEl.addEventListener("input", syncCadenceControls);
+      cadenceMinuteEl.addEventListener("input", syncCadenceControls);
+      scheduleFormEl.addEventListener("submit", (event) => {
+        saveSchedule(event).catch((err) => showNotice(scheduleErrorEl, "error", err.message));
+      });
+      runScheduleBtn.addEventListener("click", () => {
+        runScheduleNow().catch((err) => showNotice(scheduleErrorEl, "error", err.message));
+      });
+      deleteScheduleBtn.addEventListener("click", () => {
+        deleteSchedule().catch((err) => showNotice(scheduleErrorEl, "error", err.message));
+      });
+      blankScheduleForm();
+      if (currentAppMode() === "schedules") {
+        loadScheduleWorkspaces()
+          .then(() => refreshSchedules())
+          .catch((err) => showNotice(scheduleErrorEl, "error", err.message));
+      }
+      setInterval(() => {
+        if (currentAppMode() !== "schedules") return;
+        refreshSchedules().catch(() => {});
+      }, 4000);
+    }
+
+    initAppMode();
+    initSchedules();
     renderNotificationHistory();
     syncKeepImproving();
     refresh();
