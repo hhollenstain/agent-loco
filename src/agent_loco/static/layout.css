@@ -866,6 +866,122 @@ button.schedule-row.is-selected {
   font-size: 1.15rem;
 }
 
+.schedule-view-switch {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+button.schedule-view {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+button.schedule-view[aria-pressed="true"] {
+  background: var(--accent);
+  color: #16200c;
+  border-color: transparent;
+}
+
+.schedule-live {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.8rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.schedule-live h2,
+button.schedule-live-open {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.schedule-live-status {
+  margin: 0.25rem 0 0.5rem;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+
+.schedule-live-log {
+  max-height: 14rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  background: var(--bg);
+  border-radius: 6px;
+  color: var(--ink);
+  font: 0.75rem/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.schedule-next-up {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.4rem 0 1rem;
+}
+
+.schedule-agenda-days {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(7.2rem, 1fr);
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+}
+
+.schedule-day {
+  min-width: 0;
+  padding: 0.45rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.schedule-day.is-today {
+  border-color: var(--accent);
+}
+
+.schedule-day h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.schedule-day p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+button.schedule-slot,
+button.schedule-live-open {
+  display: block;
+  width: 100%;
+  margin: 0 0 0.25rem;
+  padding: 0.28rem 0.35rem;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+button.schedule-slot:hover,
+button.schedule-live-open:hover {
+  background: var(--panel-2);
+}
+
+.schedule-slot-time {
+  display: block;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 450;
+}
+
 .cadence-choices,
 .weekday-row,
 .schedule-actions {

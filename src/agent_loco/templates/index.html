@@ -2468,6 +2468,13 @@
       <div id="schedule-list"></div>
     </aside>
     <div class="schedules-detail">
+      <div class="schedule-view-switch" role="group" aria-label="Schedule view">
+        <button type="button" class="secondary schedule-view" id="schedule-view-agenda" data-schedule-view="agenda" aria-pressed="true">Calendar</button>
+        <button type="button" class="secondary schedule-view" id="schedule-view-edit" data-schedule-view="edit" aria-pressed="false">Edit</button>
+      </div>
+      <div id="schedule-live" hidden></div>
+      <div id="schedule-agenda"></div>
+      <div id="schedule-editor" hidden>
       <h2 id="schedule-heading">New schedule</h2>
       <p class="hint" id="schedule-next">Choose when it runs. You can change it later and read each result here.</p>
       <form id="schedule-form">
@@ -2540,6 +2547,7 @@
       <div id="schedule-results">
         <h3>Results</h3>
         <p class="hint" id="schedule-results-empty">Save the schedule, then run it or wait for the next time.</p>
+      </div>
       </div>
     </div>
   </section>
@@ -6126,10 +6134,22 @@
     const scheduleNextEl = document.getElementById("schedule-next");
     const scheduleErrorEl = document.getElementById("schedule-error");
     const scheduleResultsEl = document.getElementById("schedule-results");
+    const scheduleLiveEl = document.getElementById("schedule-live");
+    const scheduleAgendaEl = document.getElementById("schedule-agenda");
+    const scheduleEditorEl = document.getElementById("schedule-editor");
     const runScheduleBtn = document.getElementById("run-schedule");
     const deleteScheduleBtn = document.getElementById("delete-schedule");
     const appSwitchEl = document.getElementById("app-switch");
-    let scheduleState = { items: [], selectedId: "", listKey: "", resultKey: "" };
+    let scheduleState = {
+      items: [],
+      agenda: { next_up: [], days: [] },
+      selectedId: "",
+      listKey: "",
+      resultKey: "",
+      liveKey: "",
+      agendaKey: "",
+      view: "agenda",
+    };
     let scheduleDraft = blankCadence();
 
     function blankCadence() {
@@ -6284,6 +6304,13 @@
       scheduleGoalEl.placeholder = files
         ? "Search for new jobs and save them as jobs.csv."
         : "Look up new jobs that match this project and write a short report of what you found.";
+    }
+
+    function formatClock(iso) {
+      if (!iso) return "";
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return "";
+      return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
     }
 
     function formatWhen(iso) {
@@ -6500,11 +6527,141 @@
       renderScheduleList();
     }
 
+    function setScheduleView(view) {
+      scheduleState.view = view === "edit" ? "edit" : "agenda";
+      const showingAgenda = scheduleState.view === "agenda";
+      for (const button of document.querySelectorAll(".schedule-view")) {
+        button.setAttribute(
+          "aria-pressed",
+          button.dataset.scheduleView === scheduleState.view ? "true" : "false",
+        );
+      }
+      scheduleAgendaEl.hidden = !showingAgenda;
+      scheduleEditorEl.hidden = showingAgenda;
+    }
+
     function selectSchedule(id) {
       scheduleState.selectedId = id;
       const item = scheduleState.items.find((entry) => entry.id === id);
       renderScheduleList();
       if (item) fillScheduleForm(item);
+      setScheduleView("edit");
+    }
+
+    function scheduleProgressText(run) {
+      const events = run.events || [];
+      const latest = events[events.length - 1];
+      if (!latest) return run.status === "queued" ? "Queued" : "Running";
+      if (latest.message) return latest.message;
+      if (latest.kind === "llm") return latest.purpose ? `Model · ${latest.purpose}` : "Asking the model";
+      if (latest.kind === "command") return latest.command || "Running a command";
+      if (latest.name) return latest.name;
+      if (latest.path) return latest.path;
+      return latest.kind || "Running";
+    }
+
+    function renderScheduleLive() {
+      const open = [];
+      for (const item of scheduleState.items) {
+        const run = (item.runs || []).find((entry) => entry.status === "running" || entry.status === "queued");
+        if (run) open.push({ item, run });
+      }
+      const key = open.map(({ item, run }) => {
+        const logs = run.logs || [];
+        return [item.id, run.status, logs.length, logs[logs.length - 1] || "", scheduleProgressText(run)].join(":");
+      }).join("|");
+      if (!open.length) {
+        scheduleState.liveKey = "";
+        scheduleLiveEl.hidden = true;
+        scheduleLiveEl.replaceChildren();
+        return;
+      }
+      if (key === scheduleState.liveKey && scheduleLiveEl.childElementCount) return;
+      scheduleState.liveKey = key;
+      scheduleLiveEl.hidden = false;
+      scheduleLiveEl.replaceChildren();
+      for (const { item, run } of open) {
+        const block = document.createElement("section");
+        block.className = "schedule-live";
+        const title = document.createElement("button");
+        title.type = "button";
+        title.className = "schedule-live-open";
+        title.dataset.id = item.id;
+        title.textContent = item.name || "Schedule";
+        title.addEventListener("click", () => selectSchedule(item.id));
+        const status = document.createElement("p");
+        status.className = "schedule-live-status";
+        status.textContent = scheduleProgressText(run);
+        const log = document.createElement("pre");
+        log.className = "schedule-live-log";
+        const lines = run.logs || [];
+        log.textContent = lines.length ? lines.join("\n") : "Waiting for the first log line.";
+        block.append(title, status, log);
+        scheduleLiveEl.append(block);
+        log.scrollTop = log.scrollHeight;
+      }
+    }
+
+    function appendScheduleSlot(parent, slot) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "schedule-slot";
+      button.dataset.scheduleId = slot.schedule_id || "";
+      const when = document.createElement("span");
+      when.className = "schedule-slot-time";
+      when.textContent = slot.hourly ? (slot.note || "Every hour") : formatClock(slot.at);
+      const name = document.createElement("span");
+      name.textContent = slot.running ? `${slot.name} · running` : slot.name;
+      button.append(when, name);
+      button.addEventListener("click", () => {
+        if (slot.schedule_id) selectSchedule(slot.schedule_id);
+      });
+      parent.append(button);
+    }
+
+    function renderScheduleAgenda() {
+      const board = scheduleState.agenda || { next_up: [], days: [] };
+      const key = JSON.stringify(board);
+      if (key === scheduleState.agendaKey && scheduleAgendaEl.childElementCount) return;
+      scheduleState.agendaKey = key;
+      scheduleAgendaEl.replaceChildren();
+      const heading = document.createElement("h2");
+      heading.textContent = "Upcoming";
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = "Next up, then the coming week. Select a task to edit it.";
+      scheduleAgendaEl.append(heading, hint);
+      const upcoming = board.next_up || [];
+      if (!upcoming.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "Nothing is scheduled. Turn a task on and it will show up here.";
+        scheduleAgendaEl.append(empty);
+        return;
+      }
+      const nextHeading = document.createElement("h3");
+      nextHeading.textContent = "Next up";
+      const nextList = document.createElement("div");
+      nextList.className = "schedule-next-up";
+      for (const slot of upcoming) appendScheduleSlot(nextList, slot);
+      const week = document.createElement("div");
+      week.className = "schedule-agenda-days";
+      for (const day of board.days || []) {
+        const column = document.createElement("section");
+        column.className = day.today ? "schedule-day is-today" : "schedule-day";
+        const title = document.createElement("h3");
+        title.textContent = day.today ? `Today ${day.day}` : `${day.label} ${day.day}`;
+        column.append(title);
+        const slots = day.slots || [];
+        if (!slots.length) {
+          const quiet = document.createElement("p");
+          quiet.textContent = "—";
+          column.append(quiet);
+        }
+        for (const slot of slots) appendScheduleSlot(column, slot);
+        week.append(column);
+      }
+      scheduleAgendaEl.append(nextHeading, nextList, week);
     }
 
     function schedulePayload() {
@@ -6526,7 +6683,10 @@
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Could not load schedules");
       scheduleState.items = body.schedules || [];
+      scheduleState.agenda = body.agenda || { next_up: [], days: [] };
       renderScheduleList();
+      renderScheduleAgenda();
+      renderScheduleLive();
       const current = scheduleState.items.find((item) => item.id === scheduleState.selectedId);
       if (current) renderScheduleResults(current);
     }
@@ -6584,8 +6744,12 @@
       document.getElementById("new-schedule").addEventListener("click", () => {
         clearNotice(scheduleErrorEl);
         blankScheduleForm();
+        setScheduleView("edit");
         scheduleNameEl.focus();
       });
+      for (const button of document.querySelectorAll(".schedule-view")) {
+        button.addEventListener("click", () => setScheduleView(button.dataset.scheduleView));
+      }
       for (const button of document.querySelectorAll(".cadence-choice")) {
         button.addEventListener("click", () => {
           scheduleDraft.kind = button.dataset.kind;
@@ -6628,7 +6792,9 @@
       setInterval(() => {
         if (currentAppMode() !== "schedules") return;
         refreshSchedules().catch(() => {});
-      }, 4000);
+      }, 1500);
+      renderScheduleAgenda();
+      setScheduleView("agenda");
     }
 
     initAppMode();
