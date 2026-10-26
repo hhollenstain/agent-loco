@@ -25,7 +25,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from agent_loco.config import Settings
-from agent_loco.llm.client import lookup_context_window, normalize_model_base_url
+from agent_loco.llm.client import effective_context_window, normalize_model_base_url
 from agent_loco.progress import attach_token_usage, clip_text, llm_turn_snippets, public_run_item
 from agent_loco.runtime.importer import load_goals_from_workspace
 from agent_loco.runtime.project import (
@@ -187,6 +187,7 @@ class TaskCreate(BaseModel):
     base_branch: str | None = None
     pr_url: str | None = None
     continuous: bool = False
+    context_window: int | None = None
 
 
 class ContinuousStop(BaseModel):
@@ -345,10 +346,11 @@ class UiState:
 
     def selection_context_window(self) -> int | None:
         selected = self.selection()
-        return lookup_context_window(
-            selected["last_base_url"] or self.manager.settings.model_base_url,
-            self.manager.settings.model_api_key,
-            selected["last_model"] or self.manager.settings.model_name,
+        return effective_context_window(
+            configured=self.manager.settings.context_window,
+            base_url=selected["last_base_url"] or self.manager.settings.model_base_url,
+            api_key=self.manager.settings.model_api_key,
+            model=selected["last_model"] or self.manager.settings.model_name,
             timeout=0.5,
         )
 
@@ -372,6 +374,7 @@ class UiState:
             "default_create_pr": self.default_create_pr,
             "default_model": selected["last_model"] or self.manager.settings.model_name,
             "default_base_url": selected["last_base_url"] or self.manager.settings.model_base_url,
+            "default_context_window": self.manager.settings.context_window or "",
             "known_servers": selected["servers"],
             "max_concurrent": self.manager.max_concurrent,
             "continuous_active": self.manager.is_continuous_active(self.default_workspace),
@@ -821,10 +824,11 @@ def create_app(
             "base_url": resolved,
             "models": names,
             "servers": servers,
-            "context_window": lookup_context_window(
-                resolved,
-                api_key or ui.manager.settings.model_api_key,
-                chosen,
+            "context_window": effective_context_window(
+                configured=ui.manager.settings.context_window,
+                base_url=resolved,
+                api_key=api_key or ui.manager.settings.model_api_key,
+                model=chosen,
                 timeout=0.5,
             ),
         }
@@ -964,6 +968,11 @@ def create_app(
         if picked and not valid_branch_name(picked):
             return JSONResponse({"error": f"invalid branch name: {picked}"}, status_code=400)
         body.base_branch = picked or None
+        if body.context_window is not None and not 512 <= body.context_window <= 1_048_576:
+            return JSONResponse(
+                {"error": "context_window must be between 512 and 1048576 tokens"},
+                status_code=400,
+            )
         workspace_raw = body.workspace or ui.default_workspace
         try:
             task = ui.manager.submit(
@@ -978,6 +987,7 @@ def create_app(
                 resume_sha=body.resume_sha,
                 base_branch=body.base_branch,
                 continuous=bool(body.continuous),
+                context_window=body.context_window,
             )
             ui.remember_server(task.model_base_url, model=task.model_name)
             ui.set_workspace(task.workspace)

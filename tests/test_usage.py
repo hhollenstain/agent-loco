@@ -7,6 +7,7 @@ from agent_loco.llm.client import (
     completion_usage,
     context_window_from_models_payload,
     context_window_from_ollama_show,
+    effective_context_window,
 )
 from agent_loco.progress import attach_token_usage, token_usage_from_events
 from agent_loco.runtime.improve import CycleResult
@@ -44,6 +45,38 @@ def test_context_window_from_ollama_show() -> None:
     )
     assert context_window_from_ollama_show({"parameters": "num_ctx 8192\ntemperature 0.7"}) == 8192
     assert context_window_from_ollama_show({}) is None
+
+
+def test_effective_context_window_prefers_the_configured_size(monkeypatch) -> None:
+    def boom(*_args, **_kwargs):
+        raise AssertionError("lookup should not run when a window is configured")
+
+    monkeypatch.setattr("agent_loco.llm.client.lookup_context_window", boom)
+    assert (
+        effective_context_window(
+            configured=4096,
+            base_url="http://127.0.0.1:11434/v1",
+            api_key="ollama",
+            model="local",
+        )
+        == 4096
+    )
+
+
+def test_effective_context_window_asks_the_server_when_unset(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agent_loco.llm.client.lookup_context_window",
+        lambda *_args, **_kwargs: 32768,
+    )
+    assert (
+        effective_context_window(
+            configured=None,
+            base_url="http://127.0.0.1:11434/v1",
+            api_key="ollama",
+            model="local",
+        )
+        == 32768
+    )
 
 
 def test_context_window_from_models_payload() -> None:

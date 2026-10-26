@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     kiwifs_api_key: str = ""
     kiwifs_prefix: str = ""
     max_iterations: int = Field(default=40, ge=1, le=200)
+    context_window: int | None = Field(default=None, ge=512, le=1_048_576)
     auto_commit: bool = True
     require_tests: bool = True
     create_pr: bool = True
@@ -30,6 +31,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     git_author_name: str | None = None
     git_author_email: str | None = None
+
+    @field_validator("context_window", mode="before")
+    @classmethod
+    def _blank_context_window(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        return value
 
     def __init__(self, **data):
         super().__init__(**data)

@@ -236,7 +236,7 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
-    input[type="text"], input[type="search"], textarea, select {
+    input[type="text"], input[type="search"], input[type="number"], textarea, select {
       width: 100%;
       background: var(--panel);
       color: var(--ink);
@@ -272,7 +272,7 @@
       width: 100%;
       margin-top: 0.75rem;
     }
-    #base-url, #server-history, #model {
+    #base-url, #server-history, #model, #context-window {
       font-size: 0.88rem;
     }
     #base-url {
@@ -2367,6 +2367,9 @@
         <select id="model" name="model">
           <option value="{{ default_model }}" selected>{{ default_model }}</option>
         </select>
+        <label for="context-window">Context window</label>
+        <input id="context-window" name="context_window" type="number" min="512" max="1048576" step="1" inputmode="numeric" placeholder="server default" value="{{ default_context_window }}">
+        <p class="hint">Tokens this model can hold on this machine. Leave blank to use the server window, or LOCO_CONTEXT_WINDOW when that is set.</p>
       </div>
 
       <div class="checks">
@@ -5720,6 +5723,31 @@
       applyRunRail(false);
     }
 
+    function contextWindowPayload() {
+      const el = document.getElementById("context-window");
+      const raw = el ? el.value.trim() : "";
+      if (!raw) return {};
+      const number = Number(raw);
+      if (!Number.isFinite(number) || number < 512 || number > 1048576) {
+        throw new Error("Context window must be between 512 and 1048576 tokens.");
+      }
+      const rounded = Math.round(number);
+      try {
+        localStorage.setItem("loco-context-window", String(rounded));
+      } catch (err) {
+        /* private mode */
+      }
+      return { context_window: rounded };
+    }
+
+    function readContextWindow() {
+      try {
+        return contextWindowPayload().context_window || null;
+      } catch (err) {
+        return null;
+      }
+    }
+
     async function queueTask(payload, notice) {
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -5822,6 +5850,7 @@
             model: document.getElementById("model").value,
             auto_commit: document.getElementById("auto-commit").checked,
             create_pr: hasPr || document.getElementById("create-pr").checked,
+            ...contextWindowPayload(),
             resume_branch: entry.branch || undefined,
             resume_sha: entry.commit_sha || undefined,
             pr_url: entry.status === "success" ? (prUrl(entry) || undefined) : undefined,
@@ -5862,6 +5891,7 @@
           goal: document.getElementById("goal").value,
           base_url: document.getElementById("base-url").value,
           model: document.getElementById("model").value,
+          ...contextWindowPayload(),
           auto_commit: document.getElementById("auto-commit").checked,
           create_pr: document.getElementById("create-pr").checked
             || document.getElementById("keep-improving").checked,
@@ -5940,7 +5970,10 @@
           option.selected = true;
           select.append(option);
         }
-        rememberContextWindow(select.value || selected, body.context_window);
+        rememberContextWindow(
+          select.value || selected,
+          readContextWindow() || body.context_window,
+        );
         if (!models.length && announceEmpty) {
           showNotice(errorEl, "warning", "No models returned from that LLM server.");
           notify("warning", "No models returned from that LLM server.");
@@ -6804,6 +6837,26 @@
     refresh();
     loadBranches();
     loadRecentWorkspaces().catch(() => {});
+    const contextWindowEl = document.getElementById("context-window");
+    if (contextWindowEl && !contextWindowEl.value.trim()) {
+      try {
+        const saved = localStorage.getItem("loco-context-window");
+        if (saved) contextWindowEl.value = saved;
+      } catch (err) {
+        /* private mode */
+      }
+    }
+    if (contextWindowEl) {
+      contextWindowEl.addEventListener("change", () => {
+        try {
+          const raw = contextWindowEl.value.trim();
+          if (!raw) localStorage.removeItem("loco-context-window");
+          else localStorage.setItem("loco-context-window", raw);
+        } catch (err) {
+          /* private mode */
+        }
+      });
+    }
     loadModels(false);
     setInterval(refresh, 1000);
     setInterval(() => {

@@ -31,6 +31,7 @@ OPS_NAMES = {
 OPS_SUFFIXES = {".md", ".rst", ".adoc"}
 MAX_PLAN_NUDGES = 3
 MAX_REQUIRE_CHANGE_NUDGES = 8
+MAX_EDIT_CHURN = 4
 MAX_UNFINISHED_NUDGES = 4
 MAX_VALIDATE_NUDGES = 4
 MAX_INSPECT_ROUNDS = 3
@@ -95,6 +96,11 @@ DOCS_NUDGE = (
     "or program and the test command. If that section already matches the "
     "docs, correct it instead of adding a second copy. Then apply the code fix."
 )
+COMMENT_NUDGE = (
+    "The last edit only added or removed a comment, blank lines, or the same "
+    "text. That does not implement the goal. Call str_replace with the code "
+    "change that makes the goal true. Do not put that change back and take it out."
+)
 STOP_RERUN_NUDGE = (
     "Lint, tests, and review already ran for the current code. No code file "
     "has changed since, in this project or any other project in the workspace. "
@@ -135,6 +141,88 @@ _UNFINISHED_RE = re.compile(
     r"\biteration limit\b"
     r")"
 )
+
+
+_READ_PREFIX = re.compile(r"^\s*\d+\|")
+_DOC_SUFFIXES = {".md", ".rst", ".adoc", ".txt"}
+
+
+def normalize_edit_text(text: str) -> str:
+    """Compare edits without read_file line numbers or trailing whitespace."""
+    lines: list[str] = []
+    for line in (text or "").replace("\r\n", "\n").splitlines():
+        lines.append(_READ_PREFIX.sub("", line).rstrip())
+    return "\n".join(lines).strip()
+
+
+def _is_comment_line(stripped: str) -> bool:
+    if stripped.startswith(("//", "/*", "*/", "<!--", "-->")):
+        return True
+    return stripped.startswith("#") and not stripped.startswith("#!")
+
+
+def _code_lines(text: str) -> str:
+    kept: list[str] = []
+    for line in normalize_edit_text(text).splitlines():
+        stripped = line.strip()
+        if not stripped or _is_comment_line(stripped):
+            continue
+        kept.append(stripped)
+    return "\n".join(kept)
+
+
+def is_comment_only_edit(path: str, old: str, new: str) -> bool:
+    """True when the edit does not change code. Docs may change heading text."""
+    name = Path(path).name.lower()
+    suffix = Path(path).suffix.lower()
+    if suffix in _DOC_SUFFIXES or name.startswith("readme"):
+        return normalize_edit_text(old) == normalize_edit_text(new)
+    return _code_lines(old) == _code_lines(new)
+
+
+def note_edit(
+    recent: list[tuple[str, str, str]],
+    path: str,
+    old: str,
+    new: str,
+) -> str:
+    """Record an edit. Return 'churn' when it undoes, repeats, or only comments."""
+    left = normalize_edit_text(old)
+    right = normalize_edit_text(new)
+    churn = _edit_churns(recent, path, left, right, old, new)
+    recent.append((path, left, right))
+    if len(recent) > 12:
+        del recent[:-12]
+    return "churn" if churn else "substantive"
+
+
+def previous_written(recent: list[tuple[str, str, str]], path: str) -> str:
+    for prev_path, _old, new in reversed(recent):
+        if prev_path == path:
+            return new
+    return ""
+
+
+def _edit_churns(
+    recent: list[tuple[str, str, str]],
+    path: str,
+    left: str,
+    right: str,
+    old: str,
+    new: str,
+) -> bool:
+    for prev_path, prev_old, prev_new in reversed(recent):
+        if prev_path != path:
+            continue
+        if prev_old == right and prev_new == left:
+            return True
+        break
+    if any(
+        prev_path == path and prev_old == left and prev_new == right
+        for prev_path, prev_old, prev_new in recent
+    ):
+        return True
+    return is_comment_only_edit(path, old, new)
 
 
 def looks_unfinished(text: str) -> bool:
@@ -278,6 +366,10 @@ class CodingAgent:
         docs_nudges = 0
         since_edit: set[str] = set()
         repeat_only_turns = 0
+        substantive = False
+        recent_edits: list[tuple[str, str, str]] = []
+        churn = 0
+        oscillation_nudges = 0
 
         last_text = ""
         last_error: str | None = None
@@ -306,6 +398,7 @@ class CodingAgent:
                 inspected = False
                 turn_new_check = False
                 turn_repeat_check = False
+                stop_oscillation = False
                 for call in calls:
                     tool_calls += 1
                     result = execute_tool(self.tools, call.name, call.arguments)
@@ -395,6 +488,26 @@ class CodingAgent:
                                 verified_ui = False
                             if _is_ops_path(tool_path):
                                 mutated_ops = True
+                            if call.name == "configure_project" or _writes_project_config(
+                                tool_path
+                            ):
+                                substantive = True
+                            elif call.name in {"str_replace", "write_file"}:
+                                arguments = call.arguments or {}
+                                if call.name == "write_file":
+                                    old_text = previous_written(recent_edits, tool_path)
+                                    new_text = str(arguments.get("content") or "")
+                                else:
+                                    old_text = str(arguments.get("old_string") or "")
+                                    new_text = str(arguments.get("new_string") or "")
+                                kind = note_edit(recent_edits, tool_path, old_text, new_text)
+                                if kind == "substantive":
+                                    substantive = True
+                                    churn = 0
+                                else:
+                                    churn += 1
+                                    if churn >= MAX_EDIT_CHURN:
+                                        stop_oscillation = True
                         elif call.name == "review_ui":
                             verified_ui = bool(result.ok)
                         elif call.name == "run_tests":
@@ -414,6 +527,31 @@ class CodingAgent:
                             since_edit.add(call.name)
                             turn_new_check = True
                     messages.append(_tool_result_message(call, result.output, native=native))
+                    if stop_oscillation:
+                        break
+                if stop_oscillation:
+                    log.info("stopping after repeated add and remove of the same small edit")
+                    record_event(
+                        kind="step",
+                        message="Stopped repeating the same small edit.",
+                    )
+                    return AgentResult(
+                        summary=(
+                            "Stopped because the same small edit was added and removed again."
+                        ),
+                        iterations=iteration,
+                        tool_calls=tool_calls,
+                        stopped_reason="oscillating",
+                        last_error=last_error,
+                    )
+                if churn >= 2 and oscillation_nudges < 1:
+                    oscillation_nudges += 1
+                    log.info("nudging agent away from a comment-only edit")
+                    record_event(
+                        kind="step",
+                        message="That edit did not implement the goal; asking for the real change.",
+                    )
+                    messages.append({"role": "user", "content": _nudge(COMMENT_NUDGE, goal)})
                 if wrote:
                     inspect_rounds = 0
                     repeat_only_turns = 0
@@ -434,15 +572,33 @@ class CodingAgent:
                         messages.append({"role": "user", "content": _nudge(INSPECT_NUDGE, goal)})
                 continue
 
-            if not mutated:
+            if not substantive:
                 nudge_limit = MAX_REQUIRE_CHANGE_NUDGES if require_change else MAX_PLAN_NUDGES
                 if plan_nudges < nudge_limit:
                     plan_nudges += 1
                     log.info("nudging agent to keep working after a plan-only turn")
                     messages.append({"role": "assistant", "content": turn.text or ""})
-                    nudge = MUST_EDIT_NUDGE if require_change else CONTINUE_NUDGE
+                    if recent_edits:
+                        nudge = COMMENT_NUDGE
+                    elif require_change:
+                        nudge = MUST_EDIT_NUDGE
+                    else:
+                        nudge = CONTINUE_NUDGE
                     messages.append({"role": "user", "content": _nudge(nudge, goal)})
                     continue
+                if recent_edits:
+                    log.info("stopping after edits that did not implement the goal")
+                    record_event(
+                        kind="step",
+                        message="Stopped because the edits did not implement the goal.",
+                    )
+                    return AgentResult(
+                        summary="Stopped because the edits did not implement the goal.",
+                        iterations=iteration,
+                        tool_calls=tool_calls,
+                        stopped_reason="oscillating",
+                        last_error=last_error,
+                    )
 
             if looks_unfinished(turn.text) and unfinished_nudges < MAX_UNFINISHED_NUDGES:
                 unfinished_nudges += 1

@@ -57,9 +57,17 @@ class LLMClient(Protocol):
 class OpenAICompatClient:
     """Talks to Ollama, vLLM, LM Studio, or any other OpenAI-compatible server."""
 
-    def __init__(self, *, model: str, base_url: str, api_key: str) -> None:
+    def __init__(
+        self,
+        *,
+        model: str,
+        base_url: str,
+        api_key: str,
+        context_window: int | None = None,
+    ) -> None:
         self.model = model
         self.base_url = normalize_model_base_url(base_url)
+        self.context_window = context_window if context_window and context_window >= 512 else None
         self.client = OpenAI(base_url=self.base_url, api_key=api_key)
 
     def complete(
@@ -107,12 +115,14 @@ class OpenAICompatClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> AssistantTurn:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            tools=tools or None,
-            tool_choice="auto" if tools else None,
-        )
+        try:
+            response = self._create(messages, tools, with_num_ctx=self.context_window is not None)
+        except Exception as exc:
+            if self.context_window is None or not _rejected_num_ctx(exc):
+                raise
+            log.warning("server rejected num_ctx; sending the request without it")
+            self.context_window = None
+            response = self._create(messages, tools, with_num_ctx=False)
         choice = response.choices[0].message
         calls: list[ToolCall] = []
         for call in choice.tool_calls or []:
@@ -132,6 +142,24 @@ class OpenAICompatClient:
             total_tokens=total_tokens,
         )
 
+    def _create(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        with_num_ctx: bool,
+    ) -> Any:
+        kwargs: dict[str, Any] = {}
+        if with_num_ctx and self.context_window:
+            kwargs["extra_body"] = {"options": {"num_ctx": self.context_window}}
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            tools=tools or None,
+            tool_choice="auto" if tools else None,
+            **kwargs,
+        )
+
 
 class ScriptedClient:
     """Deterministic stand-in used by unit tests."""
@@ -149,6 +177,15 @@ class ScriptedClient:
         if not self._turns:
             return AssistantTurn(text="no more scripted turns")
         return self._turns.pop(0)
+
+
+def _rejected_num_ctx(exc: BaseException) -> bool:
+    """True when the server refused the Ollama num_ctx option, not the prompt."""
+    status = getattr(exc, "status_code", None)
+    if status != 400:
+        return False
+    text = str(exc).lower()
+    return "num_ctx" in text or "options" in text or "unexpected" in text or "extra" in text
 
 
 def is_transient_llm_error(exc: BaseException) -> bool:
@@ -229,6 +266,24 @@ def completion_usage(response: object) -> tuple[int | None, int | None, int | No
         _usage_int(usage, "completion_tokens"),
         _usage_int(usage, "total_tokens"),
     )
+
+
+def effective_context_window(
+    *,
+    configured: int | None,
+    base_url: str,
+    api_key: str,
+    model: str,
+    timeout: float = 2.0,
+) -> int | None:
+    """Use the configured window when set, otherwise ask the server.
+
+    A configured value wins because local hardware often cannot hold the
+    context length the model advertises.
+    """
+    if configured is not None and configured >= 512:
+        return configured
+    return lookup_context_window(base_url, api_key, model, timeout=timeout)
 
 
 def lookup_context_window(

@@ -85,6 +85,8 @@ _EXTRA_SKIP_DIRS = frozenset(
     }
 )
 _MAX_HASH_BYTES = 512_000
+_FILE_DIGESTS: dict[str, tuple[int, int, bytes]] = {}
+_TREE_CACHE: dict[str, tuple[tuple[tuple[str, int, int], ...], str]] = {}
 
 
 def reused_check_result(tool: str, previous: ToolResult) -> ToolResult:
@@ -130,9 +132,14 @@ def workspace_fingerprint(root: Path) -> str:
 
 
 def code_fingerprint(root: Path) -> str:
-    """Content hash of code files under root, including nested projects."""
-    digest = hashlib.sha256()
+    """Content hash of code files under root, including nested projects.
+
+    Unchanged files are not read again. A second call after a stall check only
+    stats the tree when nothing was edited.
+    """
     base = Path(root)
+    signature: list[tuple[str, int, int]] = []
+    files: list[tuple[Path, str, int, int]] = []
     for path in sorted(base.rglob("*")):
         if not path.is_file():
             continue
@@ -146,22 +153,50 @@ def code_fingerprint(root: Path) -> str:
             continue
         if not is_code_path(path):
             continue
-        digest.update(relative.as_posix().encode("utf-8"))
-        digest.update(b"\0")
         try:
-            size = path.stat().st_size
+            stat = path.stat()
         except OSError:
             continue
+        rel = relative.as_posix()
+        signature.append((rel, stat.st_mtime_ns, stat.st_size))
+        files.append((path, rel, stat.st_mtime_ns, stat.st_size))
+    key = str(base)
+    sig = tuple(signature)
+    cached = _TREE_CACHE.get(key)
+    if cached is not None and cached[0] == sig:
+        return cached[1]
+    digest = hashlib.sha256()
+    for path, rel, mtime_ns, size in files:
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
         if size > _MAX_HASH_BYTES:
             digest.update(str(size).encode("utf-8"))
             digest.update(b"\0")
             continue
-        try:
-            digest.update(path.read_bytes())
-        except OSError:
+        file_digest = _cached_file_digest(path, mtime_ns, size)
+        if file_digest is None:
             continue
+        digest.update(file_digest)
         digest.update(b"\0")
-    return digest.hexdigest()
+    hashed = digest.hexdigest()
+    _TREE_CACHE[key] = (sig, hashed)
+    return hashed
+
+
+def _cached_file_digest(path: Path, mtime_ns: int, size: int) -> bytes | None:
+    key = str(path)
+    cached = _FILE_DIGESTS.get(key)
+    if cached is not None and cached[0] == mtime_ns and cached[1] == size:
+        return cached[2]
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if len(_FILE_DIGESTS) > 20_000:
+        _FILE_DIGESTS.clear()
+    file_digest = hashlib.sha256(data).digest()
+    _FILE_DIGESTS[key] = (mtime_ns, size, file_digest)
+    return file_digest
 
 
 def _skipped(relative: Path) -> bool:

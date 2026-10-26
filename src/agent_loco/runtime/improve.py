@@ -933,6 +933,9 @@ def _handle_empty_diff(
         )
         if follow.summary:
             summary = follow.summary
+        if follow.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if workspace_fingerprint(workspace.root) == before_retry:
             log_progress("No code changes; not running tests again.")
             continue
@@ -1258,6 +1261,15 @@ def _ensure_goal_met(
         plan=plan,
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
+    if not verdict.met and stopped_reason == "oscillating":
+        log_progress("The agent kept adding and removing the same small edit. Stopping.")
+        return {
+            "met": False,
+            "reason": "agent kept undoing the same small edit",
+            "summary": summary,
+            "tests_passed": tests_passed,
+            "tests_failed": False,
+        }
     attempts = 0
     stalls = 0
     extra_granted = False
@@ -1321,6 +1333,15 @@ def _ensure_goal_met(
         )
         if follow.summary:
             summary = follow.summary
+        if follow.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            return {
+                "met": False,
+                "reason": "agent kept undoing the same small edit",
+                "summary": summary,
+                "tests_passed": tests_passed,
+                "tests_failed": False,
+            }
         if workspace_fingerprint(workspace.root) == before_retry:
             log_progress("No code changes; not running tests or another review.")
             stalls += 1
@@ -1464,6 +1485,9 @@ def _run_plan_steps(
                     require_change=True,
                 )
         last = result
+        if result.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if result.summary:
             notes.append(result.summary)
     assert last is not None
@@ -1688,13 +1712,16 @@ def _ensure_test_command(
     attempts = max(project.max_repair_attempts, 1)
     for attempt in range(attempts):
         log_progress(f"No test command; setting up tests ({attempt + 1}/{attempts})")
-        agent.run(
+        setup = agent.run(
             _test_setup_prompt(),
             context,
             require_change=True,
             require_tests=True,
             require_lookup=True,
         )
+        if setup.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         tests_after = _maybe_test(workspace, project, settings, phase="setup")
         if tests_after is not None:
             return tests_after
@@ -1716,11 +1743,14 @@ def _repair_failing_tests(
     for attempt in range(project.max_repair_attempts):
         log_progress(f"Repair attempt {attempt + 1}/{project.max_repair_attempts}")
         before_repair = workspace_fingerprint(workspace.root)
-        agent.run(
+        repair = agent.run(
             _test_repair_prompt(tests_after.output),
             context,
             require_change=True,
         )
+        if repair.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if workspace_fingerprint(workspace.root) == before_repair:
             log_progress("Repair did not change code; not running tests again.")
             break
@@ -1880,11 +1910,14 @@ def _ensure_lint(
         log_progress(f"Lint repair {attempt + 1}/{attempts}")
         log_progress(f"Lint errors to fix:\n{(lint_after.output or '').strip()}")
         before_repair = workspace_fingerprint(workspace.root)
-        agent.run(
+        repair = agent.run(
             _lint_repair_prompt(lint_after.output),
             context,
             require_change=True,
         )
+        if repair.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if workspace_fingerprint(workspace.root) == before_repair:
             log_progress("Lint repair did not change code; not running lint again.")
             break

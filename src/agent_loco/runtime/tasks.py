@@ -65,7 +65,15 @@ def _default_llm(settings: Settings) -> LLMClient:
         model=settings.model_name,
         base_url=settings.model_base_url,
         api_key=settings.model_api_key,
+        context_window=settings.context_window,
     )
+
+
+def _pinned_window(requested: int | None, configured: int | None) -> int | None:
+    for value in (requested, configured):
+        if isinstance(value, int) and value >= 512:
+            return value
+    return None
 
 
 @dataclass
@@ -98,6 +106,7 @@ class Task:
     resume_sha: str | None = None
     base_branch: str | None = None
     context_window: int | None = None
+    pin_context_window: bool = False
     continuous: bool = False
     merged: bool = False
 
@@ -195,6 +204,7 @@ class TaskManager:
         resume_sha: str | None = None,
         base_branch: str | None = None,
         continuous: bool = False,
+        context_window: int | None = None,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
@@ -204,6 +214,7 @@ class TaskManager:
             (model_base_url or "").strip() or self.settings.model_base_url
         )
         selected_key = model_api_key if model_api_key is not None else self.settings.model_api_key
+        pinned = _pinned_window(context_window, self.settings.context_window)
         if continuous:
             with self._lock:
                 self._continuous_stopped.discard(str(workspace))
@@ -220,6 +231,8 @@ class TaskManager:
             resume_sha=(resume_sha or "").strip() or None,
             base_branch=(base_branch or "").strip() or None,
             branch=(resume_branch or "").strip() or None,
+            context_window=pinned,
+            pin_context_window=pinned is not None,
             continuous=continuous,
         )
         with self._lock:
@@ -307,6 +320,7 @@ class TaskManager:
             resume_sha=resume_sha,
             base_branch=base_branch,
             continuous=old_task.continuous,
+            context_window=old_task.context_window if old_task.pin_context_window else None,
         )
 
     def stop_continuous(self, workspace: str | Path) -> None:
@@ -402,14 +416,15 @@ class TaskManager:
         self._resume_workspace(task)
         if self._runner is not None:
             return self._runner(task)
-        settings = self.settings.model_copy(
-            update={
-                "auto_commit": task.auto_commit,
-                "model_name": task.model_name,
-                "model_base_url": task.model_base_url,
-                "model_api_key": task.model_api_key,
-            }
-        )
+        updates: dict[str, object] = {
+            "auto_commit": task.auto_commit,
+            "model_name": task.model_name,
+            "model_base_url": task.model_base_url,
+            "model_api_key": task.model_api_key,
+        }
+        if task.pin_context_window and task.context_window:
+            updates["context_window"] = task.context_window
+        settings = self.settings.model_copy(update=updates)
         llm = self._llm_factory(settings)
         return run_cycle(
             Path(task.workspace),

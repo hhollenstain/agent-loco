@@ -15,7 +15,7 @@ from agent_loco.hardware import command_available, detect_hardware
 from agent_loco.llm.client import (
     OpenAICompatClient,
     check_model_endpoint,
-    lookup_context_window,
+    effective_context_window,
     normalize_model_base_url,
 )
 from agent_loco.logging import setup_logging
@@ -128,6 +128,25 @@ def _llm(settings: Settings) -> OpenAICompatClient:
         model=settings.model_name,
         base_url=settings.model_base_url,
         api_key=settings.model_api_key,
+        context_window=settings.context_window,
+    )
+
+
+def _reject_context_window(context_window: int | None) -> None:
+    if context_window is None:
+        return
+    if 512 <= context_window <= 1_048_576:
+        return
+    console.print("[red]context window must be between 512 and 1048576 tokens[/red]")
+    raise typer.Exit(code=2)
+
+
+def _cycle_context_window(settings: Settings) -> int | None:
+    return effective_context_window(
+        configured=settings.context_window,
+        base_url=settings.model_base_url,
+        api_key=settings.model_api_key,
+        model=settings.model_name,
     )
 
 
@@ -192,6 +211,14 @@ def doctor() -> None:
     table.add_row("gh", "yes" if command_available("gh") else "missing (needed for PRs)")
     table.add_row("model url", settings.model_base_url)
     table.add_row("model name", settings.model_name)
+    window = _cycle_context_window(settings)
+    if settings.context_window:
+        window_label = f"{window} (set)"
+    elif window:
+        window_label = f"{window} (server)"
+    else:
+        window_label = "unknown"
+    table.add_row("context window", window_label)
 
     ok: bool
     detail: str
@@ -313,6 +340,13 @@ def run(
     ] = None,
     create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
+    context_window: Annotated[
+        int | None,
+        typer.Option(
+            "--context-window",
+            help="Tokens this model can hold on this machine.",
+        ),
+    ] = None,
     continuous: Annotated[
         bool,
         typer.Option(
@@ -327,11 +361,13 @@ def run(
 ) -> None:
     """Run one improve → test → commit cycle against a project."""
     _validate_env(require=not web_ui)
+    _reject_context_window(context_window)
     settings: Settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
         create_pr=create_pr,
         auto_commit=auto_commit,
+        context_window=context_window,
     )
     if web_ui:
         _serve_ui(
@@ -351,11 +387,7 @@ def run(
         goal,
         cli_create_pr=True if continuous and create_pr is None else create_pr,
         continuous=continuous,
-        context_window=lookup_context_window(
-            settings.model_base_url,
-            settings.model_api_key,
-            settings.model_name,
-        ),
+        context_window=_cycle_context_window(settings),
     )
     console.print(
         f"[bold]{result.status}[/bold] committed={result.committed} "
@@ -396,6 +428,13 @@ def watch_command(
         ),
     ] = None,
     create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
+    context_window: Annotated[
+        int | None,
+        typer.Option(
+            "--context-window",
+            help="Tokens this model can hold on this machine.",
+        ),
+    ] = None,
     continuous: Annotated[
         bool,
         typer.Option(
@@ -405,11 +444,13 @@ def watch_command(
     ] = False,
 ) -> None:
     """Keep improving a project on an interval."""
+    _reject_context_window(context_window)
     settings: Settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
         watch_interval_seconds=interval,
         create_pr=True if continuous and create_pr is None else create_pr,
+        context_window=context_window,
     )
     try:
         watch_loop(
@@ -454,6 +495,13 @@ def ui_command(
     ] = 1,
     create_pr: Annotated[bool | None, typer.Option("--create-pr/--no-create-pr")] = None,
     auto_commit: Annotated[bool | None, typer.Option("--commit/--no-commit")] = None,
+    context_window: Annotated[
+        int | None,
+        typer.Option(
+            "--context-window",
+            help="Tokens this model can hold on this machine.",
+        ),
+    ] = None,
 ) -> None:
     """Start a local web UI to queue and run tasks.
 
@@ -461,11 +509,13 @@ def ui_command(
     a .env, config.yaml, or config.yml file if present, but does not fail if
     they are missing. Users can configure settings via the UI.
     """
+    _reject_context_window(context_window)
     settings: Settings = _settings(
         model_name=model_name,
         model_base_url=base_url,
         create_pr=create_pr,
         auto_commit=auto_commit,
+        context_window=context_window,
     )
     try:
         _serve_ui(

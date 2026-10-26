@@ -149,7 +149,7 @@ label {
   letter-spacing: 0.06em;
 }
 
-input[type="text"], textarea, select {
+input[type="text"], input[type="number"], textarea, select {
   width: 100%;
   background: var(--panel);
   color: var(--ink);
@@ -224,7 +224,7 @@ textarea {
   margin-top: 0.75rem;
 }
 
-#base-url, #server-history, #model {
+#base-url, #server-history, #model, #context-window {
   font-size: 0.88rem;
 }
 
@@ -259,7 +259,7 @@ textarea {
 
 .llm-block > label:first-of-type { margin-top: 0; }
 
-#base-url, #server-history, #model { font-size: 0.88rem; }
+#base-url, #server-history, #model, #context-window { font-size: 0.88rem; }
 
 #base-url {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
