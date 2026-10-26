@@ -132,6 +132,81 @@ def normalize_cadence(raw: object) -> dict:
     return {"kind": kind, "minute": minute, "hour": hour, "weekdays": weekdays}
 
 
+def agenda(items: list[dict], now: datetime | None = None, *, days: int = 7) -> dict:
+    """The next run of each schedule, and where those runs sit on the coming week."""
+    moment = _as_local(now or datetime.now().astimezone())
+    start = moment.replace(hour=0, minute=0, second=0, microsecond=0)
+    columns: list[dict] = []
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        columns.append(
+            {
+                "date": day.date().isoformat(),
+                "label": day.strftime("%a"),
+                "day": day.day,
+                "today": offset == 0,
+                "slots": [],
+            }
+        )
+    by_date = {column["date"]: column for column in columns}
+    horizon = start + timedelta(days=days)
+    next_up: list[dict] = []
+    for item in items:
+        if not item.get("enabled"):
+            continue
+        cadence = item.get("cadence") if isinstance(item.get("cadence"), dict) else {}
+        if cadence.get("kind") not in _KINDS:
+            continue
+        try:
+            first = next_occurrence(cadence, moment)
+        except ValueError:
+            continue
+        name = item.get("name") or "Schedule"
+        next_up.append(
+            {
+                "at": _iso(first),
+                "schedule_id": item.get("id"),
+                "name": name,
+                "label": human_cadence(cadence),
+                "running": _open_run(item),
+            }
+        )
+        if cadence.get("kind") == "hourly":
+            for column in columns:
+                column["slots"].append(
+                    {
+                        "at": _iso(first),
+                        "schedule_id": item.get("id"),
+                        "name": name,
+                        "note": human_cadence(cadence),
+                        "hourly": True,
+                    }
+                )
+            continue
+        cursor = first
+        for _step in range(days + 1):
+            if cursor >= horizon:
+                break
+            column = by_date.get(cursor.date().isoformat())
+            if column is not None:
+                column["slots"].append(
+                    {
+                        "at": _iso(cursor),
+                        "schedule_id": item.get("id"),
+                        "name": name,
+                        "note": human_cadence(cadence),
+                    }
+                )
+            try:
+                cursor = next_occurrence(cadence, cursor)
+            except ValueError:
+                break
+    next_up.sort(key=lambda slot: str(slot["at"]))
+    for column in columns:
+        column["slots"].sort(key=lambda slot: str(slot["at"]))
+    return {"next_up": next_up, "days": columns}
+
+
 def list_schedules(root: Path) -> list[dict]:
     with _LOCK:
         items = [entry for entry in _read(root)["schedules"] if isinstance(entry, dict)]

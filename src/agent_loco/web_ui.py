@@ -35,6 +35,7 @@ from agent_loco.runtime.project import (
 )
 from agent_loco.runtime.schedules import (
     ScheduleClock,
+    agenda,
     attach_task,
     delete_schedule,
     fail_run,
@@ -1292,7 +1293,9 @@ def create_app(
         ui: UiState = request.app.state.ui
         root = Path(ui.store_root)
         sync_runs(root, _task_lookup(ui.manager))
-        return {"schedules": list_schedules(root)}
+        schedules = list_schedules(root)
+        _attach_schedule_live(schedules, ui.manager)
+        return {"schedules": schedules, "agenda": agenda(schedules)}
 
     @app.post("/api/schedules", response_model=None)
     def create_schedule_route(request: Request, payload: ScheduleWrite) -> Any:
@@ -1355,6 +1358,33 @@ def create_app(
     return app
 
 
+_LIVE_EVENT_KEYS = ("kind", "at", "message", "purpose", "name", "command", "phase", "path")
+
+
+def _live_event(event: object) -> dict:
+    if not isinstance(event, dict):
+        return {}
+    return {key: event[key] for key in _LIVE_EVENT_KEYS if event.get(key) not in (None, "")}
+
+
+def _attach_schedule_live(schedules: list[dict], manager: TaskManager) -> None:
+    """Add the in-memory log and the latest progress onto a run that is still open."""
+    for item in schedules:
+        for run in item.get("runs") or []:
+            if run.get("status") not in {"queued", "running"}:
+                continue
+            task = manager.get(str(run.get("task_id") or ""))
+            if task is None:
+                run["logs"] = []
+                run["events"] = []
+                continue
+            run["status"] = task.status
+            run["logs"] = list(task.logs[-40:])
+            run["events"] = [
+                _live_event(event) for event in task.events[-8:] if isinstance(event, dict)
+            ]
+
+
 def _task_lookup(manager: TaskManager):
     def lookup(task_id: str) -> dict | None:
         task = manager.get(task_id)
@@ -1385,12 +1415,17 @@ def _launch_scheduled_run(ui: UiState, schedule: dict) -> None:
         goal = file_task_goal(str(goal or ""))
         auto_commit = False
         create_pr = False
+    selected = ui.selection()
+    model_name = selected.get("last_model") or ui.manager.settings.model_name
+    model_base_url = selected.get("last_base_url") or ui.manager.settings.model_base_url
     try:
         task = ui.manager.submit(
             Path(str(schedule.get("workspace") or "")),
             goal,
             auto_commit=auto_commit,
             create_pr=create_pr,
+            model_name=str(model_name or ""),
+            model_base_url=str(model_base_url or ""),
         )
     except Exception as exc:
         fail_run(root, str(schedule.get("id") or ""), run_id, str(exc))

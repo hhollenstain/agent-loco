@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,6 +11,7 @@ from agent_loco.config import Settings
 from agent_loco.runtime.improve import CycleResult
 from agent_loco.runtime.schedules import (
     ScheduleClock,
+    agenda,
     claim_due,
     cron_expression,
     human_cadence,
@@ -307,4 +309,86 @@ def test_file_schedule_saves_documents_outside_a_project(
         )
         assert escaped.status_code == 404
     finally:
+        manager.shutdown(wait=False)
+
+
+def test_agenda_shows_the_next_run_and_the_coming_week() -> None:
+    now = _local(2026, 10, 23, 21, 0)
+    items = [
+        {
+            "id": "job",
+            "name": "Job search",
+            "enabled": True,
+            "cadence": {"kind": "daily", "hour": 9, "minute": 0, "weekdays": [0, 1, 2, 3, 4]},
+        },
+        {
+            "id": "pulse",
+            "name": "Pulse",
+            "enabled": True,
+            "runs": [{"status": "running"}],
+            "cadence": {"kind": "hourly", "hour": 0, "minute": 15, "weekdays": []},
+        },
+        {
+            "id": "off",
+            "name": "Paused",
+            "enabled": False,
+            "cadence": {"kind": "daily", "hour": 8, "minute": 0, "weekdays": []},
+        },
+    ]
+    board = agenda(items, now)
+    assert [slot["name"] for slot in board["next_up"]] == ["Pulse", "Job search"]
+    assert board["next_up"][0]["running"] is True
+    assert board["next_up"][0]["at"].startswith("2026-10-23T21:15")
+    assert len(board["days"]) == 7
+    assert board["days"][0]["today"] is True
+    saturday = board["days"][1]
+    assert saturday["date"] == "2026-10-24"
+    assert any(slot["name"] == "Job search" for slot in saturday["slots"])
+    assert sum(1 for slot in saturday["slots"] if slot["name"] == "Pulse") == 1
+    assert all(slot.get("hourly") for slot in saturday["slots"] if slot["name"] == "Pulse")
+
+
+def test_open_schedule_run_includes_live_progress(settings: Settings, tmp_path: Path) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def runner(task: Task) -> CycleResult:
+        task.logs.append("looking up jobs")
+        task.events.append(
+            {"kind": "step", "message": "Searching the web", "at": "2026-10-24T04:00:00Z"}
+        )
+        started.set()
+        release.wait(3)
+        return _ok(task.goal)
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/schedules",
+            json={
+                "name": "Job search",
+                "goal": "Search for new jobs and save them as jobs.csv.",
+                "kind": "files",
+                "workspace": "",
+                "cadence": _daily(),
+            },
+        )
+        assert created.status_code == 200
+        ran = client.post(f"/api/schedules/{created.json()['id']}/run")
+        assert ran.status_code == 200
+        assert started.wait(3)
+        body = client.get("/api/schedules").json()
+        run = body["schedules"][0]["runs"][0]
+        assert run["status"] == "running"
+        assert "looking up jobs" in run["logs"]
+        assert run["events"][-1]["message"] == "Searching the web"
+        assert body["agenda"]["next_up"][0]["name"] == "Job search"
+        page = client.get("/")
+        assert b'id="schedule-view-agenda"' in page.content
+        assert b'id="schedule-live"' in page.content
+        assert b"schedule-view" in page.content
+    finally:
+        release.set()
         manager.shutdown(wait=False)
