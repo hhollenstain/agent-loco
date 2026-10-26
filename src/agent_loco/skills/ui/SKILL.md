@@ -76,3 +76,41 @@ there is no preview server, add one before claiming the control works.
   found, install Godot 4 or set `GODOT_PATH`, then call `review_ui` again.
 - If the capture is missing, blank, or does not show the action, the goal is
   not met. Fix the app or the preview and call `review_ui` again.
+
+## UI Component Patterns
+
+### Sidebar Panels
+Sidebar panels such as `#skills-panel` and `#guidelines-panel` are overlays that:
+- Cover only the sidebar area, keeping the main task pane visible
+- The panel list fills the overlay and scrolls
+- Clicking outside the panel or using the close button dismisses it
+- These panels must not interfere with existing UI elements
+
+### Modal Dialogs
+Modal dialogs should follow this structure:
+- Use existing `.modal-backdrop` and `.modal` classes for consistent styling
+- Start with `hidden` attribute to ensure they're not visible initially
+- Include a close mechanism (button or backdrop click)
+- Do not intercept clicks when closed
+- Maintain consistent z-index stacking with other UI elements
+
+### Task Cards
+Task cards follow specific positioning rules:
+- Bottom-right corner owned by `.pr-link` and `.rerun-btn`
+- Bottom-left corner owned by `.history-line-stats` 
+- New controls in these corners will cause overlap issues
+- Use footer rows for additional actions on task cards
+- Maintain proper padding to prevent clipping
+
+### Form Elements and Buttons
+When adding form elements:
+- All buttons must have `id` or `data-*` attributes for click handlers
+- Click handlers must reference the exact token used for the element
+- No unused form fields, routes, or buttons should be left in the code
+- Maintain consistent styling with existing UI components
+
+### Responsive Layout Guidelines
+The UI must maintain proper behavior across different screen sizes:
+- Use CSS Grid and Flexbox for responsive layouts
+- Avoid fixed positioning that may conflict with other elements
+- Test both desktop and mobile views during review process
