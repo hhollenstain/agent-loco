@@ -35,6 +35,10 @@ def test_ui_review_needed_for_template_diff_and_ui_goals(tmp_path: Path) -> None
     assert ui_review_needed("Add a progress bar", "", tmp_path)
     assert ui_review_needed("The game has no rendering and the start button does nothing", "")
     assert not ui_review_needed("update discord.py", "Pipfile.lock hashes changed")
+    catalog = "diff --git a/.omp-plugin/marketplace.json b/.omp-plugin/marketplace.json\n"
+    assert not ui_review_needed("Make the marketplace more full featured", catalog)
+    assert ui_review_needed("Ship the widget", "diff --git a/web/app.js b/web/app.js\n")
+    assert ui_review_needed("Ship the widget", "diff --git a/web/App.jsx b/web/App.jsx\n")
 
 
 def test_format_ui_evidence_lists_errors_and_tiny_controls() -> None:

@@ -28,7 +28,7 @@ from agent_loco.sandbox import Workspace
 log = logging.getLogger("loco")
 
 UI_FILE_RE = re.compile(
-    r"(?:^|[/\s])(?:[\w./-]+\.(?:html?|css|js|jsx|tsx|vue|svelte)|templates/)",
+    r"(?:^|[/\s])(?:[\w./-]+\.(?:jsx|tsx|html|htm|css|vue|svelte|js)(?!\w)|templates/)",
     re.IGNORECASE,
 )
 UI_GOAL_RE = re.compile(
