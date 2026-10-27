@@ -34,6 +34,28 @@ def _ok_result(goal: str | None = "do the thing") -> CycleResult:
     )
 
 
+def test_task_context_window_is_pinned(settings: Settings, tmp_path: Path) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert b'id="context-window"' in home.content
+        rejected = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "shrink", "context_window": 128},
+        )
+        assert rejected.status_code == 400
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "shrink", "context_window": 4096},
+        )
+        assert created.status_code == 201
+        assert created.json()["context_window"] == 4096
+    finally:
+        manager.shutdown(wait=False)
+
+
 def test_submit_rejects_missing_workspace(settings: Settings, tmp_path: Path) -> None:
     manager = TaskManager(settings, runner=lambda task: _ok_result())
     try:
@@ -759,7 +781,10 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
 def test_history_fills_token_window_from_current_model(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent_loco.web_ui.lookup_context_window", lambda *args, **kwargs: 32768)
+    monkeypatch.setattr(
+        "agent_loco.web_ui.effective_context_window",
+        lambda *args, **kwargs: 32768,
+    )
     runs = tmp_path / ".loco" / "runs"
     runs.mkdir(parents=True)
     (runs / "20260919T180000Z.json").write_text(

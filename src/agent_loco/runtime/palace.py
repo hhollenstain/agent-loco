@@ -295,10 +295,15 @@ def memory_preface(palace: Palace | None, goal: str, context: str) -> str:
 
 
 def prompt_budget_chars(context_window: int | None) -> int | None:
-    """Use most of the window, leaving room for the completion."""
+    """Use most of the window, leaving room for the completion and tool list."""
     if context_window is None or context_window < 512:
         return None
-    return int(context_window * 0.72) * 4
+    if context_window >= 16_384:
+        return int(context_window * 0.72) * 4
+    # Small local windows also have to hold the tool schema.
+    reserved = max(768, int(context_window * 0.38))
+    usable = max(512, context_window - reserved)
+    return usable * 4
 
 
 def fit_prompt(
@@ -308,16 +313,20 @@ def fit_prompt(
     query: str,
     context_window: int | None,
 ) -> list[dict]:
-    """File older turns when the prompt outgrows the window, then recall them."""
-    if not palace_enabled(palace):
-        return messages
+    """Drop older turns when the prompt outgrows the window.
+
+    When workspace memory is open, the dropped turns are filed and a short
+    recall is put back. Without it, the prompt is still trimmed so a small
+    local window is not sent a transcript it cannot hold.
+    """
     budget = prompt_budget_chars(context_window)
-    if budget is None or message_chars(messages) <= budget or palace is None:
+    if budget is None or message_chars(messages) <= budget:
         return messages
+    store: Palace = palace if palace is not None else NullPalace()
     try:
-        return _fit_prompt(messages, palace, query=query, budget=budget)
+        return _fit_prompt(messages, store, query=query, budget=budget)
     except Exception as exc:
-        log.warning("could not fit the prompt with mempalace: %s", exc)
+        log.warning("could not fit the prompt: %s", exc)
         return messages
 
 
@@ -369,30 +378,39 @@ def _fit_prompt(
         fitted = [*head_messages, bridge, *fitted[len(head_messages) :]]
     if message_chars(fitted) > budget:
         fitted = _clip_overflow(fitted, budget, palace)
-    record_event(
-        kind="step",
-        message="Filed earlier turns into workspace memory so the run can continue.",
-    )
+    if palace_enabled(palace):
+        note = "Filed earlier turns into workspace memory so the run can continue."
+    else:
+        note = "Dropped earlier turns so the prompt fits the context window."
+    record_event(kind="step", message=note)
     return fitted
 
 
 def _clip_overflow(messages: list[dict], budget: int, palace: Palace) -> list[dict]:
     fitted = [_copy_message(message) for message in messages]
-    for _ in range(6):
+    for _ in range(8):
         if message_chars(fitted) <= budget:
             return fitted
         index = _largest_index(fitted)
         if index is None:
+            index = _largest_index(fitted, include_head=True)
+        if index is None:
             return fitted
         content = fitted[index].get("content")
-        if not isinstance(content, str) or len(content) < 400:
+        if not isinstance(content, str) or len(content) < 200:
             return fitted
         palace.file(content, room=TRANSCRIPT_ROOM, source=_source_for(content))
         overflow = message_chars(fitted) - budget
-        keep = max(400, len(content) - overflow - 80)
-        fitted[index]["content"] = (
-            content[:keep].rstrip() + "\n... remainder filed in workspace memory"
+        floor = 600 if index < 2 else 200
+        keep = max(floor, len(content) - overflow - 80)
+        if keep >= len(content):
+            return fitted
+        note = (
+            "\n... remainder filed in workspace memory"
+            if palace_enabled(palace)
+            else "\n... truncated to fit the context window"
         )
+        fitted[index]["content"] = content[:keep].rstrip() + note
     return fitted
 
 
@@ -440,11 +458,11 @@ def _flat(groups: list[list[dict]]) -> list[dict]:
     return messages
 
 
-def _largest_index(messages: list[dict]) -> int | None:
+def _largest_index(messages: list[dict], *, include_head: bool = False) -> int | None:
     best_index: int | None = None
     best_size = 0
     for index, message in enumerate(messages):
-        if index < 2 or _is_memory_message(message):
+        if (not include_head and index < 2) or _is_memory_message(message):
             continue
         content = message.get("content")
         size = len(content) if isinstance(content, str) else 0

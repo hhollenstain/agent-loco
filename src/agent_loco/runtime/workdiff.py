@@ -94,6 +94,34 @@ _TOML_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"')
 _YARN_HEADER = re.compile(r'^"?([^"@\s]+)@')
 _YARN_VERSION = re.compile(r'^version\s+"([^"]+)"')
 _GOAL_TOKEN = re.compile(r"[A-Za-z][\w.\-]{2,}")
+_CODE_SUFFIXES = frozenset(
+    {
+        ".py",
+        ".pyi",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".go",
+        ".rs",
+        ".java",
+        ".rb",
+        ".php",
+        ".cs",
+        ".gd",
+        ".cpp",
+        ".c",
+        ".h",
+        ".hpp",
+        ".swift",
+        ".kt",
+        ".vue",
+        ".svelte",
+    }
+)
+_CATALOG_SUFFIXES = frozenset({".json", ".md", ".yaml", ".yml", ".txt", ".rst", ".adoc"})
 
 
 def is_lockfile(path: str) -> bool:
@@ -276,6 +304,17 @@ def collect_current_evidence(
     return _join_budget(parts, limit) or "(empty workspace)"
 
 
+def _part_priority(part: str) -> int:
+    """Rank a diff part so implementation files are kept ahead of large catalogs."""
+    path = _diff_path(part) or ""
+    suffix = Path(path).suffix.lower() if path else ""
+    if suffix in _CODE_SUFFIXES:
+        return 0
+    if suffix in _CATALOG_SUFFIXES:
+        return 2
+    return 1
+
+
 def format_work_diff(
     *,
     status: str = "",
@@ -295,6 +334,9 @@ def format_work_diff(
     source_parts, lock_from_diff = partition_unified(unified, goal=goal)
     lock_parts = list(lock_summaries) if lock_summaries is not None else lock_from_diff
     body = source_parts + lock_parts + [part for part in extra or [] if part.strip()]
+    # A long marketplace.json diff used to fill the review budget and hide the
+    # Python files that actually implement the goal.
+    body.sort(key=_part_priority)
     header = "\n\n".join(header_parts)
     if not header and not body:
         return "(no diff)"

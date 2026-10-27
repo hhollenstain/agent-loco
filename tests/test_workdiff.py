@@ -176,6 +176,16 @@ def test_collect_current_evidence_includes_goal_package_version(tmp_path: Path) 
     assert "Current HEAD:" in text
 
 
+def test_format_work_diff_keeps_code_ahead_of_a_huge_catalog() -> None:
+    catalog = "diff --git a/.omp-plugin/marketplace.json b/.omp-plugin/marketplace.json\n"
+    catalog += "+\"padding\",\n" * 400
+    code = "--- /dev/null\n+++ b/app.py\ndef ping():\n    return 'pong'\n"
+    text = format_work_diff(unified=catalog, extra=[code], limit=800)
+    assert "def ping" in text
+    assert text.index("def ping") < text.index("marketplace.json")
+    assert "truncated" in text
+
+
 def test_collect_work_diff_includes_another_projects_edits(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("root\n", encoding="utf-8")
     init_git_repo(tmp_path)

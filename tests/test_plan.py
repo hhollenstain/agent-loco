@@ -97,7 +97,56 @@ def test_cycle_makes_a_new_plan_after_two_missed_retries(
     replan_prompt = llm.calls[9][-1]["content"]
     assert "The last plan was carried out" in replan_prompt
     assert "add still has no docstring" in replan_prompt
+    assert "Carrying out the new plan." in steps
+    assert "Do only step 1 of 1" in llm.calls[10][1]["content"]
     assert "Add a docstring to add" in llm.calls[10][1]["content"]
+
+
+def test_hidden_directory_edit_counts_as_changing_the_planned_file(
+    tmp_path: Path, settings: Settings
+) -> None:
+    plugin = tmp_path / ".omp-plugin"
+    plugin.mkdir()
+    (plugin / "marketplace.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "check.py").write_text("print('ok')\n", encoding="utf-8")
+    loco = tmp_path / ".loco"
+    loco.mkdir()
+    (loco / "config.yaml").write_text(
+        "name: fixture\ntest_command: python3 check.py\nmax_repair_attempts: 0\n"
+        "publish:\n  enabled: false\n",
+        encoding="utf-8",
+    )
+    init_git_repo(tmp_path)
+    plan = (
+        '{"steps": [{"do": "Add a name field", "file": ".omp-plugin/marketplace.json", '
+        '"check": "name is present"}]}'
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text=plan),
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="w1",
+                        name="write_file",
+                        arguments={
+                            "path": ".omp-plugin/marketplace.json",
+                            "content": '{"name": "honk"}\n',
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Added the name."),
+            AssistantTurn(text='{"met": true, "reason": "name field is present"}'),
+        ]
+    )
+    planned = settings.model_copy(update={"plan_goals": True, "auto_commit": False})
+    result = run_cycle(tmp_path, planned, llm, goal="Name the marketplace")
+    assert result.status == "success", result.reason
+    steps = [event.get("message", "") for event in result.events if event["kind"] == "step"]
+    assert not any("did not change" in message for message in steps)
+    assert '"name": "honk"' in (plugin / "marketplace.json").read_text(encoding="utf-8")
 
 
 def test_cycle_plans_the_goal_and_hands_the_plan_to_agent_and_reviewer(

@@ -41,6 +41,7 @@ and **review** before you stop.
 
 - Use `str_replace` for precision. Provide the exact `old_string` from the file.
 - Do not repeat the same `str_replace` if it fails; adjust the arguments instead.
+- Do not add and remove the same small edit. A comment, blank line, or the same text put back and taken out is not the fix. Change the behavior the goal asks for.
 - Do not add scaffolding, mocks, TODOs, or unused form fields that don't serve this goal.
 
 ## Verify

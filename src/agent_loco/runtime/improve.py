@@ -933,6 +933,9 @@ def _handle_empty_diff(
         )
         if follow.summary:
             summary = follow.summary
+        if follow.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if workspace_fingerprint(workspace.root) == before_retry:
             log_progress("No code changes; not running tests again.")
             continue
@@ -1258,6 +1261,15 @@ def _ensure_goal_met(
         plan=plan,
     )
     log_progress(f"Goal review: met={verdict.met} ({review_reason(verdict)})")
+    if not verdict.met and stopped_reason == "oscillating":
+        log_progress("The agent kept adding and removing the same small edit. Stopping.")
+        return {
+            "met": False,
+            "reason": "agent kept undoing the same small edit",
+            "summary": summary,
+            "tests_passed": tests_passed,
+            "tests_failed": False,
+        }
     attempts = 0
     stalls = 0
     extra_granted = False
@@ -1267,6 +1279,7 @@ def _ensure_goal_met(
     previous_reason = review_reason(verdict)
     limit = project.max_repair_attempts
     while not verdict.met and attempts < limit:
+        carry_out_plan = False
         if attempts >= 1 and _repeated_miss(previous_reason, review_reason(verdict)):
             log_progress("The same miss came back. Stopping instead of repeating it.")
             break
@@ -1293,6 +1306,7 @@ def _ensure_goal_met(
             if fresh is not None:
                 plan = fresh
                 _log_plan(plan)
+                carry_out_plan = True
         context = _brief(plan, named_files, base_context)
         guarded = bool(guard_only_fix(work_diff, goal))
         lookup = _needs_validation_lookup(review_reason(verdict), project) and not guarded
@@ -1302,25 +1316,64 @@ def _ensure_goal_met(
         if research:
             log_progress("Researching the stated failure before another edit...")
         before_retry = workspace_fingerprint(workspace.root)
-        follow = agent.run(
-            _goal_retry_prompt(
+        if carry_out_plan and plan is not None and plan.steps:
+            log_progress("Carrying out the new plan.")
+            follow = _run_plan_steps(
+                workspace,
+                agent,
+                plan,
                 goal,
-                review_reason(verdict),
-                work_diff,
-                ui_errors=verdict.ui_errors,
-                stalled=stalls > 0,
-                lookup=lookup,
+                context,
+                sha_before,
                 research=research,
-                repeated=repeated,
-            ),
-            context,
-            require_change=True,
-            require_lookup=lookup,
-            require_research=research,
-            require_docs=research,
-        )
+            )
+        else:
+            follow = agent.run(
+                _goal_retry_prompt(
+                    goal,
+                    review_reason(verdict),
+                    work_diff,
+                    ui_errors=verdict.ui_errors,
+                    stalled=stalls > 0,
+                    lookup=lookup,
+                    research=research,
+                    repeated=repeated,
+                ),
+                context,
+                require_change=True,
+                require_lookup=lookup,
+                require_research=research,
+                require_docs=research,
+            )
+        if (
+            follow.stopped_reason == "max_iterations"
+            and workspace_fingerprint(workspace.root) != before_retry
+        ):
+            log_progress(
+                "Iteration limit reached during goal retry; continuing once from a compact handoff."
+            )
+            follow = agent.run(
+                compact_handoff(
+                    goal=goal,
+                    summary=follow.summary,
+                    diff=collect_work_diff(workspace, sha_before, goal=goal),
+                    last_tool_error=follow.last_error,
+                    stopped_reason=follow.stopped_reason,
+                ),
+                context,
+                require_change=True,
+            )
         if follow.summary:
             summary = follow.summary
+        if follow.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            return {
+                "met": False,
+                "reason": "agent kept undoing the same small edit",
+                "summary": summary,
+                "tests_passed": tests_passed,
+                "tests_failed": False,
+            }
         if workspace_fingerprint(workspace.root) == before_retry:
             log_progress("No code changes; not running tests or another review.")
             stalls += 1
@@ -1406,12 +1459,34 @@ def _is_check_step(step: PlanStep) -> bool:
     return not step.file and bool(_CHECK_STEP.search(step.do))
 
 
+def _repo_rel(filename: str) -> str:
+    """Normalize a plan path without stripping a leading dot from a hidden directory.
+
+    str.lstrip("./") treats every leading '.' and '/' as trim characters, so
+    '.omp-plugin/marketplace.json' became 'omp-plugin/marketplace.json' and no
+    longer matched the git diff. The step then looked untouched and was run again.
+    """
+    rel = (filename or "").replace("\\", "/").strip()
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel.lstrip("/")
+
+
 def _diff_touches(diff: str, filename: str) -> bool:
-    rel = filename.replace("\\", "/").lstrip("./")
+    rel = _repo_rel(filename)
     if not rel:
         return True
     text = diff or ""
-    return f"b/{rel}" in text or f"a/{rel}" in text or f"/{rel}" in text or text.endswith(rel)
+    needles = (
+        f"b/{rel}",
+        f"a/{rel}",
+        f"/{rel}",
+        f" {rel}",
+        f"\t{rel}",
+    )
+    if any(needle in text for needle in needles):
+        return True
+    return text.rstrip().endswith(rel)
 
 
 def _step_prompt(goal: str, plan: GoalPlan, index: int) -> str:
@@ -1464,6 +1539,9 @@ def _run_plan_steps(
                     require_change=True,
                 )
         last = result
+        if result.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if result.summary:
             notes.append(result.summary)
     assert last is not None
@@ -1688,13 +1766,16 @@ def _ensure_test_command(
     attempts = max(project.max_repair_attempts, 1)
     for attempt in range(attempts):
         log_progress(f"No test command; setting up tests ({attempt + 1}/{attempts})")
-        agent.run(
+        setup = agent.run(
             _test_setup_prompt(),
             context,
             require_change=True,
             require_tests=True,
             require_lookup=True,
         )
+        if setup.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         tests_after = _maybe_test(workspace, project, settings, phase="setup")
         if tests_after is not None:
             return tests_after
@@ -1716,11 +1797,14 @@ def _repair_failing_tests(
     for attempt in range(project.max_repair_attempts):
         log_progress(f"Repair attempt {attempt + 1}/{project.max_repair_attempts}")
         before_repair = workspace_fingerprint(workspace.root)
-        agent.run(
+        repair = agent.run(
             _test_repair_prompt(tests_after.output),
             context,
             require_change=True,
         )
+        if repair.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if workspace_fingerprint(workspace.root) == before_repair:
             log_progress("Repair did not change code; not running tests again.")
             break
@@ -1880,11 +1964,14 @@ def _ensure_lint(
         log_progress(f"Lint repair {attempt + 1}/{attempts}")
         log_progress(f"Lint errors to fix:\n{(lint_after.output or '').strip()}")
         before_repair = workspace_fingerprint(workspace.root)
-        agent.run(
+        repair = agent.run(
             _lint_repair_prompt(lint_after.output),
             context,
             require_change=True,
         )
+        if repair.stopped_reason == "oscillating":
+            log_progress("The agent kept adding and removing the same small edit. Stopping.")
+            break
         if workspace_fingerprint(workspace.root) == before_repair:
             log_progress("Lint repair did not change code; not running lint again.")
             break

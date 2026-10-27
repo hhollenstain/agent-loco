@@ -15,6 +15,7 @@ from agent_loco.runtime.palace import (
     NullPalace,
     fit_prompt,
     memory_preface,
+    message_chars,
     prompt_budget_chars,
     record_source,
     render_task_record,
@@ -164,6 +165,19 @@ def test_fit_prompt_files_older_turns_and_keeps_tool_pairs() -> None:
     assert fitted[0]["role"] == "system"
     assert "add logout" in fitted[1]["content"]
     assert fit_prompt(messages[:2], palace, query="add logout", context_window=2000) == messages[:2]
+
+
+def test_fit_prompt_trims_without_memory() -> None:
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "Goal: add logout"},
+        {"role": "assistant", "content": "A" * 8000},
+        {"role": "user", "content": "B" * 8000},
+    ]
+    fitted = fit_prompt(messages, None, query="add logout", context_window=2000)
+    assert message_chars(fitted) < message_chars(messages)
+    assert fitted[0]["role"] == "system"
+    assert "add logout" in fitted[1]["content"]
 
 
 def test_sibling_task_records_skip_the_current_task(settings: Settings, tmp_path: Path) -> None:
