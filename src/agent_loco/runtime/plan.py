@@ -7,6 +7,7 @@ from pathlib import Path
 
 from agent_loco.llm.client import LLMClient
 from agent_loco.progress import timed_complete
+from agent_loco.runtime.related import VersionFloors, read_version_floors
 
 PLAN_SYSTEM = """You break one coding goal into ordered steps before anyone edits files.
 
@@ -33,6 +34,21 @@ _GUARD_STEP = re.compile(
     re.IGNORECASE,
 )
 _MISSING_NODE = re.compile(r'(?i)not found:?\s*"([^"]+)"')
+_PY_MENTION = re.compile(r"(?i)(?<![.\w-])(?:requires-python|python_requires|python)(?![\w-])")
+_STEP_FLOOR = re.compile(
+    r"(?i)(?<![.\w-])([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)"
+    r"(?:\[[^\]]*\])?(?:\s*=\s*[\"']?\s*|\s*)"
+    r"(>=|==|~=|\^)\s*(\d+\.\d+(?:\.\d+)?)"
+)
+_PKG_TO = re.compile(
+    r"(?i)(?<![.\w-])([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)"
+    r"(?:\[[^\]]*\])?\s*(?:=|:)?\s*[\"']?\s*"
+    r"(?:from\s+[0-9.^<>=~]+\s+)?"
+    r"to\s+(?:>=|==|~=|\^)?\s*(\d+\.\d+(?:\.\d+)?)"
+)
+_LOWER_BOUND = re.compile(r"(?:>=|==|~=|\^)\s*(\d+\.\d+(?:\.\d+)?)")
+_TO_FLOOR = re.compile(r"(?i)\bto\s+(?:>=|==|~=|\^)?\s*(\d+\.\d+(?:\.\d+)?)")
+_PYTHON_NAMES = {"python", "requires-python", "python-requires"}
 _SCENE_SUFFIXES = {".tscn", ".tres", ".scn"}
 MAX_PLAN_STEPS = 6
 
@@ -93,6 +109,7 @@ def plan_goal(
     failure: str = "",
     previous: GoalPlan | None = None,
     diff: str = "",
+    opinions: str = "",
 ) -> GoalPlan | None:
     """Ask the model for ordered steps, or a new plan after the last one failed."""
     parts = ["Goal:", goal.strip()]
@@ -119,8 +136,12 @@ def plan_goal(
                 "a step that already ran and did not help.",
             ]
         )
+    system = PLAN_SYSTEM
+    extra = (opinions or "").strip()
+    if extra:
+        system = f"{PLAN_SYSTEM}\n\nOpinions for this plan:\n{extra[:4000]}"
     messages = [
-        {"role": "system", "content": PLAN_SYSTEM},
+        {"role": "system", "content": system},
         {"role": "user", "content": "\n".join(parts)},
     ]
     try:
@@ -131,7 +152,7 @@ def plan_goal(
 
 
 def ground_plan(plan: GoalPlan | None, goal: str, root: Path) -> GoalPlan | None:
-    """Drop steps that only hide an error, and start from the file that owns a missing node."""
+    """Drop a downgrade or a step that only hides an error, and start from the missing node."""
     steps = []
     if plan is not None:
         steps = [step for step in plan.steps if not _GUARD_STEP.search(step.do)]
@@ -160,10 +181,80 @@ def ground_plan(plan: GoalPlan | None, goal: str, root: Path) -> GoalPlan | None
                 check=f"The Node not found error for {name} no longer prints",
             ),
         )
+    floors = read_version_floors(root)
+    steps = [step for step in steps if not _lowers_required_floor(step, floors)]
     if not steps:
         return None
     cause = plan.cause if plan is not None else ""
     return GoalPlan(steps[:MAX_PLAN_STEPS], cause=cause)
+
+
+def _lowers_required_floor(step: PlanStep, floors: VersionFloors) -> bool:
+    """True when the version this step would set is older than the manifests."""
+    text = f"{step.do}\n{step.check}"
+    python_targets = _python_targets(text)
+    if floors.python is not None and python_targets and max(python_targets) < floors.python:
+        return True
+    for name, versions in _package_targets(text).items():
+        current = floors.packages.get(name)
+        if current is not None and versions and max(versions) < current:
+            return True
+    return False
+
+
+def _python_targets(text: str) -> list[tuple[int, ...]]:
+    found: list[tuple[int, ...]] = []
+    for match in _PY_MENTION.finditer(text):
+        target = _chosen_target(text[match.end() : match.end() + 80])
+        if target is not None:
+            found.append(target)
+    return found
+
+
+def _package_targets(text: str) -> dict[str, list[tuple[int, ...]]]:
+    found: dict[str, list[tuple[int, ...]]] = {}
+    directed: set[str] = set()
+    for match in _PKG_TO.finditer(text):
+        key = re.sub(r"[-_.]+", "-", match.group(1)).strip("-").lower()
+        if key in _PYTHON_NAMES:
+            continue
+        parsed = _bounds(match.group(2))
+        if not parsed:
+            continue
+        found[key] = [parsed[0]]
+        directed.add(key)
+    for match in _STEP_FLOOR.finditer(text):
+        key = re.sub(r"[-_.]+", "-", match.group(1)).strip("-").lower()
+        if key in _PYTHON_NAMES or key in directed:
+            continue
+        target = _chosen_target(text[match.start() : match.end() + 48])
+        if target is not None:
+            found.setdefault(key, []).append(target)
+    return found
+
+
+def _chosen_target(window: str) -> tuple[int, ...] | None:
+    """The version a step sets. A 'to' version beats other numbers in the same phrase."""
+    to_version = _TO_FLOOR.search(window)
+    if to_version:
+        parsed = _bounds(to_version.group(1))
+        return parsed[0] if parsed else None
+    bounds = _bounds(window)
+    return max(bounds) if bounds else None
+
+
+def _bounds(spec: str) -> list[tuple[int, ...]]:
+    found: list[tuple[int, ...]] = []
+    for raw in _LOWER_BOUND.findall(spec or ""):
+        parts = tuple(int(part) for part in raw.split("."))
+        if len(parts) >= 2:
+            found.append(parts)
+    bare = re.fullmatch(r"\d+\.\d+(?:\.\d+)?", (spec or "").strip())
+    if bare:
+        parts = tuple(int(part) for part in bare.group(0).split("."))
+        if len(parts) >= 2:
+            found.append(parts)
+    return found
 
 
 def format_plan(plan: GoalPlan | None) -> str:

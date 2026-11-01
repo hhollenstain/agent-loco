@@ -33,6 +33,7 @@ from agent_loco.runtime.project import (
     guidelines_are_custom,
     save_guidelines,
 )
+from agent_loco.runtime.roles import roles_catalog, save_enabled_roles
 from agent_loco.runtime.schedules import (
     ScheduleClock,
     agenda,
@@ -188,6 +189,9 @@ class TaskCreate(BaseModel):
     pr_url: str | None = None
     continuous: bool = False
     context_window: int | None = None
+    gate: str | None = None
+    triage_gate: str | None = None
+    approval_gate: str | None = None
 
 
 class ContinuousStop(BaseModel):
@@ -197,6 +201,15 @@ class ContinuousStop(BaseModel):
 class RerunPayload(BaseModel):
     sha: str | None = None
     goal: str | None = None
+
+
+class DecidePayload(BaseModel):
+    decision: str = ""
+
+
+class WorkspaceRolesUpdate(BaseModel):
+    path: str | None = None
+    enabled: list[str] | None = None
 
 
 class PullStatusQuery(BaseModel):
@@ -939,6 +952,24 @@ def create_app(
             return JSONResponse({"error": "task not found or not rerunnable"}, status_code=404)
         return JSONResponse(new_task.to_dict(), status_code=201)
 
+    @app.post("/api/tasks/{task_id}/decide")
+    def decide_task(task_id: str, request: Request, payload: DecidePayload | None = None) -> Any:
+        ui: UiState = request.app.state.ui
+        body = payload or DecidePayload()
+        choice = (body.decision or "").strip()
+        if choice not in {"build", "hand_off", "approve", "send_back"}:
+            return JSONResponse({"error": "unknown decision"}, status_code=400)
+        task = ui.manager.get(task_id)
+        if task is None:
+            return JSONResponse({"error": "task not found"}, status_code=404)
+        updated = ui.manager.decide(task_id, choice)
+        if updated is None:
+            return JSONResponse(
+                {"error": "this change is not waiting for that decision"},
+                status_code=409,
+            )
+        return updated.to_dict()
+
     @app.get("/api/branches")
     def branches(request: Request, workspace: str | None = None) -> Any:
         ui: UiState = request.app.state.ui
@@ -988,6 +1019,9 @@ def create_app(
                 base_branch=body.base_branch,
                 continuous=bool(body.continuous),
                 context_window=body.context_window,
+                gate=(body.gate or "auto"),
+                triage_gate=body.triage_gate or "",
+                approval_gate=body.approval_gate or "",
             )
             ui.remember_server(task.model_base_url, model=task.model_name)
             ui.set_workspace(task.workspace)
@@ -1206,6 +1240,32 @@ def create_app(
 
     def _workspace_root(ui: UiState, path: str | None) -> Path:
         return Path(path or ui.default_workspace).expanduser().resolve()
+
+    @app.get("/api/workspaces/roles")
+    def list_workspace_roles(request: Request, path: str | None = None) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            root = _workspace_root(ui, path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            return roles_catalog(root)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.put("/api/workspaces/roles")
+    def update_workspace_roles(
+        request: Request, payload: WorkspaceRolesUpdate | None = None
+    ) -> Any:
+        ui: UiState = request.app.state.ui
+        body = payload or WorkspaceRolesUpdate()
+        try:
+            root = _workspace_root(ui, body.path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            save_enabled_roles(root, body.enabled or [])
+            return roles_catalog(root)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
 
     @app.get("/api/workspaces/skills")
     def list_workspace_skills(request: Request, path: str | None = None) -> Any:

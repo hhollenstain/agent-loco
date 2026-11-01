@@ -178,7 +178,7 @@ def test_collect_current_evidence_includes_goal_package_version(tmp_path: Path) 
 
 def test_format_work_diff_keeps_code_ahead_of_a_huge_catalog() -> None:
     catalog = "diff --git a/.omp-plugin/marketplace.json b/.omp-plugin/marketplace.json\n"
-    catalog += "+\"padding\",\n" * 400
+    catalog += '+"padding",\n' * 400
     code = "--- /dev/null\n+++ b/app.py\ndef ping():\n    return 'pong'\n"
     text = format_work_diff(unified=catalog, extra=[code], limit=800)
     assert "def ping" in text

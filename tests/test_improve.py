@@ -166,6 +166,100 @@ def test_cycle_rejects_a_null_check_that_hides_the_stated_error(
     assert "null check" in reason or "guards" in reason
 
 
+def test_cycle_does_not_fail_when_pytest_is_missing(tmp_path: Path, settings: Settings) -> None:
+    _broken_project(tmp_path)
+    (tmp_path / "missing.sh").write_text(
+        "#!/bin/sh\n"
+        "echo '/tmp/project/.venv/bin/python3: No module named pytest'\n"
+        "echo 'make: *** [test] Error 1'\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "missing.sh").chmod(0o755)
+    (tmp_path / ".loco" / "config.yaml").write_text(
+        "name: fixture\n"
+        "test_command: sh missing.sh\n"
+        "max_repair_attempts: 1\n"
+        "publish:\n  enabled: false\n"
+        "goals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add."),
+            _review_turn(True, "the adder returns the sum"),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm)
+    assert result.status == "success"
+    assert result.tests_passed is None
+    assert result.committed is True
+    assert result.reason != "tests failed; commit skipped"
+    steps = [event.get("message", "") for event in result.events if event["kind"] == "step"]
+    assert any("not a failing test" in message for message in steps)
+    assert not any(message.startswith("Repair attempt") for message in steps)
+
+
+def test_cycle_repairs_a_suite_that_actually_failed(tmp_path: Path, settings: Settings) -> None:
+    _broken_project(tmp_path)
+    (tmp_path / "fail.sh").write_text(
+        "#!/bin/sh\n"
+        "echo '============================= test session starts ============================='\n"
+        "echo 'collected 1 item'\n"
+        "echo 'FAILED tests/test_models.py::test_rollback - AssertionError: not rolled back'\n"
+        "echo '1 failed in 0.02s'\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".loco" / "config.yaml").write_text(
+        "name: fixture\n"
+        "test_command: sh fail.sh\n"
+        "max_repair_attempts: 1\n"
+        "publish:\n  enabled: false\n"
+        "goals_file: goals.md\n",
+        encoding="utf-8",
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="write_file",
+                        arguments={
+                            "path": "app.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                ],
+            ),
+            AssistantTurn(text="Implemented add."),
+            AssistantTurn(text="Tried to fix the failing test."),
+        ]
+    )
+    result = run_cycle(tmp_path, settings, llm, goal="Make the adder work")
+    assert result.status == "failed"
+    assert result.tests_passed is False
+    assert result.committed is False
+    assert result.reason == "tests failed; commit skipped"
+    steps = [event.get("message", "") for event in result.events if event["kind"] == "step"]
+    assert any(message == "Repair attempt 1/1" for message in steps)
+
+
 def test_cycle_commits_when_scripted_fix_passes(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
     llm = ScriptedClient(

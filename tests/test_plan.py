@@ -33,6 +33,39 @@ def test_ground_plan_starts_from_the_scene_instead_of_a_null_check(tmp_path: Pat
     assert all(step.file != "scripts/main.gd" for step in grounded.steps)
 
 
+def test_ground_plan_drops_a_floor_the_tree_already_beats(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.12"\ndependencies = ["discord-py>=2.3.2"]\n',
+        encoding="utf-8",
+    )
+    planned = parse_plan(
+        '{"cause": "Python is 3.8 and discord.py is 2.0.0", "steps": ['
+        '{"do": "Set requires-python to >=3.9", "file": "pyproject.toml", '
+        '"check": "python = \\">=3.9\\""},'
+        '{"do": "Require discord.py>=2.4.1", "file": "pyproject.toml", '
+        '"check": "discord.py>=2.4.1 is listed"},'
+        '{"do": "Set discord.py>=2.0.0", "file": "setup.py", '
+        '"check": "discord.py==2.0.0"},'
+        '{"do": "Rename discord-py to discord.py", "file": "setup.py", '
+        '"check": "the dependency name is discord.py"},'
+        '{"do": "Set requires-python to >=3.13", "file": "pyproject.toml", '
+        '"check": "requires-python >=3.13"}'
+        "]}"
+    )
+    grounded = ground_plan(planned, "Update python and the packages, mainly discord.py", tmp_path)
+    assert grounded is not None
+    assert [step.do for step in grounded.steps] == [
+        "Require discord.py>=2.4.1",
+        "Rename discord-py to discord.py",
+        "Set requires-python to >=3.13",
+    ]
+    downgrade = parse_plan(
+        '{"steps": [{"do": "Change requires-python from >=3.12 to >=3.9", '
+        '"file": "pyproject.toml", "check": "python is >=3.9"}]}'
+    )
+    assert ground_plan(downgrade, "Update python", tmp_path) is None
+
+
 def test_parse_plan_reads_steps_and_formats_checks() -> None:
     plan = parse_plan(f"Here you go:\n```json\n{PLAN}\n```")
     assert plan is not None
@@ -193,7 +226,8 @@ def test_cycle_plans_the_goal_and_hands_the_plan_to_agent_and_reviewer(
     assert "Files named by the goal:" in agent_prompt
     assert "--- app.py ---" in agent_prompt
     review_prompt = llm.calls[-1][-1]["content"]
-    assert "every step's check holds" in review_prompt
+    assert "leaving the newer floor" in review_prompt
+    assert "every step's check holds" not in review_prompt
     assert "Return the sum" in review_prompt
 
 

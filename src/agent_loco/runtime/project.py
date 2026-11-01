@@ -298,6 +298,11 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "    - tdd\n"
                 "    - ui\n"
                 "    - kiwi\n"
+                "roles:\n"
+                "  enabled:\n"
+                "    - architect\n"
+                "    - builder\n"
+                "    - qa\n"
             ),
             encoding="utf-8",
         )

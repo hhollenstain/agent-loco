@@ -401,7 +401,7 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'data-stage="' in home.content
         assert b"pinTimelineStage" in home.content
         assert b"function renderProgressStageBar(" in home.content
-        assert b"return progressHtml + renderTaskPanes" in home.content
+        assert b"return board + (board ? \"\" : progressHtml) + renderTaskPanes" in home.content
         assert b"${taskProgress}" not in home.content
         assert b"Before tests" in home.content
         assert b'event.kind === "lint"' in home.content
@@ -497,8 +497,10 @@ def test_web_ui_paginates_tasks_and_serves_favicon(settings: Settings, tmp_path:
         assert b"#11140f" in icon.content
         themes = client.get("/static/themes.css")
         assert themes.status_code == 200
-        assert b"--bg:" in themes.content
+        assert b"--bg: #ffffff" in themes.content
         assert b"--accent:" in themes.content
+        assert b"--navy:" in themes.content
+        assert b'[data-theme="dark"]' in themes.content
         layout = client.get("/static/layout.css")
         assert layout.status_code == 200
         assert b"box-sizing: border-box" in layout.content
@@ -1023,11 +1025,19 @@ def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_pa
         home = client.get("/")
         assert home.status_code == 200
         assert b'id="open-workspace-picker"' in home.content
+        assert b'aria-label="Add project"' in home.content
+        assert b'aria-label="Archive project"' in home.content
+        assert home.content.index(b'class="project-bar"') < home.content.index(
+            b'id="open-workspace-picker"'
+        )
+        assert home.content.index(b'<section class="tasks">') < home.content.index(
+            b'id="archive-project"'
+        )
         assert b'id="workspace-picker"' in home.content
-        assert b'id="workspace-tabs"' in home.content
-        assert b'id="add-workspace-tab"' in home.content
+        assert b'id="project-select"' in home.content
+        assert b'id="archive-project"' in home.content
         assert b'id="archived-workspaces"' in home.content
-        assert b"workspace-tab-archive" in home.content
+        assert b'id="workspace-tabs"' not in home.content
         assert b'id="guidelines"' in home.content
         assert b'id="open-settings"' in home.content
         assert b'id="workspace-location"' in home.content
@@ -1957,5 +1967,213 @@ def test_branches_api_lists_head_and_accepts_a_selected_base(
                 break
             time.sleep(0.05)
         assert seen == ["feature/login"]
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Path) -> None:
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        home = client.get("/")
+        assert b'id="open-roles"' in home.content
+        assert b'id="roles-panel"' in home.content
+        assert b"function changeBoardHtml(" in home.content
+        assert b'class="step-list"' in home.content
+        assert b"Open one for its verdict" in home.content
+        assert b"function renderInbox(" in home.content
+        assert b'id="inbox"' in home.content
+        assert b'data-rail="proposals"' in home.content
+        assert b'data-rail="changes"' in home.content
+        assert b'data-rail="releases"' in home.content
+        assert b'id="release-list"' in home.content
+        assert b"Ask for a change" in home.content
+        assert b'id="theme-toggle"' in home.content
+        assert b"function applyTheme(" in home.content
+        assert b"function restoreTheme(" in home.content
+        assert b"function toggleTheme(" in home.content
+        assert b"Waiting for you" in home.content
+        assert b"In progress" in home.content
+        assert b'id="gate-triage" type="checkbox" checked' in home.content
+        assert b'id="gate-approval" type="checkbox" checked' in home.content
+        assert b'id="bypass-gates"' in home.content
+        assert b'data-change-decision="build"' in home.content
+        assert b'data-change-decision="approve"' in home.content
+        layout = client.get("/static/layout.css")
+        assert b".inbox" in layout.content
+        assert b".step-card" in layout.content
+        catalog = client.get("/api/workspaces/roles", params={"path": str(tmp_path)})
+        assert catalog.status_code == 200
+        names = [role["name"] for role in catalog.json()["roles"]]
+        assert "architect" in names
+        assert "security" in names
+        assert "security" not in catalog.json()["enabled"]
+        saved = client.put(
+            "/api/workspaces/roles",
+            json={"path": str(tmp_path), "enabled": ["architect", "security"]},
+        )
+        assert saved.status_code == 200
+        assert "security" in saved.json()["enabled"]
+        assert "builder" in saved.json()["enabled"]
+        assert "qa" in saved.json()["enabled"]
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_inbox_lists_waiting_reviews_across_projects(settings: Settings, tmp_path: Path) -> None:
+    one = tmp_path / "alpha"
+    two = tmp_path / "beta"
+    one.mkdir()
+    two.mkdir()
+
+    def runner(task: Task) -> CycleResult:
+        stage = "approval" if "pull" in (task.goal or "") else "triage"
+        return CycleResult(
+            status="waiting",
+            goal=task.goal,
+            summary=task.goal,
+            tests_passed=None,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason=f"waiting for {stage}",
+            stage=stage,
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=one)
+    client = TestClient(app)
+    try:
+        skipped = client.post(
+            "/api/tasks",
+            json={
+                "workspace": str(one),
+                "goal": "Say hello",
+                "triage_gate": "auto",
+                "approval_gate": "ask",
+            },
+        )
+        assert skipped.status_code == 201
+        assert skipped.json()["triage_gate"] == "auto"
+        assert skipped.json()["approval_gate"] == "ask"
+        assert skipped.json()["gate"] == "ask"
+        both = client.post(
+            "/api/tasks",
+            json={"workspace": str(one), "goal": "Both reviews", "gate": "ask"},
+        )
+        assert both.status_code == 201
+        assert both.json()["triage_gate"] == "ask"
+        assert both.json()["approval_gate"] == "ask"
+        bad = client.post(
+            "/api/tasks",
+            json={"workspace": str(one), "goal": "Nope", "triage_gate": "skip"},
+        )
+        assert bad.status_code == 400
+        other = client.post(
+            "/api/tasks",
+            json={
+                "workspace": str(two),
+                "goal": "Review the pull request",
+                "triage_gate": "ask",
+                "approval_gate": "auto",
+            },
+        )
+        assert other.status_code == 201
+        wanted = {skipped.json()["id"], other.json()["id"]}
+        listed: list[dict] = []
+        for _ in range(50):
+            listed = client.get("/api/tasks").json()
+            ready = [
+                item for item in listed if item["id"] in wanted and item["status"] == "waiting"
+            ]
+            if len(ready) == 2:
+                break
+            time.sleep(0.02)
+        waiting = {
+            item["workspace"]: item["stage"]
+            for item in listed
+            if item["status"] == "waiting" and item["id"] in wanted
+        }
+        assert waiting == {str(one.resolve()): "triage", str(two.resolve()): "approval"}
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_waiting_change_accepts_build_and_rejects_a_late_decision(
+    settings: Settings, tmp_path: Path
+) -> None:
+    def runner(task: Task) -> CycleResult:
+        if task.decision == "build":
+            return CycleResult(
+                status="success",
+                goal=task.goal,
+                summary="built",
+                tests_passed=True,
+                committed=False,
+                published=False,
+                commit_sha=None,
+                reason="completed",
+                stage="done",
+            )
+        return CycleResult(
+            status="waiting",
+            goal=task.goal,
+            summary="Implement: hello",
+            tests_passed=None,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="waiting for triage",
+            stage="triage",
+            plan="Implement: hello",
+            criteria=["hello works"],
+            evidence=[
+                {
+                    "role": "architect",
+                    "title": "Architect",
+                    "job": "plan",
+                    "verdict": "pass",
+                    "summary": "planned",
+                }
+            ],
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Say hello", "gate": "ask"},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        waiting = None
+        for _ in range(50):
+            body = client.get(f"/api/tasks/{task_id}").json()
+            if body["status"] == "waiting":
+                waiting = body
+                break
+            time.sleep(0.05)
+        assert waiting is not None
+        assert waiting["stage"] == "triage"
+        assert waiting["plan"] == "Implement: hello"
+        assert waiting["evidence"][0]["role"] == "architect"
+        early = client.post(f"/api/tasks/{task_id}/decide", json={"decision": "approve"})
+        assert early.status_code == 409
+        built = client.post(f"/api/tasks/{task_id}/decide", json={"decision": "build"})
+        assert built.status_code == 200
+        done = None
+        for _ in range(50):
+            body = client.get(f"/api/tasks/{task_id}").json()
+            if body["status"] == "success":
+                done = body
+                break
+            time.sleep(0.05)
+        assert done is not None
+        assert done["stage"] == "done"
+        late = client.post(f"/api/tasks/{task_id}/decide", json={"decision": "build"})
+        assert late.status_code == 409
     finally:
         manager.shutdown(wait=False)

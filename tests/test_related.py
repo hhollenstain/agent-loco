@@ -60,3 +60,35 @@ def test_goal_files_are_empty_when_the_goal_names_nothing(tmp_path: Path) -> Non
     assert goal_files(tmp_path, "Make the game more fun") == []
     assert goal_scene(tmp_path, "Make the game more fun") is None
     assert format_goal_files(tmp_path, "Make the game more fun") == ""
+
+
+def test_upgrade_goal_includes_manifests_not_a_missing_package_file(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.12"\ndependencies = ["discord-py>=2.3.2"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "uv.lock").write_text(
+        'version = 1\nrequires-python = ">=3.12"\n\n'
+        '[[package]]\nname = "discord-py"\nversion = "2.3.2"\n'
+        "dependencies = [\n"
+        '    { name = "discord-py", specifier = ">=2.3.2" },\n'
+        "]\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    goal = (
+        "Update phython in this repo and all the packages mainly the discord.py "
+        "as it is severally out of date."
+    )
+    assert goal_files(tmp_path, goal) == []
+    text = format_goal_files(tmp_path, goal)
+    assert text.startswith("Dependency manifests:")
+    assert 'requires-python = ">=3.12"' in text
+    assert "discord-py>=2.3.2" in text
+    assert "- discord-py: >=2.3.2 (locked 2.3.2)" in text
+    assert "sha256" not in text
+    assert "--- discord.py ---" not in text
+    assert "Dependency manifests:" not in format_goal_files(tmp_path, "Fix add in app.py")
+    button = format_goal_files(tmp_path, "Update the button in app.py")
+    assert "Dependency manifests:" not in button
+    assert "--- app.py ---" in button

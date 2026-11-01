@@ -38,6 +38,12 @@ Rules:
 - The plan can name the wrong file. The goal is met when the requested
   behavior is in a file the application actually uses, even if a planned
   path was never created.
+- Judge the user's goal. A plan check is not a second goal. A check that
+  asks for an older Python or package floor than the tree already requires
+  is wrong; leaving the newer floor meets an update goal. Renaming a
+  dependency to the real package name counts. Fail when a named package is
+  still old, the lockfile keeps the old package name, or a requirement was
+  lowered.
 - A summary that claims the work is done does not count unless the diff shows it.
 - If the goal is a GitHub issue, the body and comments are the spec. Matching
   only the title is unmet. The requested behavior must be in the diff.
@@ -287,9 +293,6 @@ _GENERIC_BUTTON_CLASSES = frozenset(
         "primary",
         "selected",
         "sidebar-toggle",
-        "workspace-tab-select",
-        "workspace-tab-add",
-        "workspace-tab-archive",
         "progress-stage",
     }
 )
@@ -706,9 +709,13 @@ def review_goal(
         user_parts.extend(
             [
                 "",
-                "The goal is met only when every step's check holds. "
-                "A step that names a file the application does not serve does not "
-                "reject the goal when the same behavior is in the file the app uses.",
+                "Judge the user's goal. A plan check that contradicts the files does not "
+                "fail the goal. A step that names a file the application does not serve "
+                "does not reject the goal when the same behavior is in the file the app uses. "
+                "A check that asks for an older Python or package version than the tree "
+                "already requires is wrong; leaving the newer floor meets an update goal. "
+                "Fail when a named package is still old, the lockfile keeps the old "
+                "package name, or a requirement was lowered.",
                 plan.strip(),
             ]
         )

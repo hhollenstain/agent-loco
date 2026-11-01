@@ -321,6 +321,31 @@ def _serve_ui(
 
 
 @app.command()
+def roles(
+    workspace: Annotated[
+        Path,
+        typer.Option("--workspace", "-w", exists=True, file_okay=False, resolve_path=True),
+    ] = Path("."),
+) -> None:
+    """List the roles that carry a change, and which ones are enabled."""
+    from agent_loco.runtime.roles import list_roles
+
+    table = Table(title="Roles")
+    table.add_column("Role")
+    table.add_column("Job")
+    table.add_column("Enabled")
+    table.add_column("What it does")
+    for role in list_roles(workspace):
+        table.add_row(
+            role.title,
+            role.job,
+            "yes" if role.enabled else "no",
+            role.description or role.name,
+        )
+    console.print(table)
+
+
+@app.command()
 def run(
     workspace: Annotated[
         Path,
@@ -359,7 +384,7 @@ def run(
         typer.Option("--web-ui", help="Start the web UI instead of running one cycle."),
     ] = False,
 ) -> None:
-    """Run one improve → test → commit cycle against a project."""
+    """Run one change: plan, build, review, then commit when the gates pass."""
     _validate_env(require=not web_ui)
     _reject_context_window(context_window)
     settings: Settings = _settings(
@@ -390,7 +415,8 @@ def run(
         context_window=_cycle_context_window(settings),
     )
     console.print(
-        f"[bold]{result.status}[/bold] committed={result.committed} "
+        f"[bold]{result.status}[/bold] stage={result.stage or 'done'} "
+        f"committed={result.committed} "
         f"published={result.published} merged={result.merged} tests={result.tests_passed}"
     )
     if result.goal:

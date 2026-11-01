@@ -34,15 +34,31 @@ The agent process is the same on an Apple Silicon MacBook and on a Linux box wit
 | MacBook (Apple Silicon) | [Ollama](https://ollama.com) on the host | Docker Desktop cannot pass Metal into a Linux VM |
 | Home lab (NVIDIA, including RTX 5090) | Ollama or vLLM in Compose with GPU passthrough | Blackwell needs host driver **570+** and `nvidia-container-toolkit` |
 
+A change moves through roles you can turn on, turn off, or add:
+
 ```
-  loco run / watch
-        │
-        ├─ read / write files in one workspace
-        ├─ search the web and read public docs
-        ├─ run the project's own tests
-        ├─ review the diff against the stated goal
-        ├─ commit only when tests are green and the goal is met
-        └─ optional git push / gh pr
+  ask → architect plans → you triage → builder
+      → reviewers (QA, and any role you enable)
+      → you approve → commit / pull request
+```
+
+The web UI waits before any code and again before the pull request. Changes
+in the left menu groups every project into waiting for you, in progress, and
+done, and shows the step each change is on. Uncheck one gate
+to skip that review, or bypass all gates. Keep improving, `loco run`, and
+`loco watch` pass the gates themselves. Builder and QA stay on. Add a review
+role at `.loco/roles/<name>/ROLE.md` (`job: review`) and enable it from the
+Roles panel or `roles.enabled` in `.loco/config.yaml`. `loco roles` lists
+the catalog.
+
+```
+  loco run / watch          loco ui
+        │                       │
+        ├─ architect plans      ├─ architect plans, then waits
+        ├─ builder writes       ├─ you choose Build or Hand off
+        ├─ reviewers judge      ├─ builder, then each review role
+        ├─ tests and goal check ├─ you approve from the verdicts
+        └─ commit / pull request└─ then commit / pull request
               │
               ▼
      OpenAI-compatible API

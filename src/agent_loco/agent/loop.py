@@ -14,6 +14,7 @@ from agent_loco.progress import record_event, timed_complete
 from agent_loco.runtime.palace import Palace, fit_prompt, memory_preface
 from agent_loco.runtime.review import error_search_needle, search_uses_error
 from agent_loco.tools import ToolSpec, execute_tool
+from agent_loco.tools.tests import runner_unavailable
 
 log = logging.getLogger("loco")
 
@@ -511,10 +512,8 @@ class CodingAgent:
                         elif call.name == "review_ui":
                             verified_ui = bool(result.ok)
                         elif call.name == "run_tests":
-                            verified_tests = bool(result.ok)
-                            tests_need_command = (not result.ok) and (
-                                result.output or ""
-                            ).startswith("no test command configured")
+                            missing_runner = runner_unavailable(result.output or "")
+                            verified_tests = bool(result.ok) or missing_runner
                             tests_need_command = (not result.ok) and (
                                 result.output or ""
                             ).startswith("no test command configured")

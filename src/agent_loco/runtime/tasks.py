@@ -24,7 +24,7 @@ from agent_loco.progress import (
     reset_progress,
     token_usage_from_events,
 )
-from agent_loco.runtime.improve import CycleResult, run_cycle
+from agent_loco.runtime.improve import CycleResult, resolve_human_gates, run_cycle
 
 log = logging.getLogger("loco")
 
@@ -34,8 +34,31 @@ PROTECTED_BRANCHES = frozenset({"", "main", "master", "trunk", "HEAD"})
 Runner = Callable[["Task"], CycleResult]
 
 
+def _gate_value(value: str | None, default: str) -> str:
+    picked = (value or "").strip()
+    if not picked:
+        return default
+    if picked not in {"ask", "auto"}:
+        raise ValueError("gate must be ask or auto")
+    return picked
+
+
 def _utcnow() -> str:
     return utcnow_iso()
+
+
+def _review_notes(evidence: list[dict]) -> str:
+    lines: list[str] = []
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        if item.get("verdict") not in {"send_back", "block"} and item.get("job") != "review":
+            continue
+        title = str(item.get("title") or item.get("role") or "reviewer")
+        summary = str(item.get("summary") or "").strip()
+        if summary:
+            lines.append(f"{title}: {summary}")
+    return "\n".join(lines)[:4000]
 
 
 def sibling_task_records(manager: TaskManager, task: Task) -> list[dict]:
@@ -109,6 +132,15 @@ class Task:
     pin_context_window: bool = False
     continuous: bool = False
     merged: bool = False
+    gate: str = "auto"
+    triage_gate: str = "auto"
+    approval_gate: str = "auto"
+    decision: str | None = None
+    stage: str = ""
+    plan: str = ""
+    criteria: list[str] = field(default_factory=list)
+    evidence: list[dict] = field(default_factory=list)
+    review_notes: str = ""
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -139,6 +171,13 @@ class Task:
             "context_window": self.context_window,
             "continuous": self.continuous,
             "merged": self.merged,
+            "gate": self.gate,
+            "triage_gate": self.triage_gate,
+            "approval_gate": self.approval_gate,
+            "stage": self.stage,
+            "plan": self.plan,
+            "criteria": list(self.criteria),
+            "evidence": list(self.evidence),
         }
         if include_logs:
             payload["logs"] = list(self.logs)
@@ -205,6 +244,9 @@ class TaskManager:
         base_branch: str | None = None,
         continuous: bool = False,
         context_window: int | None = None,
+        gate: str = "auto",
+        triage_gate: str = "",
+        approval_gate: str = "",
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
@@ -218,6 +260,19 @@ class TaskManager:
         if continuous:
             with self._lock:
                 self._continuous_stopped.discard(str(workspace))
+        picked_gate = "auto" if continuous else _gate_value(gate, "auto")
+        if continuous:
+            picked_triage, picked_approval = "auto", "auto"
+        else:
+            if (triage_gate or "").strip() not in {"", "ask", "auto"}:
+                raise ValueError("triage_gate must be ask or auto")
+            if (approval_gate or "").strip() not in {"", "ask", "auto"}:
+                raise ValueError("approval_gate must be ask or auto")
+            picked_triage, picked_approval = resolve_human_gates(
+                picked_gate, triage_gate, approval_gate
+            )
+        if picked_triage == "ask" or picked_approval == "ask":
+            picked_gate = "ask"
         task = Task(
             id=uuid4().hex,
             workspace=str(workspace),
@@ -234,6 +289,9 @@ class TaskManager:
             context_window=pinned,
             pin_context_window=pinned is not None,
             continuous=continuous,
+            gate=picked_gate,
+            triage_gate=picked_triage,
+            approval_gate=picked_approval,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -321,7 +379,32 @@ class TaskManager:
             base_branch=base_branch,
             continuous=old_task.continuous,
             context_window=old_task.context_window if old_task.pin_context_window else None,
+            gate=old_task.gate,
+            triage_gate=old_task.triage_gate,
+            approval_gate=old_task.approval_gate,
         )
+
+    def decide(self, task_id: str, decision: str) -> Task | None:
+        """Resume a change that is waiting at triage or approval."""
+        choice = (decision or "").strip()
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != "waiting":
+                return None
+            if task.stage == "triage" and choice not in {"build", "hand_off"}:
+                return None
+            if task.stage == "approval" and choice not in {"approve", "send_back"}:
+                return None
+            if task.stage not in {"triage", "approval"}:
+                return None
+            task.decision = choice
+            if choice == "send_back":
+                task.review_notes = _review_notes(task.evidence)
+            task.status = "queued"
+            task.finished_at = None
+            task.error = None
+        self._executor.submit(self._run, task)
+        return task
 
     def stop_continuous(self, workspace: str | Path) -> None:
         """Stop auto-queuing keep-improving cycles for this workspace."""
@@ -369,6 +452,10 @@ class TaskManager:
     def _run(self, task: Task) -> None:
         task.status = "running"
         task.started_at = _utcnow()
+        if task.decision in {"build", "send_back"}:
+            task.stage = "building"
+        elif task.decision == "approve":
+            task.stage = "approval"
         if self._runner is None and task.context_window is None:
             task.context_window = lookup_context_window(
                 task.model_base_url,
@@ -394,6 +481,14 @@ class TaskManager:
             task.commit_sha = result.commit_sha
             task.pr_url = result.pr_url
             task.merged = bool(getattr(result, "merged", False))
+            if getattr(result, "stage", ""):
+                task.stage = result.stage
+            if getattr(result, "plan", ""):
+                task.plan = result.plan
+            if getattr(result, "criteria", None):
+                task.criteria = list(result.criteria)
+            if getattr(result, "evidence", None):
+                task.evidence = list(result.evidence)
             if getattr(result, "branch", None):
                 task.branch = result.branch
             self._refresh_git_state(task)
@@ -437,7 +532,15 @@ class TaskManager:
             context_window=task.context_window,
             task_id=task.id,
             base_branch=task.base_branch,
-            keep_branch=bool(task.resume_branch or task.resume_sha),
+            keep_branch=bool(
+                task.resume_branch or task.resume_sha or task.decision in {"approve", "send_back"}
+            ),
+            gate=task.gate,
+            triage_gate=task.triage_gate,
+            approval_gate=task.approval_gate,
+            decision=task.decision,
+            review_notes=task.review_notes,
+            held_summary=task.summary or "",
         )
 
     def _maybe_continue(self, task: Task) -> None:

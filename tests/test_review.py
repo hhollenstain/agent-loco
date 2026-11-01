@@ -178,6 +178,31 @@ def test_review_goal_retries_when_first_reply_is_prose() -> None:
     assert "2.7.1" in reviews[1]["raw"]
 
 
+def test_review_goal_does_not_treat_a_plan_check_as_the_goal() -> None:
+    llm = ScriptedClient(
+        [AssistantTurn(text='{"met": true, "reason": "discord.py moved to 2.4.1"}')]
+    )
+    token = bind_progress()
+    try:
+        verdict = review_goal(
+            llm,
+            "Update python and discord.py",
+            diff='requires-python = ">=3.12"\n- discord-py>=2.3.2\n+ discord.py>=2.4.1\n',
+            summary="renamed the dependency",
+            tests_passed=True,
+            plan='1. Set requires-python to >=3.9 [pyproject.toml] Check: python = ">=3.9"',
+        )
+    finally:
+        reset_progress(token)
+    assert verdict.met is True
+    system = llm.calls[0][0]["content"]
+    user = llm.calls[0][-1]["content"]
+    assert "leaving the newer floor" in system
+    assert "leaving the newer floor" in user
+    assert "every step's check holds" not in user
+    assert "lockfile keeps the old package name" in user
+
+
 def test_review_goal_existing_tree_uses_workspace_evidence() -> None:
     llm = ScriptedClient(
         [

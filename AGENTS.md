@@ -9,7 +9,7 @@ itself is also in `skills/agent-loco/SKILL.md`.
 - Tests live in `tests/test_<area>.py`. Put a test next to the behavior it
   covers. Do not append a new feature's tests onto an unrelated file.
 - Web UI is `src/agent_loco/templates/index.html`, `static/`, and `web_ui.py`.
-- The cycle is `runtime/improve.py`, `runtime/review.py`, and `agent/loop.py`.
+- The cycle is `runtime/improve.py`, `runtime/roles.py`, `runtime/review.py`, and `agent/loop.py`.
 - Bundled skills ship in `src/agent_loco/skills/<name>/SKILL.md`.
 - Repo skills live at `skills/<name>/SKILL.md`.
 - Prove a new behavior at a public seam: the `loco` CLI, an `/api/...` route,

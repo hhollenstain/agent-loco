@@ -41,6 +41,12 @@ from agent_loco.runtime.review import (
     unused_new_symbols,
     unwired_ui_markers,
 )
+from agent_loco.runtime.roles import (
+    optional_review_roles,
+    plan_role,
+    review_with_role,
+    role_evidence,
+)
 from agent_loco.runtime.skills import compose_system_prompt
 from agent_loco.runtime.steward import propose_improvement_goal
 from agent_loco.runtime.uireview import (
@@ -85,7 +91,7 @@ from agent_loco.tools.git import (
 )
 from agent_loco.tools.kiwi import resolve_kiwifs_prefix
 from agent_loco.tools.lint import apply_ruff_autofix, current_lint_result, run_project_lint
-from agent_loco.tools.tests import current_test_result, run_project_tests
+from agent_loco.tools.tests import current_test_result, run_project_tests, runner_unavailable
 
 log = logging.getLogger("loco")
 
@@ -210,6 +216,10 @@ class CycleResult:
     pr_url: str | None = None
     branch: str | None = None
     merged: bool = False
+    stage: str = ""
+    plan: str = ""
+    criteria: list[str] = field(default_factory=list)
+    evidence: list[dict] = field(default_factory=list)
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -252,6 +262,23 @@ def resolve_create_pr(
     return bool(settings.create_pr or project.publish_enabled)
 
 
+def resolve_human_gates(
+    gate: str = "auto",
+    triage_gate: str = "",
+    approval_gate: str = "",
+) -> tuple[str, str]:
+    """Return the triage and approval gates. A specific gate overrides `gate`."""
+    base = "ask" if (gate or "").strip() == "ask" else "auto"
+
+    def pick(value: str) -> str:
+        picked = (value or "").strip()
+        if picked in {"ask", "auto"}:
+            return picked
+        return base
+
+    return pick(triage_gate), pick(approval_gate)
+
+
 def run_cycle(
     workspace_path: Path,
     settings: Settings,
@@ -266,6 +293,12 @@ def run_cycle(
     task_id: str | None = None,
     base_branch: str | None = None,
     keep_branch: bool = False,
+    gate: str = "auto",
+    triage_gate: str = "",
+    approval_gate: str = "",
+    decision: str | None = None,
+    review_notes: str = "",
+    held_summary: str = "",
 ) -> CycleResult:
     progress = bind_progress()
     token = _TASK_ID.set(task_id)
@@ -284,6 +317,12 @@ def run_cycle(
             task_id=task_id,
             base_branch=base_branch,
             keep_branch=keep_branch,
+            gate=gate,
+            triage_gate=triage_gate,
+            approval_gate=approval_gate,
+            decision=decision,
+            review_notes=review_notes,
+            held_summary=held_summary,
         )
     finally:
         _PALACE.reset(palace_token)
@@ -305,10 +344,49 @@ def _run_cycle(
     task_id: str | None = None,
     base_branch: str | None = None,
     keep_branch: bool = False,
+    gate: str = "auto",
+    triage_gate: str = "",
+    approval_gate: str = "",
+    decision: str | None = None,
+    review_notes: str = "",
+    held_summary: str = "",
 ) -> CycleResult:
     log_progress("Initializing workspace...")
+    triage_choice, approval_choice = resolve_human_gates(gate, triage_gate, approval_gate)
+    normalized_decision = (decision or "").strip()
+    evidence: list[dict] = []
+    plan_text = ""
+    criteria: list[str] = []
     workspace = Workspace(workspace_path)
     project = load_project(workspace.root)
+    if normalized_decision == "hand_off":
+        log_progress("Handing this change to a person. Nothing will be built.")
+        result = CycleResult(
+            status="handed_off",
+            goal=goal,
+            summary="Handed to a person. Nothing was built.",
+            tests_passed=None,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="handed to a person",
+            stage="handed_off",
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return result
+    if normalized_decision == "approve":
+        log_progress("Publishing the approved change...")
+        allow_create_pr = resolve_create_pr(settings, project, cli_create_pr)
+        return _publish_held(
+            workspace,
+            settings,
+            project,
+            goal or "",
+            held_summary or "",
+            allow_create_pr=allow_create_pr,
+            mark_checkbox=mark_checkbox,
+        )
     stay_here = goal_keeps_current_branch(goal) and not (base_branch or "").strip()
     if not keep_branch and not stay_here and (workspace.root / ".git").exists():
         start = _resolve_start_branch(
@@ -358,7 +436,7 @@ def _run_cycle(
             status="skipped",
             goal=None,
             summary=None,
-            tests_passed=None if tests_before is None else tests_before.ok,
+            tests_passed=_tests_passed_value(tests_before),
             committed=False,
             published=False,
             commit_sha=None,
@@ -407,16 +485,55 @@ def _run_cycle(
     base_context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     named_files = format_goal_files(workspace.root, selected_goal)
     plan = None
-    if settings.plan_goals:
-        log_progress("Breaking the goal into steps...")
+    architect = plan_role(workspace.root)
+    if settings.plan_goals and architect is not None:
+        log_progress("Architect is breaking the goal into steps...")
         plan = ground_plan(
-            plan_goal(llm, selected_goal, context=base_context, files=named_files),
+            plan_goal(
+                llm,
+                selected_goal,
+                context=base_context,
+                files=named_files,
+                opinions=architect.body,
+            ),
             selected_goal,
             workspace.root,
         )
         _log_plan(plan)
+    plan_text, criteria = _plan_record(plan, selected_goal)
+    if plan is not None and plan.steps:
+        evidence.append(
+            role_evidence(
+                architect.name if architect is not None else "architect",
+                architect.title if architect is not None else "Architect",
+                "plan",
+                "pass",
+                plan.cause or "Planned the change.",
+            )
+        )
+    if triage_choice == "ask" and normalized_decision not in {"build", "send_back"}:
+        log_progress("Plan is ready. Waiting for you to build it or hand it off.")
+        return CycleResult(
+            status="waiting",
+            goal=selected_goal,
+            summary=plan_text,
+            tests_passed=None,
+            committed=False,
+            published=False,
+            commit_sha=sha_before,
+            reason="waiting for triage",
+            stage="triage",
+            plan=plan_text,
+            criteria=criteria,
+            evidence=list(evidence),
+        )
     brief = _brief(plan, named_files, base_context)
-    log_progress("Running coding agent...")
+    if (review_notes or "").strip():
+        brief = (
+            f"{brief}\n\nReviewers sent this change back. Fix these points:\n"
+            f"{review_notes.strip()[:4000]}"
+        )
+    log_progress("Builder is writing the change...")
     code_before_agent = workspace_fingerprint(workspace.root)
     if plan is not None and plan.steps:
         agent_result = _run_plan_steps(
@@ -485,8 +602,8 @@ def _run_cycle(
         allow_create_pr=allow_create_pr,
     )
 
-    tests_passed = None if tests_after is None else tests_after.ok
-    if settings.require_tests and tests_after is not None and not tests_after.ok:
+    tests_passed = _tests_passed_value(tests_after)
+    if settings.require_tests and _tests_block_commit(tests_after):
         log_progress("Tests failed after repairs.")
         result = CycleResult(
             status="failed",
@@ -543,6 +660,15 @@ def _run_cycle(
     )
     tests_passed = review["tests_passed"]
     agent_result_summary = review["summary"]
+    evidence.append(
+        role_evidence(
+            "qa",
+            "QA engineer",
+            "review",
+            "pass" if review["met"] else "send_back",
+            str(review.get("reason") or ""),
+        )
+    )
     if not review["met"]:
         log_progress(f"Goal not met: {review['reason']}")
         stopped_reason = agent_result.stopped_reason
@@ -564,6 +690,10 @@ def _run_cycle(
             published=False,
             commit_sha=current_sha(workspace),
             reason=reason,
+            stage="review",
+            plan=plan_text,
+            criteria=list(criteria),
+            evidence=list(evidence),
         )
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
@@ -610,6 +740,40 @@ def _run_cycle(
         _append_to_history(workspace.root, result)
         _write_last_failure(workspace.root, selected_goal, result)
         return result
+
+    role_failure = _apply_optional_reviews(
+        workspace,
+        project,
+        settings,
+        llm,
+        agent,
+        selected_goal,
+        agent_result,
+        sha_before,
+        tests_passed,
+        evidence,
+        plan_text=plan_text,
+        criteria=criteria,
+    )
+    if role_failure is not None:
+        return role_failure
+
+    if approval_choice == "ask":
+        log_progress("Reviews passed. Waiting for you to approve the commit.")
+        return CycleResult(
+            status="waiting",
+            goal=selected_goal,
+            summary=agent_result.summary,
+            tests_passed=tests_passed,
+            committed=False,
+            published=False,
+            commit_sha=current_sha(workspace),
+            reason="waiting for approval",
+            stage="approval",
+            plan=plan_text,
+            criteria=list(criteria),
+            evidence=list(evidence),
+        )
 
     log_progress("Goal confirmed; checking for publishable changes...")
     committed = False
@@ -713,6 +877,287 @@ def _run_cycle(
         reason=agent_result.stopped_reason,
         pr_url=pr_url,
         merged=merged,
+        stage="done",
+        plan=plan_text,
+        criteria=list(criteria),
+        evidence=list(evidence),
+    )
+    _write_run_log(workspace.root, result)
+    _append_to_history(workspace.root, result)
+    _delete_last_failure(workspace.root)
+    return result
+
+
+def _plan_record(plan: GoalPlan | None, goal: str) -> tuple[str, list[str]]:
+    text = format_plan(plan) if plan is not None else ""
+    checks = [step.check for step in plan.steps if step.check] if plan is not None else []
+    headline = goal_headline(goal) if goal else ""
+    if not checks and headline:
+        checks = [headline]
+    if not text and headline:
+        text = f"Implement: {headline}"
+    return text, checks[:6]
+
+
+def _apply_optional_reviews(
+    workspace: Workspace,
+    project: ProjectConfig,
+    settings: Settings,
+    llm: LLMClient,
+    agent: CodingAgent,
+    goal: str,
+    agent_result: AgentResult,
+    sha_before: str | None,
+    tests_passed: bool | None,
+    evidence: list[dict],
+    *,
+    plan_text: str,
+    criteria: list[str],
+) -> CycleResult | None:
+    """Run enabled review roles. A block or a second send-back stops the commit."""
+    roles = optional_review_roles(workspace.root)
+    if not roles:
+        return None
+    diff = collect_work_diff(workspace, sha_before, goal=goal)
+    for role in roles:
+        log_progress(f"{role.title} is reviewing the change...")
+        verdict = review_with_role(
+            llm,
+            role,
+            goal=goal,
+            diff=diff,
+            summary=agent_result.summary or "",
+            tests_passed=tests_passed,
+        )
+        evidence.append(
+            role_evidence(role.name, role.title, role.job, verdict.verdict, verdict.summary)
+        )
+        record_event(
+            kind="role",
+            role=role.name,
+            verdict=verdict.verdict,
+            parsed=verdict.parsed,
+            message=f"{role.title}: {verdict.summary}",
+        )
+        if not verdict.parsed or verdict.verdict == "pass":
+            continue
+        if verdict.verdict == "block":
+            return _role_stopped(
+                workspace,
+                goal,
+                agent_result.summary or "",
+                tests_passed,
+                role.title,
+                verdict.verdict,
+                verdict.summary,
+                plan_text=plan_text,
+                criteria=criteria,
+                evidence=evidence,
+            )
+        log_progress(f"{role.title} sent the change back.")
+        follow = agent.run(
+            (
+                f"The {role.title} sent this change back: {verdict.summary}\n"
+                "Fix that point. Do not start a different task."
+            ),
+            collect_context(workspace.root, project, allow_publish=False),
+            require_change=True,
+        )
+        if follow.summary:
+            agent_result.summary = follow.summary
+        diff = collect_work_diff(workspace, sha_before, goal=goal)
+        again = review_with_role(
+            llm,
+            role,
+            goal=goal,
+            diff=diff,
+            summary=agent_result.summary or "",
+            tests_passed=tests_passed,
+        )
+        evidence.append(
+            role_evidence(role.name, role.title, role.job, again.verdict, again.summary)
+        )
+        record_event(
+            kind="role",
+            role=role.name,
+            verdict=again.verdict,
+            parsed=again.parsed,
+            message=f"{role.title}: {again.summary}",
+        )
+        if again.parsed and again.verdict != "pass":
+            return _role_stopped(
+                workspace,
+                goal,
+                agent_result.summary or "",
+                tests_passed,
+                role.title,
+                again.verdict,
+                again.summary,
+                plan_text=plan_text,
+                criteria=criteria,
+                evidence=evidence,
+            )
+        tests_after = _maybe_test(workspace, project, settings, phase="after")
+        if settings.require_tests and _tests_block_commit(tests_after):
+            result = CycleResult(
+                status="failed",
+                goal=goal,
+                summary=_failure_notes("tests failed; commit skipped", agent_result.summary),
+                tests_passed=False,
+                committed=False,
+                published=False,
+                commit_sha=current_sha(workspace),
+                reason="tests failed; commit skipped",
+                stage="review",
+                plan=plan_text,
+                criteria=list(criteria),
+                evidence=list(evidence),
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            _write_last_failure(workspace.root, goal, result)
+            return result
+    return None
+
+
+def _role_stopped(
+    workspace: Workspace,
+    goal: str,
+    summary: str,
+    tests_passed: bool | None,
+    title: str,
+    verdict: str,
+    detail: str,
+    *,
+    plan_text: str,
+    criteria: list[str],
+    evidence: list[dict],
+) -> CycleResult:
+    reason = f"{title} {verdict.replace('_', ' ')}: {detail}"
+    log_progress(reason)
+    result = CycleResult(
+        status="failed",
+        goal=goal,
+        summary=_failure_notes(reason, summary),
+        tests_passed=tests_passed,
+        committed=False,
+        published=False,
+        commit_sha=current_sha(workspace),
+        reason=reason,
+        stage="review",
+        plan=plan_text,
+        criteria=list(criteria),
+        evidence=list(evidence),
+    )
+    _write_run_log(workspace.root, result)
+    _append_to_history(workspace.root, result)
+    _write_last_failure(workspace.root, goal, result)
+    return result
+
+
+def _publish_held(
+    workspace: Workspace,
+    settings: Settings,
+    project: ProjectConfig,
+    goal: str,
+    held_summary: str,
+    *,
+    allow_create_pr: bool,
+    mark_checkbox: bool,
+) -> CycleResult:
+    """Commit and publish work a person already approved. Does not run the builder."""
+    selected = goal.strip() or "Approved change"
+    summary = (held_summary or selected).strip()
+    tests_after = _maybe_test(workspace, project, settings, phase="after")
+    tests_passed = _tests_passed_value(tests_after)
+    if settings.require_tests and _tests_block_commit(tests_after):
+        result = CycleResult(
+            status="failed",
+            goal=selected,
+            summary=_failure_notes("tests failed; commit skipped", summary),
+            tests_passed=False,
+            committed=False,
+            published=False,
+            commit_sha=current_sha(workspace),
+            reason="tests failed; commit skipped",
+            stage="approval",
+        )
+        _write_run_log(workspace.root, result)
+        _append_to_history(workspace.root, result)
+        return result
+    sha = current_sha(workspace)
+    committed = False
+    if settings.auto_commit and has_changes(workspace):
+        if allow_create_pr:
+            log_progress("Moving work onto a pull-request branch...")
+            branched = ensure_pr_branch(workspace, selected, sha)
+            if not branched.ok:
+                result = CycleResult(
+                    status="failed",
+                    goal=selected,
+                    summary=_failure_notes(f"could not leave main: {branched.output}", summary),
+                    tests_passed=tests_passed,
+                    committed=False,
+                    published=False,
+                    commit_sha=sha,
+                    reason=f"could not leave main: {branched.output}",
+                    stage="approval",
+                )
+                _write_run_log(workspace.root, result)
+                _append_to_history(workspace.root, result)
+                return result
+            log_progress(f"On branch {branched.output}")
+        log_progress("Committing the approved change...")
+        commit = commit_changes(
+            workspace, _commit_message(selected, summary), env=_git_env(settings)
+        )
+        if not commit.ok:
+            result = CycleResult(
+                status="failed",
+                goal=selected,
+                summary=_failure_notes(f"commit failed: {commit.output}", summary),
+                tests_passed=tests_passed,
+                committed=False,
+                published=False,
+                commit_sha=None,
+                reason=f"commit failed: {commit.output}",
+                stage="approval",
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return result
+        committed = True
+        sha = current_sha(workspace)
+        log_progress(f"Committed SHA: {sha}")
+    published = False
+    pr_url = None
+    if allow_create_pr:
+        published, pr_url, failed = _publish_pull_request(
+            workspace,
+            project,
+            selected,
+            summary,
+            tests_passed=tests_passed,
+            sha=sha,
+            committed=committed,
+            screenshot_files=[],
+        )
+        if failed is not None:
+            return failed
+    if committed and mark_checkbox:
+        mark_goal_done(workspace.root, project.goals_file, selected)
+    result = CycleResult(
+        status="success",
+        goal=selected,
+        summary=summary,
+        tests_passed=tests_passed,
+        committed=committed,
+        published=published,
+        commit_sha=sha,
+        reason="approved",
+        pr_url=pr_url,
+        stage="done",
+        evidence=[role_evidence("you", "You", "approve", "pass", "Approved the commit.")],
     )
     _write_run_log(workspace.root, result)
     _append_to_history(workspace.root, result)
@@ -956,8 +1401,8 @@ def _handle_empty_diff(
             tests_after,
             allow_create_pr=allow_create_pr,
         )
-        tests_passed = None if tests_after is None else tests_after.ok
-        if settings.require_tests and tests_after is not None and not tests_after.ok:
+        tests_passed = _tests_passed_value(tests_after)
+        if settings.require_tests and _tests_block_commit(tests_after):
             result = CycleResult(
                 status="failed",
                 goal=goal,
@@ -1291,7 +1736,13 @@ def _ensure_goal_met(
         named_files = format_goal_files(workspace.root, goal)
         repeated = bool(verdict.ui_errors) and tuple(verdict.ui_errors) == last_errors
         last_errors = tuple(verdict.ui_errors)
-        if settings.plan_goals and attempts >= REPLAN_AFTER and not replanned:
+        architect = plan_role(workspace.root)
+        if (
+            settings.plan_goals
+            and architect is not None
+            and attempts >= REPLAN_AFTER
+            and not replanned
+        ):
             replanned = True
             log_progress("Two retries missed the goal; making a new plan from what failed...")
             fresh = plan_goal(
@@ -1302,11 +1753,14 @@ def _ensure_goal_met(
                 failure=review_reason(verdict),
                 previous=plan,
                 diff=work_diff,
+                opinions=architect.body if architect is not None else "",
             )
             if fresh is not None:
-                plan = fresh
-                _log_plan(plan)
-                carry_out_plan = True
+                grounded = ground_plan(fresh, goal, workspace.root)
+                if grounded is not None:
+                    plan = grounded
+                    _log_plan(plan)
+                    carry_out_plan = True
         context = _brief(plan, named_files, base_context)
         guarded = bool(guard_only_fix(work_diff, goal))
         lookup = _needs_validation_lookup(review_reason(verdict), project) and not guarded
@@ -1399,8 +1853,8 @@ def _ensure_goal_met(
             tests_after,
             allow_create_pr=allow_create_pr,
         )
-        tests_passed = None if tests_after is None else tests_after.ok
-        if settings.require_tests and tests_after is not None and not tests_after.ok:
+        tests_passed = _tests_passed_value(tests_after)
+        if settings.require_tests and _tests_block_commit(tests_after):
             return {
                 "met": False,
                 "reason": "tests failed after goal retry",
@@ -1740,7 +2194,7 @@ def _test_setup_prompt() -> str:
 
 def _test_repair_prompt(output: str) -> str:
     return (
-        "The test suite failed after the last changes. Fix the failures. "
+        "The test suite ran and failed. Fix the failing tests. "
         "If a test asserts old markup, API shape, or behavior that this goal "
         "intentionally changed, update that test to match the new implementation. "
         "Do not revert the goal. Do not write placeholder or unrelated "
@@ -1793,6 +2247,9 @@ def _repair_failing_tests(
 ):
     if tests_after is None or tests_after.ok:
         return tests_after
+    if runner_unavailable(tests_after.output or ""):
+        log_progress("Test runner is not installed; this is not a failing test.")
+        return tests_after
     context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
     for attempt in range(project.max_repair_attempts):
         log_progress(f"Repair attempt {attempt + 1}/{project.max_repair_attempts}")
@@ -1809,13 +2266,15 @@ def _repair_failing_tests(
             log_progress("Repair did not change code; not running tests again.")
             break
         tests_after = _maybe_test(workspace, project, settings, phase="repair")
-        if tests_after is None or tests_after.ok:
+        if tests_after is None or tests_after.ok or runner_unavailable(tests_after.output or ""):
+            if tests_after is not None and runner_unavailable(tests_after.output or ""):
+                log_progress("Test runner is not installed; this is not a failing test.")
             break
     return tests_after
 
 
 def _choose_goal(project: ProjectConfig, tests_before) -> str | None:
-    if tests_before is not None and not tests_before.ok:
+    if _tests_block_commit(tests_before):
         return "Make the project's test suite pass.\n\n" + tests_before.output
     goals = load_goals(project.root, project.goals_file)
     return goals[0] if goals else None
@@ -1846,6 +2305,22 @@ def _tests_after_edits(
         return covered
     log_progress("Running after tests...")
     return _maybe_test(workspace, project, settings, phase="after")
+
+
+def _runner_missing(result) -> bool:
+    return result is not None and not result.ok and runner_unavailable(result.output or "")
+
+
+def _tests_passed_value(result) -> bool | None:
+    """True when the suite passed, False when it failed, None when it did not run."""
+    if result is None or _runner_missing(result):
+        return None
+    return bool(result.ok)
+
+
+def _tests_block_commit(result) -> bool:
+    """A suite that ran and failed blocks the commit. A missing runner does not."""
+    return result is not None and not result.ok and not _runner_missing(result)
 
 
 def _maybe_test(
