@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.runtime.project import (
+from agent_lbw.runtime.project import (
     default_guidelines,
     guidelines_are_custom,
     infer_test_command,
@@ -28,13 +28,13 @@ def test_infer_npm(tmp_path: Path) -> None:
 
 
 def test_load_and_complete_checkbox_goal(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: demo\ntest_command: python3 -c 'print(0)'\ngoals_file: goals.md\n",
         encoding="utf-8",
     )
-    (loco / "goals.md").write_text("- [ ] Fix the adder\n- [ ] Later\n", encoding="utf-8")
+    (lbw / "goals.md").write_text("- [ ] Fix the adder\n- [ ] Later\n", encoding="utf-8")
     project = load_project(tmp_path)
     assert project.name == "demo"
     assert project.test_command == "python3 -c 'print(0)'"
@@ -44,9 +44,9 @@ def test_load_and_complete_checkbox_goal(tmp_path: Path) -> None:
 
 
 def test_load_goals_keeps_indented_issue_context(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "goals.md").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "goals.md").write_text(
         "- [ ] #9 Ship it\n"
         "  https://github.com/acme/demo/issues/9\n"
         "\n"
@@ -80,9 +80,9 @@ def test_render_tree_includes_nested_source(tmp_path: Path) -> None:
 
 
 def test_load_project_preserves_zero_repair_attempts(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: demo\nmax_repair_attempts: 0\n",
         encoding="utf-8",
     )
@@ -92,17 +92,17 @@ def test_load_project_preserves_zero_repair_attempts(tmp_path: Path) -> None:
 
 def test_init_ignores_run_logs(tmp_path: Path) -> None:
     created = write_default_project_files(tmp_path)
-    nested = tmp_path / ".loco" / ".gitignore"
+    nested = tmp_path / ".lbw" / ".gitignore"
     root_ignore = tmp_path / ".gitignore"
     assert nested.exists()
     assert "*" in nested.read_text(encoding="utf-8")
     assert root_ignore.exists()
-    assert ".loco/" in root_ignore.read_text(encoding="utf-8")
+    assert ".lbw/" in root_ignore.read_text(encoding="utf-8")
     assert root_ignore in created or nested in created
-    guidelines = tmp_path / ".loco" / "guidelines.md"
+    guidelines = tmp_path / ".lbw" / "guidelines.md"
     assert guidelines in created
-    assert "You are loco" in guidelines.read_text(encoding="utf-8")
-    config = (tmp_path / ".loco" / "config.yaml").read_text(encoding="utf-8")
+    assert "You are LBW" in guidelines.read_text(encoding="utf-8")
+    config = (tmp_path / ".lbw" / "config.yaml").read_text(encoding="utf-8")
     assert "max_repair_attempts: 4" in config
     assert "enabled: false" in config
     assert "create_pr: false" in config
@@ -111,7 +111,7 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
 def test_init_enables_publish_for_a_git_repo(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     write_default_project_files(tmp_path)
-    config = (tmp_path / ".loco" / "config.yaml").read_text(encoding="utf-8")
+    config = (tmp_path / ".lbw" / "config.yaml").read_text(encoding="utf-8")
     assert "enabled: true" in config
     assert "create_pr: true" in config
     project = load_project(tmp_path)
@@ -121,9 +121,9 @@ def test_init_enables_publish_for_a_git_repo(tmp_path: Path) -> None:
 
 
 def test_save_project_commands_keeps_other_settings(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: demo\ntest_command: python3 check.py\npublish:\n  enabled: false\n",
         encoding="utf-8",
     )
@@ -161,4 +161,4 @@ def test_guidelines_default_until_overridden(tmp_path: Path) -> None:
     restored = save_guidelines(empty, "")
     assert restored == default_guidelines()
     assert guidelines_are_custom(empty) is False
-    assert not (empty / ".loco" / "guidelines.md").exists()
+    assert not (empty / ".lbw" / "guidelines.md").exists()

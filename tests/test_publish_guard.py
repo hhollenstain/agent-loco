@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools
-from agent_loco.tools.shell import run_command
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools
+from agent_lbw.tools.shell import run_command
 
 
 def test_git_push_omitted_when_publish_disabled(tmp_path: Path) -> None:

@@ -3,24 +3,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: agent-loco:local
+    image: agent-lbw:local
     environment:
-      LOCO_MODEL_NAME: ${LOCO_MODEL_NAME:-qwen2.5-coder:14b}
-      LOCO_MODEL_BASE_URL: ${LOCO_MODEL_BASE_URL:-http://127.0.0.1:11434/v1}
-      LOCO_MODEL_API_KEY: ${LOCO_MODEL_API_KEY:-ollama}
-      LOCO_KIWIFS_URL: ${LOCO_KIWIFS_URL:-http://127.0.0.1:3333}
-      LOCO_KIWIFS_API_KEY: ${LOCO_KIWIFS_API_KEY:-}
-      LOCO_AUTO_COMMIT: ${LOCO_AUTO_COMMIT:-true}
-      LOCO_REQUIRE_TESTS: ${LOCO_REQUIRE_TESTS:-true}
-      LOCO_PUBLISH: ${LOCO_PUBLISH:-false}
+      LBW_MODEL_NAME: ${LBW_MODEL_NAME:-qwen2.5-coder:14b}
+      LBW_MODEL_BASE_URL: ${LBW_MODEL_BASE_URL:-http://127.0.0.1:11434/v1}
+      LBW_MODEL_API_KEY: ${LBW_MODEL_API_KEY:-ollama}
+      LBW_KIWIFS_URL: ${LBW_KIWIFS_URL:-http://127.0.0.1:3333}
+      LBW_KIWIFS_API_KEY: ${LBW_KIWIFS_API_KEY:-}
+      LBW_AUTO_COMMIT: ${LBW_AUTO_COMMIT:-true}
+      LBW_REQUIRE_TESTS: ${LBW_REQUIRE_TESTS:-true}
+      LBW_PUBLISH: ${LBW_PUBLISH:-false}
     volumes:
-      # Host folder at /workspaces. Cloned repos and each project's .loco/runs live here.
-      - ${LOCO_WORKSPACE:-./workspaces}:/workspaces
+      # Host folder at /workspaces. Cloned repos and each project's .lbw/runs live here.
+      - ${LBW_WORKSPACE:-./workspaces}:/workspaces
       # Uncomment to clone private repos from the container:
-      # - ${HOME}/.ssh:/home/loco/.ssh:ro
+      # - ${HOME}/.ssh:/home/lbw/.ssh:ro
     working_dir: /workspaces
     ports:
-      - "${LOCO_UI_PORT:-8080}:8080"
+      - "${LBW_UI_PORT:-8080}:8080"
     command: ["ui", "--host", "0.0.0.0", "--port", "8080", "--workspace", "/workspaces"]
     stdin_open: true
     tty: true

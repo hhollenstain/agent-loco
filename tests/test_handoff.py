@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agent_loco.agent.loop import AgentResult
-from agent_loco.runtime.improve import compact_handoff
+from agent_lbw.agent.loop import AgentResult
+from agent_lbw.runtime.improve import compact_handoff
 
 
 class TestCompactHandoff:

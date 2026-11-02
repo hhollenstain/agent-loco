@@ -10,18 +10,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /opt/agent-loco
+WORKDIR /opt/agent-lbw
 
 COPY pyproject.toml README.md ./
 COPY src ./src
 
 RUN pip install --no-cache-dir . \
-    && useradd --create-home --uid 10001 loco \
+    && useradd --create-home --uid 10001 lbw \
     && mkdir -p /workspaces \
-    && chown -R loco:loco /opt/agent-loco /workspaces
+    && chown -R lbw:lbw /opt/agent-lbw /workspaces
 
-USER loco
+USER lbw
 WORKDIR /workspaces
 
-ENTRYPOINT ["loco"]
+ENTRYPOINT ["lbw"]
 CMD ["doctor"]

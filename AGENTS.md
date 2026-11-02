@@ -1,18 +1,18 @@
 # AGENTS.md
 
-Practices for changing this repository. The cycle checklist for working on loco
-itself is also in `skills/agent-loco/SKILL.md`.
+Practices for changing this repository. The cycle checklist for working on LBW
+itself is also in `skills/agent-lbw/SKILL.md`.
 
 ## Layout
 
-- Package code lives in `src/agent_loco/`.
+- Package code lives in `src/agent_lbw/`.
 - Tests live in `tests/test_<area>.py`. Put a test next to the behavior it
   covers. Do not append a new feature's tests onto an unrelated file.
-- Web UI is `src/agent_loco/templates/index.html`, `static/`, and `web_ui.py`.
+- Web UI is `src/agent_lbw/templates/index.html`, `static/`, and `web_ui.py`.
 - The cycle is `runtime/improve.py`, `runtime/roles.py`, `runtime/review.py`, and `agent/loop.py`.
-- Bundled skills ship in `src/agent_loco/skills/<name>/SKILL.md`.
+- Bundled skills ship in `src/agent_lbw/skills/<name>/SKILL.md`.
 - Repo skills live at `skills/<name>/SKILL.md`.
-- Prove a new behavior at a public seam: the `loco` CLI, an `/api/...` route,
+- Prove a new behavior at a public seam: the `lbw` CLI, an `/api/...` route,
   or the rendered page. Do not add a helper, route, or control that nothing calls.
 
 ## Python
@@ -60,12 +60,43 @@ itself is also in `skills/agent-loco/SKILL.md`.
 - After behavior changes, run `uv run pytest -q`. After Python edits, format
   with ruff, then lint.
 
+## Directory database
+
+Shared rows live in `runtime/store/`. Each file owns one concern: `schema` creates
+the tables, `crypto` seals secrets, `install` is the local account, `teams`,
+`duties`, and `projects` are access, `tasks` stores a request, `schedules`
+indexes when one should run, and `recording` is what the task queue and the
+file scheduler call.
+
+- Every shared row carries a tenant id. A tenant is `personal` or `organization`.
+  A personal tenant has its owner and no teams. Promote it before adding a team.
+  Promotion keeps the tenant id, so projects and tasks stay put.
+- A person is an identity, separate from a membership. Rank is `owner`, `admin`,
+  or `member`, once on the tenant and once on a team. Duties are additive
+  grants, `billing` or `security`, on a tenant or a team. An owner already holds
+  every duty, so do not write a duty row for an owner. A new duty is a new
+  value, not a new kind of person.
+- An organization owner or admin can use every project in the tenant. Everyone
+  else needs a `use` or `manage` grant on their team or on themselves. `manage`
+  includes `use`.
+- Seal task goals with `runtime/store/crypto.py` and the tenant key. The master
+  key stays in `.lbw/master.key`. It does not go in the database, a prompt, or
+  a commit. Do not add a second cipher.
+- Do not store model context, prompts, tool traces, diffs, or file contents in
+  the database. Those stay in the run directory. A task row is the request:
+  tenant, project, requester, status, branch, pull request, `run_ref`, and
+  `goal_ciphertext`.
+- A schedule row is an index. The instruction stays in the schedule file.
+  `change` indexes a file schedule. `scan` indexes a scan. Do not copy the
+  instruction into the database.
+- Extend these checks when adding access. Do not add a second permission table.
+
 ## Git
 
-- Do not commit, stage, or push `.loco/` or `history.json`. Config, cloned
+- Do not commit, stage, or push `.lbw/` or `history.json`. Config, cloned
   skills, run logs, and screenshots stay local.
 - Do not force-push, skip hooks, or rewrite published history.
-- Do not bind-mount this app's `.loco` over `/workspaces/.loco`.
-- `loco init` needs a directory that already exists. Do not document
+- Do not bind-mount this app's `.lbw` over `/workspaces/.lbw`.
+- `lbw init` needs a directory that already exists. Do not document
   `docker clone`.
 - Do not ship stubs, TODOs, unused form fields, or "this enables X later".

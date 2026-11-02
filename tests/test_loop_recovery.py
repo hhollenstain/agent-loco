@@ -4,18 +4,18 @@ from pathlib import Path
 
 import pytest
 
-from agent_loco.agent.loop import CodingAgent, FailureTracker
-from agent_loco.config import Settings
-from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.runtime.uireview import UiEvidence
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import execute_tool, file_tools
+from agent_lbw.agent.loop import CodingAgent, FailureTracker
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient, ToolCall
+from agent_lbw.runtime.uireview import UiEvidence
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import execute_tool, file_tools
 
 
 @pytest.fixture(autouse=True)
 def _fake_ui_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(ok=True, snapshot="OK"),
     )
 
@@ -76,7 +76,7 @@ def test_repeated_str_replace_failure_injects_recovery_nudge(
                         arguments={
                             "path": "app.py",
                             "old_string": "def nonexistent():",  # Wrong
-                            "new_string": "def hello():\n    return 'loco'",
+                            "new_string": "def hello():\n    return 'lbw'",
                             "replace_all": False,
                         },
                     )
@@ -91,7 +91,7 @@ def test_repeated_str_replace_failure_injects_recovery_nudge(
                         arguments={
                             "path": "app.py",
                             "old_string": "def nonexistent():",  # Same wrong string
-                            "new_string": "def hello():\n    return 'loco'",
+                            "new_string": "def hello():\n    return 'lbw'",
                             "replace_all": False,
                         },
                     )
@@ -141,8 +141,8 @@ def test_third_consecutive_failure_auto_reads_file(tmp_path: Path, settings: Set
         call_log.append(f"{name}:{arguments}")
         return original_execute_tool(tools, name, arguments)
 
-    import agent_loco.agent.loop as loop_module
-    from agent_loco.tools import execute_tool as real_execute
+    import agent_lbw.agent.loop as loop_module
+    from agent_lbw.tools import execute_tool as real_execute
 
     loop_module.execute_tool = tracked_execute_tool
 
@@ -289,7 +289,7 @@ def test_success_resets_failure_streak(tmp_path: Path, settings: Settings) -> No
         call_log.append(f"{name}:{arguments}")
         return original_execute_tool(tools, name, arguments)
 
-    import agent_loco.agent.loop as loop_module
+    import agent_lbw.agent.loop as loop_module
 
     loop_module.execute_tool = tracked_execute_tool
 

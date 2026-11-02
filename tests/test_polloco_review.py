@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.llm.client import AssistantTurn, ScriptedClient
-from agent_loco.progress import bind_progress, reset_progress
-from agent_loco.runtime.improve import _review_goal
-from agent_loco.runtime.polloco_review import format_review, review_diff
-from agent_loco.runtime.project import load_project
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools, execute_tool
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient
+from agent_lbw.progress import bind_progress, reset_progress
+from agent_lbw.runtime.improve import _review_goal
+from agent_lbw.runtime.polloco_review import format_review, review_diff
+from agent_lbw.runtime.project import load_project
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools, execute_tool
 
 _SECRET_DIFF = """\
 diff --git a/src/app.py b/src/app.py
@@ -100,7 +100,7 @@ def test_format_review_uses_finding_markers() -> None:
 
 def test_review_changes_tool_is_wired_and_fails_closed(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.polloco.collect_work_diff",
+        "agent_lbw.tools.polloco.collect_work_diff",
         lambda *_args, **_kwargs: _SECRET_DIFF,
     )
     tools = build_tools(
@@ -121,8 +121,8 @@ def test_review_changes_tool_is_wired_and_fails_closed(tmp_path: Path, monkeypat
 def test_review_goal_rejects_a_met_verdict_when_code_review_finds_an_error(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient([AssistantTurn(text='{"met": true, "reason": "export works"}')])
     token = bind_progress()
     try:

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.agent.loop import CodingAgent, is_comment_only_edit, note_edit
-from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import file_tools
+from agent_lbw.agent.loop import CodingAgent, is_comment_only_edit, note_edit
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient, ToolCall
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import file_tools
 
 
 def _replace(call_id: str, old: str, new: str) -> AssistantTurn:
@@ -25,7 +25,7 @@ def test_comment_only_edit_is_not_a_code_change() -> None:
     old = "def hello():\n    return 'world'\n"
     new = "def hello():\n    # note\n    return 'world'\n"
     assert is_comment_only_edit("app.py", old, new)
-    assert not is_comment_only_edit("app.py", old, "def hello():\n    return 'loco'\n")
+    assert not is_comment_only_edit("app.py", old, "def hello():\n    return 'lbw'\n")
     assert not is_comment_only_edit("README.md", "# Old\n", "# New\n")
 
 
@@ -50,11 +50,11 @@ def test_adding_and_removing_a_comment_stops_the_run(tmp_path: Path) -> None:
     turns.append(AssistantTurn(text="done"))
     llm = ScriptedClient(turns)
     result = CodingAgent(llm, file_tools(Workspace(tmp_path)), max_iterations=12).run(
-        "Make hello return loco"
+        "Make hello return lbw"
     )
     assert result.stopped_reason == "oscillating"
     assert result.iterations < 8
-    assert "return 'loco'" not in (tmp_path / "app.py").read_text(encoding="utf-8")
+    assert "return 'lbw'" not in (tmp_path / "app.py").read_text(encoding="utf-8")
 
 
 def test_a_real_edit_still_finishes(tmp_path: Path) -> None:
@@ -64,13 +64,13 @@ def test_a_real_edit_still_finishes(tmp_path: Path) -> None:
             _replace(
                 "call-1",
                 "return 'world'",
-                "return 'loco'",
+                "return 'lbw'",
             ),
-            AssistantTurn(text="Hello now returns loco."),
+            AssistantTurn(text="Hello now returns lbw."),
         ]
     )
     result = CodingAgent(llm, file_tools(Workspace(tmp_path)), max_iterations=6).run(
-        "Make hello return loco"
+        "Make hello return lbw"
     )
     assert result.stopped_reason == "completed"
-    assert "return 'loco'" in (tmp_path / "app.py").read_text(encoding="utf-8")
+    assert "return 'lbw'" in (tmp_path / "app.py").read_text(encoding="utf-8")

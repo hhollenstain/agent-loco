@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.config import Settings
-from agent_loco.llm.client import (
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import (
     completion_usage,
     context_window_from_models_payload,
     context_window_from_ollama_show,
     effective_context_window,
 )
-from agent_loco.progress import attach_token_usage, token_usage_from_events
-from agent_loco.runtime.improve import CycleResult
-from agent_loco.runtime.tasks import TaskManager
+from agent_lbw.progress import attach_token_usage, token_usage_from_events
+from agent_lbw.runtime.improve import CycleResult
+from agent_lbw.runtime.tasks import TaskManager
 
 
 class _Usage:
@@ -51,7 +51,7 @@ def test_effective_context_window_prefers_the_configured_size(monkeypatch) -> No
     def boom(*_args, **_kwargs):
         raise AssertionError("lookup should not run when a window is configured")
 
-    monkeypatch.setattr("agent_loco.llm.client.lookup_context_window", boom)
+    monkeypatch.setattr("agent_lbw.llm.client.lookup_context_window", boom)
     assert (
         effective_context_window(
             configured=4096,
@@ -65,7 +65,7 @@ def test_effective_context_window_prefers_the_configured_size(monkeypatch) -> No
 
 def test_effective_context_window_asks_the_server_when_unset(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.llm.client.lookup_context_window",
+        "agent_lbw.llm.client.lookup_context_window",
         lambda *_args, **_kwargs: 32768,
     )
     assert (

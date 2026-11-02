@@ -4,9 +4,9 @@ from pathlib import Path
 
 from tests.support import init_git_repo
 
-from agent_loco.agent.prompts import SYSTEM_PROMPT, user_prompt
-from agent_loco.runtime.project import collect_context, load_project, write_default_project_files
-from agent_loco.runtime.skills import (
+from agent_lbw.agent.prompts import SYSTEM_PROMPT, user_prompt
+from agent_lbw.runtime.project import collect_context, load_project, write_default_project_files
+from agent_lbw.runtime.skills import (
     add_skill_source,
     bundled_skills_root,
     compose_system_prompt,
@@ -62,7 +62,7 @@ def test_render_skill_html_formats_markdown() -> None:
 
 
 def test_skill_summary_uses_first_sentence() -> None:
-    from agent_loco.runtime.skills import skill_summary
+    from agent_lbw.runtime.skills import skill_summary
 
     assert skill_summary("") == "No description."
     assert skill_summary("Test-driven development. Use when fixing bugs.") == (
@@ -143,7 +143,7 @@ def test_clone_and_pull_skill_source_into_workspace(tmp_path: Path) -> None:
 
 
 def test_local_skill_overrides_bundled_name(tmp_path: Path) -> None:
-    local = tmp_path / ".loco" / "skills" / "local" / "tdd"
+    local = tmp_path / ".lbw" / "skills" / "local" / "tdd"
     local.mkdir(parents=True)
     (local / "SKILL.md").write_text(
         "---\nname: tdd\ndescription: Workspace TDD.\n---\n\nUse the workspace test command.\n",
@@ -164,9 +164,9 @@ def test_default_prompts_do_not_hardcode_tdd() -> None:
 
 
 def test_discover_repo_skills_from_git_repo_root(tmp_path: Path) -> None:
-    from agent_loco.runtime.skills import list_skills
+    from agent_lbw.runtime.skills import list_skills
 
-    # Create a repo with a SKILL.md file but no .loco directory
+    # Create a repo with a SKILL.md file but no .lbw directory
     workspace = tmp_path / "my_project"
     workspace.mkdir()
 
@@ -189,50 +189,50 @@ def test_discover_repo_skills_from_git_repo_root(tmp_path: Path) -> None:
 
 def test_repo_skill_is_injected_when_not_enabled(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
-    skill = tmp_path / "skills" / "agent-loco"
+    skill = tmp_path / "skills" / "agent-lbw"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(
-        "---\nname: agent-loco\ndescription: Conventions.\n---\n\n"
+        "---\nname: agent-lbw\ndescription: Conventions.\n---\n\n"
         "Run ruff format then ruff check before finishing.\n",
         encoding="utf-8",
     )
     save_enabled_skills(tmp_path, [])
     prompt = compose_system_prompt(tmp_path)
-    assert "### agent-loco" in prompt
+    assert "### agent-lbw" in prompt
     assert "ruff format" in prompt.lower()
 
 
-def test_agent_loco_repo_skill_is_discoverable() -> None:
+def test_agent_lbw_repo_skill_is_discoverable() -> None:
     root = Path(__file__).resolve().parents[1]
-    skill_path = root / "skills" / "agent-loco" / "SKILL.md"
+    skill_path = root / "skills" / "agent-lbw" / "SKILL.md"
     assert skill_path.is_file()
     skills = {item.name: item for item in list_skills(root)}
-    assert "agent-loco" in skills
-    assert skills["agent-loco"].origin == "repo"
+    assert "agent-lbw" in skills
+    assert skills["agent-lbw"].origin == "repo"
     assert skills["tdd"].origin != "repo"
-    assert "public seam" in skills["agent-loco"].body.lower()
-    assert "ruff format" in skills["agent-loco"].body.lower()
-    listed = skills["agent-loco"].public_dict()
-    assert listed["summary"] == "Conventions for changing this agent-loco repository."
+    assert "public seam" in skills["agent-lbw"].body.lower()
+    assert "ruff format" in skills["agent-lbw"].body.lower()
+    listed = skills["agent-lbw"].public_dict()
+    assert listed["summary"] == "Conventions for changing this agent-lbw repository."
     assert "body" not in listed
     prompt = compose_system_prompt(root)
-    assert "### agent-loco" in prompt
+    assert "### agent-lbw" in prompt
     assert "ruff format" in prompt.lower()
 
 
-def test_discover_repo_skills_skips_loco_subdirectories(tmp_path: Path) -> None:
-    """Skills discovery should skip the .loco subdirectory in the repo."""
-    from agent_loco.runtime.skills import list_skills
+def test_discover_repo_skills_skips_lbw_subdirectories(tmp_path: Path) -> None:
+    """Skills discovery should skip the .lbw subdirectory in the repo."""
+    from agent_lbw.runtime.skills import list_skills
 
     workspace = tmp_path / "my_workspace"
     workspace.mkdir()
 
-    # Add .loco subdirectory
-    locos_dir = workspace / ".loco"
-    locos_dir.mkdir()
+    # Add .lbw subdirectory
+    lbws_dir = workspace / ".lbw"
+    lbws_dir.mkdir()
 
-    # Add SKILL.md in .loco - should not be discovered
-    (locos_dir / "SKILL.md").write_text(
+    # Add SKILL.md in .lbw - should not be discovered
+    (lbws_dir / "SKILL.md").write_text(
         "---\nname: should-not-discover\ndescription: Should not be discovered.\n---\n",
         encoding="utf-8",
     )

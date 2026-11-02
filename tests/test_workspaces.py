@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from tests.support import init_git_repo
 
-from agent_loco.runtime.workspaces import (
+from agent_lbw.runtime.workspaces import (
     archive_workspace,
     browse_directory,
     clone_workspace,
@@ -59,14 +59,14 @@ def test_remember_and_restore_workspaces(tmp_path: Path) -> None:
         str(first.resolve()),
         str(second.resolve()),
     ]
-    payload = json.loads((tmp_path / ".loco" / "workspaces.json").read_text(encoding="utf-8"))
+    payload = json.loads((tmp_path / ".lbw" / "workspaces.json").read_text(encoding="utf-8"))
     assert payload["last"] == str(first.resolve())
-    gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
+    gitignore = (tmp_path / ".lbw" / ".gitignore").read_text(encoding="utf-8")
     assert "*" in gitignore
-    assert ".loco/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".lbw/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert last_workspace(tmp_path) == str(first.resolve())
     gone = tmp_path / "gone"
-    (tmp_path / ".loco" / "workspaces.json").write_text(
+    (tmp_path / ".lbw" / "workspaces.json").write_text(
         json.dumps({"last": str(gone), "workspaces": [{"path": str(gone)}]}),
         encoding="utf-8",
     )
@@ -92,7 +92,7 @@ def test_archive_and_forget_workspaces(tmp_path: Path) -> None:
     ]
     archived = load_archived_workspaces(tmp_path)
     assert [item["path"] for item in archived] == [str(second.resolve())]
-    payload = json.loads((tmp_path / ".loco" / "workspaces.json").read_text(encoding="utf-8"))
+    payload = json.loads((tmp_path / ".lbw" / "workspaces.json").read_text(encoding="utf-8"))
     assert payload["last"] == str(third.resolve())
     restored = remember_workspace(tmp_path, second)
     assert [item["path"] for item in restored] == [
@@ -119,15 +119,15 @@ def test_archive_and_forget_workspaces(tmp_path: Path) -> None:
     assert last_workspace(tmp_path) == str(third.resolve())
 
 
-def test_create_workspace_inits_loco_and_git(tmp_path: Path) -> None:
+def test_create_workspace_inits_lbw_and_git(tmp_path: Path) -> None:
     target = tmp_path / "new-app"
     created = create_workspace(target)
     assert created["path"] == str(target.resolve())
-    assert created["is_loco"] is True
+    assert created["is_lbw"] is True
     assert created["is_git"] is True
     assert created["git_remote"] == ""
-    assert (target / ".loco" / "config.yaml").exists()
-    assert (target / ".loco" / "guidelines.md").exists()
+    assert (target / ".lbw" / "config.yaml").exists()
+    assert (target / ".lbw" / "guidelines.md").exists()
     assert (target / ".git").exists()
 
 
@@ -141,7 +141,7 @@ def test_clone_workspace_from_local_repo(tmp_path: Path) -> None:
     dest = parent / "checkout"
     assert cloned["path"] == str(dest.resolve())
     assert (dest / "readme.txt").read_text(encoding="utf-8") == "hello\n"
-    assert cloned["is_loco"] is True
+    assert cloned["is_lbw"] is True
     assert cloned["is_git"] is True
     assert cloned["git_remote"]
     with pytest.raises(ValueError, match="already exists"):

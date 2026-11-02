@@ -4,10 +4,10 @@ from pathlib import Path
 
 from tests.support import init_git_repo
 
-from agent_loco.config import Settings
-from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.runtime.improve import run_cycle
-from agent_loco.runtime.plan import format_plan, ground_plan, parse_plan
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient, ToolCall
+from agent_lbw.runtime.improve import run_cycle
+from agent_lbw.runtime.plan import format_plan, ground_plan, parse_plan
 
 PLAN = (
     '{"steps": ['
@@ -94,9 +94,9 @@ def test_cycle_makes_a_new_plan_after_two_missed_retries(
 ) -> None:
     (tmp_path / "app.py").write_text("def add(left, right):\n    return left + right\n")
     (tmp_path / "check.py").write_text("from app import add\nassert add(2, 3) == 5\n")
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\ntest_command: python3 check.py\nmax_repair_attempts: 3\n"
         "publish:\n  enabled: false\n",
         encoding="utf-8",
@@ -142,9 +142,9 @@ def test_hidden_directory_edit_counts_as_changing_the_planned_file(
     plugin.mkdir()
     (plugin / "marketplace.json").write_text("{}\n", encoding="utf-8")
     (tmp_path / "check.py").write_text("print('ok')\n", encoding="utf-8")
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\ntest_command: python3 check.py\nmax_repair_attempts: 0\n"
         "publish:\n  enabled: false\n",
         encoding="utf-8",
@@ -187,9 +187,9 @@ def test_cycle_plans_the_goal_and_hands_the_plan_to_agent_and_reviewer(
 ) -> None:
     (tmp_path / "app.py").write_text("def add(left, right):\n    return left - right\n")
     (tmp_path / "check.py").write_text("from app import add\nassert add(2, 3) == 5\n")
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\ntest_command: python3 check.py\nmax_repair_attempts: 0\n"
         "publish:\n  enabled: false\n",
         encoding="utf-8",
@@ -234,9 +234,9 @@ def test_cycle_plans_the_goal_and_hands_the_plan_to_agent_and_reviewer(
 def test_cycle_stops_when_the_same_miss_comes_back(tmp_path: Path, settings: Settings) -> None:
     (tmp_path / "app.py").write_text("def add(left, right):\n    return left + right\n")
     (tmp_path / "check.py").write_text("from app import add\nassert add(2, 3) == 5\n")
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\ntest_command: python3 check.py\nmax_repair_attempts: 4\n"
         "publish:\n  enabled: false\n",
         encoding="utf-8",

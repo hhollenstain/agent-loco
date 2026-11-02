@@ -4,7 +4,7 @@ from pathlib import Path
 
 from tests.support import init_git_repo
 
-from agent_loco.runtime.importer import (
+from agent_lbw.runtime.importer import (
     format_issue_goal,
     github_repo_for_workspace,
     goal_headline,
@@ -12,8 +12,8 @@ from agent_loco.runtime.importer import (
     load_goals_from_workspace,
     parse_issue_ref,
 )
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import run_git
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools.git import run_git
 
 
 def test_github_repo_for_workspace_reads_origin(tmp_path: Path) -> None:
@@ -94,7 +94,7 @@ def test_load_goals_from_issues_includes_body_and_comments(monkeypatch) -> None:
             ]
 
     monkeypatch.setattr(
-        "agent_loco.runtime.importer.httpx.get",
+        "agent_lbw.runtime.importer.httpx.get",
         lambda url, *args, **kwargs: FakeResponse(url),
     )
     result = load_goals_from_issues("acme", "demo")

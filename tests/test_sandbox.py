@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_loco.sandbox import SandboxError, Workspace
+from agent_lbw.sandbox import SandboxError, Workspace
 
 
 def test_resolve_stays_inside_workspace(tmp_path: Path) -> None:

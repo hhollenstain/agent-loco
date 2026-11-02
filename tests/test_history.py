@@ -4,10 +4,10 @@ import json
 import tempfile
 from pathlib import Path
 
-from agent_loco.config import Settings
-from agent_loco.llm.client import OpenAICompatClient
-from agent_loco.runtime.improve import _append_to_history, run_cycle
-from agent_loco.runtime.project import write_default_project_files
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import OpenAICompatClient
+from agent_lbw.runtime.improve import _append_to_history, run_cycle
+from agent_lbw.runtime.project import write_default_project_files
 
 
 def test_append_to_history() -> None:
@@ -19,7 +19,7 @@ def test_append_to_history() -> None:
         write_default_project_files(root)
 
         # Mock a cycle result to append
-        from agent_loco.runtime.improve import CycleResult
+        from agent_lbw.runtime.improve import CycleResult
 
         result = CycleResult(
             status="success",
@@ -95,7 +95,7 @@ def test_append_to_history() -> None:
 
 
 def test_run_cycle_writes_to_history() -> None:
-    """Test that run_cycle writes to both .loco/runs and history.json."""
+    """Test that run_cycle writes to both .lbw/runs and history.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
 

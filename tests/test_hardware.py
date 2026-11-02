@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_loco.hardware import HardwareProfile, detect_hardware
+from agent_lbw.hardware import HardwareProfile, detect_hardware
 
 
 def test_detect_hardware_returns_profile() -> None:

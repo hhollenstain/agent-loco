@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.progress import bind_progress, current_events, reset_progress
-from agent_loco.runtime.project import infer_lint_command, load_project, write_default_project_files
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools
-from agent_loco.tools.lint import apply_ruff_autofix, lint_targets_changed_files, run_project_lint
+from agent_lbw.progress import bind_progress, current_events, reset_progress
+from agent_lbw.runtime.project import infer_lint_command, load_project, write_default_project_files
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools
+from agent_lbw.tools.lint import apply_ruff_autofix, lint_targets_changed_files, run_project_lint
 
 
 def _write_ruff_pyproject(root: Path) -> None:
@@ -53,9 +53,9 @@ def test_infer_ruff_uses_pipenv_when_pipfile_present(tmp_path: Path) -> None:
 
 def test_empty_lint_command_disables_inference(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text("name: demo\nlint_command: ''\n", encoding="utf-8")
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text("name: demo\nlint_command: ''\n", encoding="utf-8")
     assert load_project(tmp_path).lint_command is None
 
 
@@ -64,7 +64,7 @@ def test_init_writes_inferred_lint_command(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "tests").mkdir()
     write_default_project_files(tmp_path)
-    config = (tmp_path / ".loco" / "config.yaml").read_text(encoding="utf-8")
+    config = (tmp_path / ".lbw" / "config.yaml").read_text(encoding="utf-8")
     assert "lint_command: ruff format src tests && ruff check src tests" in config
 
 
@@ -93,14 +93,14 @@ def test_run_lint_is_a_wired_tool(tmp_path: Path) -> None:
 
 
 def test_run_project_lint_reads_a_command_added_during_the_run(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
     (tmp_path / "check.py").write_text("print('ok')\n", encoding="utf-8")
     workspace = Workspace(tmp_path)
     missing = run_project_lint(workspace, None, 10, phase="agent")
     assert not missing.ok
     assert missing.output.startswith("no lint command configured")
-    (loco / "config.yaml").write_text(
+    (lbw / "config.yaml").write_text(
         "name: demo\nlint_command: python3 check.py\n",
         encoding="utf-8",
     )

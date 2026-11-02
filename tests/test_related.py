@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.runtime.related import format_goal_files, gameplay_scene, goal_files, goal_scene
+from agent_lbw.runtime.related import format_goal_files, gameplay_scene, goal_files, goal_scene
 
 GOAL = (
     'ERROR: Node not found: "Player" (relative to "/root/MainScene").\n'

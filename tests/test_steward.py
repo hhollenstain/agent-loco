@@ -5,15 +5,15 @@ from pathlib import Path
 
 from tests.support import init_git_repo
 
-from agent_loco.llm.client import AssistantTurn, ScriptedClient
-from agent_loco.runtime.project import load_project
-from agent_loco.runtime.steward import (
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient
+from agent_lbw.runtime.project import load_project
+from agent_lbw.runtime.steward import (
     parse_proposed_goal,
     propose_improvement_goal,
     repeats_recent_work,
     style_sweep_already_done,
 )
-from agent_loco.sandbox import Workspace
+from agent_lbw.sandbox import Workspace
 
 
 def test_parse_proposed_goal_reads_goal_line() -> None:
@@ -58,10 +58,10 @@ def test_style_sweep_sees_hints_already_in_the_file(tmp_path: Path) -> None:
 
 
 def _project(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text("name: demo\ngoals_file: goals.md\n", encoding="utf-8")
-    (loco / "goals.md").write_text("", encoding="utf-8")
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text("name: demo\ngoals_file: goals.md\n", encoding="utf-8")
+    (lbw / "goals.md").write_text("", encoding="utf-8")
     (tmp_path / "app.py").write_text(
         "def add(left, right):\n    return left + right\n", encoding="utf-8"
     )

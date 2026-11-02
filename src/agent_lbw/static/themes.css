@@ -1,0 +1,61 @@
+/* Light is the default. Dark is html[data-theme="dark"]. */
+:root,
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-subtle: #f3f6fb;
+  --panel: #ffffff;
+  --panel-2: #e7eef6;
+  --ink: #10243f;
+  --muted: #5c6d84;
+  --line: #d5deea;
+  --navy: #0e3a66;
+  --on-navy: #ffffff;
+  --accent: #14824a;
+  --on-accent: #ffffff;
+  --accent-2: #0e3a66;
+  --warn: #a16207;
+  --bad: #c2413a;
+  --ok: #14824a;
+  --pr-open: #1a7f37;
+  --pr-merged: #8250df;
+  --pr-closed: #cf222e;
+  --queued: #1d4e89;
+  --code-bg: #f4f7fb;
+  --toast-bg: #ffffff;
+  --toast-border: var(--line);
+  --shadow: 0 16px 40px rgba(16, 36, 63, 0.1);
+  --overlay: rgba(16, 36, 63, 0.46);
+  --scrollbar-track: #e7eef6;
+  --scrollbar-thumb: #b7c6d8;
+  --scrollbar-thumb-hover: #8ea3ba;
+}
+
+[data-theme="dark"] {
+  --bg: #0c1424;
+  --bg-subtle: #101a2e;
+  --panel: #152238;
+  --panel-2: #1c2d48;
+  --ink: #e7eef8;
+  --muted: #9aafc6;
+  --line: #2c4060;
+  --navy: #7eb0f0;
+  --on-navy: #07111f;
+  --accent: #3dce7a;
+  --on-accent: #062112;
+  --accent-2: #7eb0f0;
+  --warn: #e6c07b;
+  --bad: #f0a090;
+  --ok: #3dce7a;
+  --pr-open: #3fb950;
+  --pr-merged: #a371f7;
+  --pr-closed: #f85149;
+  --queued: #9ec4ee;
+  --code-bg: #0a101c;
+  --toast-bg: #152238;
+  --toast-border: var(--line);
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  --overlay: rgba(4, 8, 16, 0.62);
+  --scrollbar-track: #101a2e;
+  --scrollbar-thumb: #3d5578;
+  --scrollbar-thumb-hover: #5a7498;
+}

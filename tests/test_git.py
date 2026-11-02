@@ -5,8 +5,8 @@ from pathlib import Path
 
 from tests.support import init_git_repo
 
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import (
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools.git import (
     CO_AUTHORED_BY,
     agent_commit,
     branch_named_in_goal,
@@ -32,7 +32,7 @@ from agent_loco.tools.git import (
     run_git,
     update_pull_request,
     upstream_state,
-    with_loco_coauthor,
+    with_lbw_coauthor,
 )
 
 
@@ -58,32 +58,32 @@ def test_parse_github_remote_from_common_urls() -> None:
     assert parse_github_remote("https://gitlab.com/acme/repo.git") is None
 
 
-def test_commit_changes_never_adds_loco_files(tmp_path: Path) -> None:
+def test_commit_changes_never_adds_lbw_files(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
-    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
-    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
     (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
-    shot = tmp_path / ".loco" / "ui-screenshots" / "ui-review_goal.png"
+    shot = tmp_path / ".lbw" / "ui-screenshots" / "ui-review_goal.png"
     shot.parent.mkdir(parents=True)
     shot.write_bytes(b"png")
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text("name: demo\n", encoding="utf-8")
     assert not is_tracked(workspace, shot)
     result = commit_changes(workspace, "update app", extra_paths=[shot, config])
     assert result.ok
     assert not is_tracked(workspace, shot)
     assert not is_tracked(workspace, config)
-    listed = run_git(workspace, ["ls-files", "--", ".loco"])
+    listed = run_git(workspace, ["ls-files", "--", ".lbw"])
     assert listed.stdout.strip() == ""
 
 
-def test_with_loco_coauthor_adds_github_trailer() -> None:
-    assert with_loco_coauthor("") == ""
-    assert with_loco_coauthor("  fix the thing  ") == f"fix the thing\n\n{CO_AUTHORED_BY}"
+def test_with_lbw_coauthor_adds_github_trailer() -> None:
+    assert with_lbw_coauthor("") == ""
+    assert with_lbw_coauthor("  fix the thing  ") == f"fix the thing\n\n{CO_AUTHORED_BY}"
     already = f"fix the thing\n\n{CO_AUTHORED_BY}"
-    assert with_loco_coauthor(already) == already
+    assert with_lbw_coauthor(already) == already
 
 
 def test_commits_ahead_of_base_counts_feature_commits(tmp_path: Path) -> None:
@@ -91,7 +91,7 @@ def test_commits_ahead_of_base_counts_feature_commits(tmp_path: Path) -> None:
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
     assert commits_ahead_of_base(workspace) == 0
-    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
     (tmp_path / "app.py").write_text("two\n", encoding="utf-8")
     committed = commit_changes(workspace, "two")
     assert committed.ok
@@ -114,7 +114,7 @@ def test_existing_pull_request_reads_gh_json(tmp_path: Path, monkeypatch) -> Non
             )
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_lbw.tools.git.subprocess.run", fake_run)
     assert existing_pull_request(workspace) == "https://github.com/acme/repo/pull/4"
 
 
@@ -128,7 +128,7 @@ def test_pull_request_state_reads_gh_json(monkeypatch) -> None:
             stderr="",
         )
 
-    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_lbw.tools.git.subprocess.run", fake_run)
     assert pull_request_state("https://github.com/acme/repo/pull/4") == "merged"
 
 
@@ -147,7 +147,7 @@ def test_update_pull_request_edits_the_open_pr(tmp_path: Path, monkeypatch) -> N
             stderr="",
         )
 
-    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_lbw.tools.git.subprocess.run", fake_run)
     result = update_pull_request(workspace, "Keep the branch", "Added more context")
     assert result.ok
     assert seen["args"][:3] == ["gh", "pr", "edit"]
@@ -164,7 +164,7 @@ def test_existing_pull_request_missing_gh_is_none(tmp_path: Path, monkeypatch) -
             raise FileNotFoundError("gh")
         raise AssertionError(args)
 
-    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_lbw.tools.git.subprocess.run", fake_run)
     assert existing_pull_request(Workspace(tmp_path)) is None
 
 
@@ -172,7 +172,7 @@ def test_create_pull_request_treats_already_exists_as_success(tmp_path: Path, mo
     (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
-    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
     real_run = subprocess.run
 
     def fake_run(args, **kwargs):
@@ -182,13 +182,13 @@ def test_create_pull_request_treats_already_exists_as_success(tmp_path: Path, mo
                 1,
                 stdout="",
                 stderr=(
-                    'a pull request for branch "loco/feature" already exists:\n'
+                    'a pull request for branch "lbw/feature" already exists:\n'
                     "https://github.com/acme/repo/pull/9\n"
                 ),
             )
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_lbw.tools.git.subprocess.run", fake_run)
     result = create_pull_request(workspace, "Add feature", "details", base="main")
     assert result.ok
     assert extract_pr_url(result.output) == "https://github.com/acme/repo/pull/9"
@@ -200,7 +200,7 @@ def test_create_pull_request_does_not_pass_unknown_coauthor_flag(
     (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
-    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
     captured: dict[str, list[str]] = {}
     real_run = subprocess.run
 
@@ -215,7 +215,7 @@ def test_create_pull_request_does_not_pass_unknown_coauthor_flag(
             )
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_lbw.tools.git.subprocess.run", fake_run)
     result = create_pull_request(workspace, "Add feature", "details", base="main")
     assert result.ok
     args = captured["args"]
@@ -228,16 +228,16 @@ def test_create_pull_request_does_not_pass_unknown_coauthor_flag(
 
 
 def test_run_log_paths_are_runtime_artifacts() -> None:
-    assert is_runtime_artifact(".loco/runs/cycle.json")
-    assert is_runtime_artifact(".loco/runs")
-    assert is_runtime_artifact(".loco/servers.json")
-    assert is_runtime_artifact(".loco/workspaces.json")
-    assert is_runtime_artifact(".loco/config.yaml")
-    assert is_runtime_artifact(".loco/ui-screenshots/ui-review.png")
-    assert is_runtime_artifact(".loco/.gitignore")
+    assert is_runtime_artifact(".lbw/runs/cycle.json")
+    assert is_runtime_artifact(".lbw/runs")
+    assert is_runtime_artifact(".lbw/servers.json")
+    assert is_runtime_artifact(".lbw/workspaces.json")
+    assert is_runtime_artifact(".lbw/config.yaml")
+    assert is_runtime_artifact(".lbw/ui-screenshots/ui-review.png")
+    assert is_runtime_artifact(".lbw/.gitignore")
     assert is_runtime_artifact("history.json")
-    assert not is_runtime_artifact("src/agent_loco/cli.py")
-    assert not is_runtime_artifact("loco/runs/cycle.json")
+    assert not is_runtime_artifact("src/agent_lbw/cli.py")
+    assert not is_runtime_artifact("lbw/runs/cycle.json")
 
 
 def test_tool_caches_are_runtime_artifacts() -> None:
@@ -296,14 +296,14 @@ def test_commit_skips_run_logs(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
-    runs = tmp_path / ".loco" / "runs"
+    runs = tmp_path / ".lbw" / "runs"
     runs.mkdir(parents=True)
     (runs / "cycle.json").write_text('{"status": "success"}\n', encoding="utf-8")
     (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
     assert has_changes(workspace)
     result = commit_changes(workspace, "update app")
     assert result.ok
-    tracked = run_git(workspace, ["ls-files", ".loco/runs"])
+    tracked = run_git(workspace, ["ls-files", ".lbw/runs"])
     assert tracked.stdout.strip() == ""
     assert (runs / "cycle.json").exists()
 
@@ -326,7 +326,7 @@ def test_run_logs_alone_are_not_changes(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
-    runs = tmp_path / ".loco" / "runs"
+    runs = tmp_path / ".lbw" / "runs"
     runs.mkdir(parents=True)
     (runs / "cycle.json").write_text("{}\n", encoding="utf-8")
     assert not has_changes(workspace)
@@ -350,7 +350,7 @@ def test_agent_commit_allows_feature_branch(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
-    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
     (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
     result = agent_commit(workspace, "update app")
     assert result.ok
@@ -390,7 +390,7 @@ def test_ensure_pr_branch_moves_commits_off_main(tmp_path: Path) -> None:
     after = current_sha(workspace)
     result = ensure_pr_branch(workspace, "Improve the adder", sha_before)
     assert result.ok
-    assert result.output.startswith("loco/")
+    assert result.output.startswith("lbw/")
     assert current_branch(workspace) == result.output
     assert current_sha(workspace) == after
     assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == sha_before
@@ -440,15 +440,15 @@ def test_resume_workspace_checks_out_feature_branch(tmp_path: Path) -> None:
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
     start = current_branch(workspace)
-    run_git(workspace, ["checkout", "-b", "loco/feature"])
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
     (tmp_path / "app.py").write_text("print('next')\n", encoding="utf-8")
     run_git(workspace, ["add", "app.py"])
     run_git(workspace, ["commit", "-m", "wip"])
     run_git(workspace, ["checkout", start or "master"])
-    assert current_branch(workspace) != "loco/feature"
-    result = resume_workspace(workspace, branch="loco/feature")
+    assert current_branch(workspace) != "lbw/feature"
+    result = resume_workspace(workspace, branch="lbw/feature")
     assert result.ok
-    assert current_branch(workspace) == "loco/feature"
+    assert current_branch(workspace) == "lbw/feature"
 
 
 def test_branch_named_in_goal_reads_an_explicit_branch() -> None:
@@ -476,7 +476,7 @@ def test_prepare_clean_base_uses_origin_head_and_stashes_edits(tmp_path: Path) -
     assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('base')\n"
     assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "untracked\n"
     stashes = run_git(workspace, ["stash", "list"])
-    assert "loco: stashed before a clean start" in stashes.stdout
+    assert "lbw: stashed before a clean start" in stashes.stdout
     default, names = list_branches(workspace)
     assert default == head
     assert head in names
@@ -512,7 +512,7 @@ def test_merge_pull_request_calls_gh_squash(tmp_path: Path, monkeypatch) -> None
         seen["args"] = list(args)
         return subprocess.CompletedProcess(args, 0, stdout="merged\n", stderr="")
 
-    monkeypatch.setattr("agent_loco.tools.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent_lbw.tools.git.subprocess.run", fake_run)
     result = merge_pull_request(workspace, "https://github.com/acme/repo/pull/4")
     assert result.ok
     assert seen["args"][:3] == ["gh", "pr", "merge"]

@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from tests.support import init_git_repo
 
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import run_git
-from agent_loco.tools.issues import issues_tools
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools.git import run_git
+from agent_lbw.tools.issues import issues_tools
 
 
 def _issues_tool(workspace: Workspace, name: str):

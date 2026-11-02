@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.agent.prompts import SYSTEM_PROMPT
-from agent_loco.llm.client import AssistantTurn, ScriptedClient
-from agent_loco.progress import bind_progress, record_event, reset_progress
-from agent_loco.runtime.improve import _pr_body, _pr_screenshot_names, _review_goal
-from agent_loco.runtime.project import load_project
-from agent_loco.runtime.review import REVIEW_SYSTEM, review_goal
-from agent_loco.runtime.uireview import (
+from agent_lbw.agent.prompts import SYSTEM_PROMPT
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient
+from agent_lbw.progress import bind_progress, record_event, reset_progress
+from agent_lbw.runtime.improve import _pr_body, _pr_screenshot_names, _review_goal
+from agent_lbw.runtime.project import load_project
+from agent_lbw.runtime.review import REVIEW_SYSTEM, review_goal
+from agent_lbw.runtime.uireview import (
     UiEvidence,
     _from_eval,
     _playwright_probe,
@@ -19,18 +19,18 @@ from agent_loco.runtime.uireview import (
     ui_review_needed,
     unverified_interactive_ui,
 )
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools, execute_tool
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools, execute_tool
 
 
 def test_ui_review_needed_for_template_diff_and_ui_goals(tmp_path: Path) -> None:
-    (tmp_path / "src" / "agent_loco" / "templates").mkdir(parents=True)
-    (tmp_path / "src" / "agent_loco" / "templates" / "index.html").write_text(
+    (tmp_path / "src" / "agent_lbw" / "templates").mkdir(parents=True)
+    (tmp_path / "src" / "agent_lbw" / "templates" / "index.html").write_text(
         "<html></html>\n", encoding="utf-8"
     )
     assert ui_review_needed(
         "Add a progress bar",
-        "diff --git a/src/agent_loco/templates/index.html",
+        "diff --git a/src/agent_lbw/templates/index.html",
     )
     assert ui_review_needed("Add a progress bar", "", tmp_path)
     assert ui_review_needed("The game has no rendering and the start button does nothing", "")
@@ -46,7 +46,7 @@ def test_format_ui_evidence_lists_errors_and_tiny_controls() -> None:
         UiEvidence(
             ok=False,
             url="http://127.0.0.1:9/",
-            title="loco",
+            title="lbw",
             page_errors=["label is not defined"],
             smashed=["Init (0x0)"],
             dead_controls=['[data-task-pane="screenshots"] did not show the screenshots pane'],
@@ -87,7 +87,7 @@ def test_from_eval_marks_js_errors_and_zero_size_controls() -> None:
     evidence = _from_eval(
         "http://127.0.0.1:9/",
         {
-            "title": "loco",
+            "title": "lbw",
             "text": "Queue task",
             "errors": ["label is not defined"],
             "tabs": [
@@ -115,7 +115,7 @@ def test_from_eval_marks_js_errors_and_zero_size_controls() -> None:
     hidden = _from_eval(
         "http://127.0.0.1:9/",
         {
-            "title": "loco",
+            "title": "lbw",
             "text": "Queue task",
             "errors": [],
             "elements": [
@@ -132,7 +132,7 @@ def test_from_eval_marks_js_errors_and_zero_size_controls() -> None:
     crushed_tab = _from_eval(
         "http://127.0.0.1:9/",
         {
-            "title": "loco",
+            "title": "lbw",
             "text": "Past runs",
             "errors": [],
             "tabs": [
@@ -159,7 +159,7 @@ def test_from_eval_marks_overlapping_rerun_and_line_stats() -> None:
     overlap = _from_eval(
         "http://127.0.0.1:9/",
         {
-            "title": "loco",
+            "title": "lbw",
             "text": "Past runs",
             "errors": [],
             "elements": [
@@ -193,7 +193,7 @@ def test_from_eval_marks_overlapping_rerun_and_line_stats() -> None:
     separated = _from_eval(
         "http://127.0.0.1:9/",
         {
-            "title": "loco",
+            "title": "lbw",
             "text": "Past runs",
             "errors": [],
             "elements": [
@@ -279,15 +279,15 @@ def test_review_goal_includes_rendered_ui_section() -> None:
 
 def test_review_goal_overrides_met_when_rendered_ui_throws(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=False,
             page_errors=["label is not defined"],
             smashed=["Init (0x0)"],
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient([AssistantTurn(text='{"met": true, "reason": "css layout looks fine"}')])
     token = bind_progress()
     try:
@@ -296,7 +296,7 @@ def test_review_goal_overrides_met_when_rendered_ui_throws(tmp_path: Path, monke
             load_project(tmp_path),
             llm,
             "Add a progress bar",
-            "diff --git a/src/agent_loco/templates/index.html",
+            "diff --git a/src/agent_lbw/templates/index.html",
             "updated css",
             True,
         )
@@ -310,7 +310,7 @@ def test_review_goal_does_not_override_met_for_favicon_or_screenshot_404s(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=True,
             console_errors=[
@@ -319,8 +319,8 @@ def test_review_goal_does_not_override_met_for_favicon_or_screenshot_404s(
             network_notes=["404 http://127.0.0.1:9/favicon.ico"],
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient(
         [AssistantTurn(text='{"met": true, "reason": "pagination is at the top"}')]
     )
@@ -331,7 +331,7 @@ def test_review_goal_does_not_override_met_for_favicon_or_screenshot_404s(
             load_project(tmp_path),
             llm,
             "Add task pagination at the top",
-            "diff --git a/src/agent_loco/templates/index.html",
+            "diff --git a/src/agent_lbw/templates/index.html",
             "added top pagination",
             True,
         )
@@ -344,14 +344,14 @@ def test_review_goal_overrides_met_when_required_script_is_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=False,
             network_failures=["404 http://127.0.0.1:9/static/app.js"],
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient(
         [AssistantTurn(text='{"met": true, "reason": "template includes the script tag"}')]
     )
@@ -362,7 +362,7 @@ def test_review_goal_overrides_met_when_required_script_is_missing(
             load_project(tmp_path),
             llm,
             "Add a progress bar",
-            "diff --git a/src/agent_loco/templates/index.html",
+            "diff --git a/src/agent_lbw/templates/index.html",
             "added script",
             True,
         )
@@ -374,14 +374,14 @@ def test_review_goal_overrides_met_when_required_script_is_missing(
 
 def test_review_goal_overrides_met_when_screenshot_tab_is_dead(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=False,
             dead_controls=['[data-task-pane="screenshots"] did not show the screenshots pane'],
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient(
         [AssistantTurn(text='{"met": true, "reason": "screenshots tab is in the template"}')]
     )
@@ -392,7 +392,7 @@ def test_review_goal_overrides_met_when_screenshot_tab_is_dead(tmp_path: Path, m
             load_project(tmp_path),
             llm,
             "Show UI screenshots in another tab",
-            "diff --git a/src/agent_loco/templates/index.html",
+            "diff --git a/src/agent_lbw/templates/index.html",
             "added screenshots tab markup",
             True,
         )
@@ -406,15 +406,15 @@ def test_review_goal_overrides_met_when_dump_dom_cannot_click_tabs(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=True,
             interactive=False,
             notes="Captured with Chrome --dump-dom",
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient(
         [AssistantTurn(text='{"met": true, "reason": "the screenshots tab exists in html"}')]
     )
@@ -425,7 +425,7 @@ def test_review_goal_overrides_met_when_dump_dom_cannot_click_tabs(
             load_project(tmp_path),
             llm,
             "Add a Screenshots tab next to Changes",
-            "diff --git a/src/agent_loco/templates/index.html",
+            "diff --git a/src/agent_lbw/templates/index.html",
             "added tab markup",
             True,
         )
@@ -450,10 +450,10 @@ def test_unverified_interactive_ui_requires_clicking_visible_screenshots_tab() -
 
 def test_review_ui_tool_reports_capture(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=False,
             url="http://127.0.0.1:9/",
@@ -490,11 +490,11 @@ def test_agent_prompt_requires_review_ui_after_ui_edits() -> None:
 
 
 def test_resolve_ui_screenshot_serves_unique_and_legacy_pngs(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    shots = loco / "ui-screenshots"
+    lbw = tmp_path / ".lbw"
+    shots = lbw / "ui-screenshots"
     shots.mkdir(parents=True)
     unique = shots / "ui-review_goal_1.png"
-    legacy = loco / "ui-review.png"
+    legacy = lbw / "ui-review.png"
     unique.write_bytes(b"unique")
     legacy.write_bytes(b"legacy")
     assert resolve_ui_screenshot(tmp_path, "ui-review_goal_1.png") == unique.resolve()
@@ -605,11 +605,11 @@ def test_playwright_probe_fails_when_pane_is_css_hidden() -> None:
     assert "display=none" in dead[0]
 
 
-def test_loco_review_clicks_include_main_and_task_tabs(tmp_path: Path) -> None:
-    from agent_loco.runtime.uireview import _review_clicks
+def test_lbw_review_clicks_include_main_and_task_tabs(tmp_path: Path) -> None:
+    from agent_lbw.runtime.uireview import _review_clicks
 
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").parent.mkdir(parents=True)
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").parent.mkdir(parents=True)
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").write_text("# lbw\n", encoding="utf-8")
     clicks = _review_clicks(tmp_path, '[data-task-pane="progress"]')
     assert '[data-status-filter="failed"]' in clicks
     assert '[data-status-filter=""]' in clicks
@@ -622,11 +622,11 @@ def test_loco_review_clicks_include_main_and_task_tabs(tmp_path: Path) -> None:
     )
 
 
-def test_loco_review_clicks_open_goal_panels_last(tmp_path: Path) -> None:
-    from agent_loco.runtime.uireview import _review_clicks
+def test_lbw_review_clicks_open_goal_panels_last(tmp_path: Path) -> None:
+    from agent_lbw.runtime.uireview import _review_clicks
 
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").parent.mkdir(parents=True)
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").parent.mkdir(parents=True)
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").write_text("# lbw\n", encoding="utf-8")
     clicks = _review_clicks(
         tmp_path,
         None,
@@ -642,10 +642,10 @@ def test_loco_review_clicks_open_goal_panels_last(tmp_path: Path) -> None:
 
 
 def test_file_manager_goal_leaves_the_changes_pane_open(tmp_path: Path) -> None:
-    from agent_loco.runtime.uireview import _review_clicks
+    from agent_lbw.runtime.uireview import _review_clicks
 
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").parent.mkdir(parents=True)
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").parent.mkdir(parents=True)
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").write_text("# lbw\n", encoding="utf-8")
     clicks = _review_clicks(
         tmp_path,
         None,
@@ -741,10 +741,10 @@ def test_review_ui_tool_passes_cycle_goal(tmp_path: Path, monkeypatch) -> None:
         captured["goal"] = kwargs.get("goal") or (args[2] if len(args) > 2 else None)
         return UiEvidence(ok=True, snapshot="overlay: skills-panel hidden=False 320x640")
 
-    monkeypatch.setattr("agent_loco.tools.browser.collect_ui_evidence", fake_collect)
+    monkeypatch.setattr("agent_lbw.tools.browser.collect_ui_evidence", fake_collect)
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     tools = build_tools(
         workspace,
         test_command=None,
@@ -834,16 +834,16 @@ def test_pr_body_embeds_hosted_screenshot_urls() -> None:
         "added tab",
         tests_passed=True,
         commit_sha="abc",
-        branch="loco/x",
+        branch="lbw/x",
         screenshots=["ui-review_goal.png", "ui-review.png"],
         image_base="https://github.com/acme/repo/raw/abc",
     )
     assert (
         "![ui-review_goal.png](https://github.com/acme/repo/raw/abc/"
-        ".loco/ui-screenshots/ui-review_goal.png)"
+        ".lbw/ui-screenshots/ui-review_goal.png)"
     ) in body
-    assert "![ui-review.png](https://github.com/acme/repo/raw/abc/.loco/ui-review.png)" in body
-    assert "](.loco/ui-screenshots/" not in body
+    assert "![ui-review.png](https://github.com/acme/repo/raw/abc/.lbw/ui-review.png)" in body
+    assert "](.lbw/ui-screenshots/" not in body
 
 
 def test_pr_body_omits_unhosted_screenshots() -> None:
@@ -852,20 +852,20 @@ def test_pr_body_omits_unhosted_screenshots() -> None:
         "added tab",
         tests_passed=True,
         commit_sha="abc",
-        branch="loco/x",
+        branch="lbw/x",
         screenshots=["ui-review_goal.png"],
     )
     assert "## Screenshots" not in body
-    assert ".loco/ui-screenshots" not in body
+    assert ".lbw/ui-screenshots" not in body
 
 
 def test_start_preview_uses_a_command_written_after_load(tmp_path: Path, monkeypatch) -> None:
-    from agent_loco.runtime.project import load_project, save_project_commands
-    from agent_loco.runtime.uireview import start_preview
+    from agent_lbw.runtime.project import load_project, save_project_commands
+    from agent_lbw.runtime.uireview import start_preview
 
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text("name: demo\n", encoding="utf-8")
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text("name: demo\n", encoding="utf-8")
     project = load_project(tmp_path)
     assert project.preview_command is None
     save_project_commands(tmp_path, preview_command="python3 -m http.server {port}")
@@ -876,15 +876,15 @@ def test_start_preview_uses_a_command_written_after_load(tmp_path: Path, monkeyp
         seen["command"] = command
         return None
 
-    monkeypatch.setattr("agent_loco.runtime.uireview._start_command_preview", fake_start)
+    monkeypatch.setattr("agent_lbw.runtime.uireview._start_command_preview", fake_start)
     start_preview(Workspace(tmp_path), project)
     assert seen["command"] == "python3 -m http.server {port}"
 
 
 def test_load_project_reads_preview_command(tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "preview_command: python3 -m http.server {port}\n",
         encoding="utf-8",
     )
@@ -892,20 +892,20 @@ def test_load_project_reads_preview_command(tmp_path: Path) -> None:
     assert project.preview_command == "python3 -m http.server {port}"
 
 
-def test_loco_template_paths_use_the_running_app(tmp_path: Path, monkeypatch) -> None:
-    from agent_loco.runtime.project import load_project
-    from agent_loco.runtime.uireview import _is_loco_template_path, start_preview
+def test_lbw_template_paths_use_the_running_app(tmp_path: Path, monkeypatch) -> None:
+    from agent_lbw.runtime.project import load_project
+    from agent_lbw.runtime.uireview import _is_lbw_template_path, start_preview
 
-    (tmp_path / "src" / "agent_loco" / "templates").mkdir(parents=True)
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
-    template = tmp_path / "src" / "agent_loco" / "templates" / "index.html"
+    (tmp_path / "src" / "agent_lbw" / "templates").mkdir(parents=True)
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").write_text("# lbw\n", encoding="utf-8")
+    template = tmp_path / "src" / "agent_lbw" / "templates" / "index.html"
     template.write_text("<html>{{ ws.name }}</html>\n", encoding="utf-8")
     workspace = Workspace(tmp_path)
-    assert _is_loco_template_path(workspace, "src/agent_loco/templates/index.html")
+    assert _is_lbw_template_path(workspace, "src/agent_lbw/templates/index.html")
     calls: list[str] = []
 
-    def fake_loco(ws, port):
-        calls.append(f"loco:{port}")
+    def fake_lbw(ws, port):
+        calls.append(f"lbw:{port}")
 
         class Preview:
             url = f"http://127.0.0.1:{port}/"
@@ -915,33 +915,33 @@ def test_loco_template_paths_use_the_running_app(tmp_path: Path, monkeypatch) ->
 
         return Preview()
 
-    monkeypatch.setattr("agent_loco.runtime.uireview._start_loco_preview", fake_loco)
+    monkeypatch.setattr("agent_lbw.runtime.uireview._start_lbw_preview", fake_lbw)
     preview = start_preview(
         workspace,
         load_project(tmp_path),
-        path="src/agent_loco/templates/index.html",
+        path="src/agent_lbw/templates/index.html",
         port=9,
     )
-    assert calls == ["loco:9"]
+    assert calls == ["lbw:9"]
     assert preview is not None
     assert preview.url == "http://127.0.0.1:9/"
 
 
-def test_loco_preview_ignores_a_static_file_server(tmp_path: Path, monkeypatch) -> None:
-    from agent_loco.runtime.project import load_project, save_project_commands
-    from agent_loco.runtime.uireview import start_preview
+def test_lbw_preview_ignores_a_static_file_server(tmp_path: Path, monkeypatch) -> None:
+    from agent_lbw.runtime.project import load_project, save_project_commands
+    from agent_lbw.runtime.uireview import start_preview
 
-    (tmp_path / "src" / "agent_loco").mkdir(parents=True)
-    (tmp_path / "src" / "agent_loco" / "web_ui.py").write_text("# loco\n", encoding="utf-8")
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text("name: loco\n", encoding="utf-8")
+    (tmp_path / "src" / "agent_lbw").mkdir(parents=True)
+    (tmp_path / "src" / "agent_lbw" / "web_ui.py").write_text("# lbw\n", encoding="utf-8")
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text("name: lbw\n", encoding="utf-8")
     save_project_commands(tmp_path, preview_command="python3 -m http.server {port}")
     calls: list[str] = []
 
-    def fake_loco(ws, port):
+    def fake_lbw(ws, port):
         del ws
-        calls.append(f"loco:{port}")
+        calls.append(f"lbw:{port}")
 
         class Preview:
             url = f"http://127.0.0.1:{port}/"
@@ -956,10 +956,10 @@ def test_loco_preview_ignores_a_static_file_server(tmp_path: Path, monkeypatch) 
         calls.append(f"command:{command}")
         return None
 
-    monkeypatch.setattr("agent_loco.runtime.uireview._start_loco_preview", fake_loco)
-    monkeypatch.setattr("agent_loco.runtime.uireview._start_command_preview", fake_command)
+    monkeypatch.setattr("agent_lbw.runtime.uireview._start_lbw_preview", fake_lbw)
+    monkeypatch.setattr("agent_lbw.runtime.uireview._start_command_preview", fake_command)
     preview = start_preview(Workspace(tmp_path), load_project(tmp_path), port=9)
-    assert calls == ["loco:9"]
+    assert calls == ["lbw:9"]
     assert preview is not None
     assert preview.url == "http://127.0.0.1:9/"
 
@@ -967,12 +967,12 @@ def test_loco_preview_ignores_a_static_file_server(tmp_path: Path, monkeypatch) 
 def test_godot_preview_serves_the_captured_frame(tmp_path: Path, monkeypatch) -> None:
     import urllib.request
 
-    from agent_loco.runtime.uireview import start_preview
+    from agent_lbw.runtime.uireview import start_preview
 
     (tmp_path / "project.godot").write_text('config/name="Demo"\n', encoding="utf-8")
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         'preview_command: echo "listening" && sleep 3600\n',
         encoding="utf-8",
     )
@@ -989,7 +989,7 @@ def test_godot_preview_serves_the_captured_frame(tmp_path: Path, monkeypatch) ->
         encoding="utf-8",
     )
     fake.chmod(0o755)
-    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: str(fake))
+    monkeypatch.setattr("agent_lbw.runtime.uireview._godot_binary", lambda: str(fake))
     preview = start_preview(Workspace(tmp_path), load_project(tmp_path))
     assert preview is not None
     try:
@@ -1025,7 +1025,7 @@ def _solid_png(path: Path, width: int, height: int, spot: int = 0) -> None:
 
 
 def test_frame_blank_share_measures_a_single_color_frame(tmp_path: Path) -> None:
-    from agent_loco.runtime.uireview import frame_blank_share
+    from agent_lbw.runtime.uireview import frame_blank_share
 
     blank = tmp_path / "blank.png"
     _solid_png(blank, 20, 20)
@@ -1036,7 +1036,7 @@ def test_frame_blank_share_measures_a_single_color_frame(tmp_path: Path) -> None
 
 
 def test_godot_engine_errors_keep_the_location() -> None:
-    from agent_loco.runtime.uireview import godot_engine_errors
+    from agent_lbw.runtime.uireview import godot_engine_errors
 
     output = (
         'ERROR: Node not found: "Player" (relative to "/root/MainScene").\n'
@@ -1056,7 +1056,7 @@ def test_godot_engine_errors_keep_the_location() -> None:
 
 
 def test_godot_preview_runs_the_scene_the_goal_names(tmp_path: Path, monkeypatch) -> None:
-    from agent_loco.runtime.uireview import start_preview
+    from agent_lbw.runtime.uireview import start_preview
 
     (tmp_path / "project.godot").write_text('run/main_scene="res://scenes/menu.tscn"\n')
     (tmp_path / "scripts").mkdir()
@@ -1083,7 +1083,7 @@ def test_godot_preview_runs_the_scene_the_goal_names(tmp_path: Path, monkeypatch
         encoding="utf-8",
     )
     fake.chmod(0o755)
-    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: str(fake))
+    monkeypatch.setattr("agent_lbw.runtime.uireview._godot_binary", lambda: str(fake))
     goal = 'Not rendering. ERROR: Node not found: "Player" (relative to "/root/MainScene").'
     preview = start_preview(Workspace(tmp_path), load_project(tmp_path), goal=goal)
     assert preview is not None
@@ -1100,7 +1100,7 @@ def test_godot_preview_runs_the_scene_the_goal_names(tmp_path: Path, monkeypatch
 
 
 def test_godot_preview_runs_the_level_instead_of_the_menu(tmp_path: Path, monkeypatch) -> None:
-    from agent_loco.runtime.uireview import start_preview
+    from agent_lbw.runtime.uireview import start_preview
 
     (tmp_path / "project.godot").write_text('run/main_scene="res://scenes/menu.tscn"\n')
     (tmp_path / "scripts").mkdir()
@@ -1146,7 +1146,7 @@ def test_godot_preview_runs_the_level_instead_of_the_menu(tmp_path: Path, monkey
         encoding="utf-8",
     )
     fake.chmod(0o755)
-    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: str(fake))
+    monkeypatch.setattr("agent_lbw.runtime.uireview._godot_binary", lambda: str(fake))
     preview = start_preview(
         Workspace(tmp_path),
         load_project(tmp_path),
@@ -1165,7 +1165,7 @@ def test_review_rejects_a_scene_that_still_prints_engine_errors(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=True,
             notes="Godot ran res://scenes/main_scene.tscn for 8 frames.",
@@ -1173,8 +1173,8 @@ def test_review_rejects_a_scene_that_still_prints_engine_errors(
             engine_errors=['ERROR: Node not found: "Player"'],
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient([AssistantTurn(text='{"met": true, "reason": "fixed the path"}')])
     token = bind_progress()
     try:
@@ -1196,7 +1196,7 @@ def test_review_rejects_a_scene_that_still_prints_engine_errors(
 
 def test_review_rejects_a_render_goal_when_nodes_draw_nothing(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=True,
             notes="Godot ran res://scenes/main_scene.tscn for 8 frames.",
@@ -1204,8 +1204,8 @@ def test_review_rejects_a_render_goal_when_nodes_draw_nothing(tmp_path: Path, mo
             visual_gaps=['Sprite2D "Player" in scenes/main_scene.tscn has no texture'],
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient([AssistantTurn(text='{"met": true, "reason": "no more errors"}')])
     token = bind_progress()
     try:
@@ -1226,10 +1226,10 @@ def test_review_rejects_a_render_goal_when_nodes_draw_nothing(tmp_path: Path, mo
 
 
 def test_godot_preview_reports_a_missing_engine(tmp_path: Path, monkeypatch) -> None:
-    from agent_loco.runtime.uireview import start_preview
+    from agent_lbw.runtime.uireview import start_preview
 
     (tmp_path / "project.godot").write_text('config/name="Demo"\n', encoding="utf-8")
-    monkeypatch.setattr("agent_loco.runtime.uireview._godot_binary", lambda: None)
+    monkeypatch.setattr("agent_lbw.runtime.uireview._godot_binary", lambda: None)
     try:
         start_preview(Workspace(tmp_path), load_project(tmp_path))
     except RuntimeError as exc:
@@ -1242,7 +1242,7 @@ def test_review_goal_keeps_met_when_iteration_limit_but_ui_verified(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=True,
             snapshot="button: ↻ Rerun (72x24 @ 900,400)\nspan: +12 −3 (48x16 @ 16,400)",
@@ -1250,8 +1250,8 @@ def test_review_goal_keeps_met_when_iteration_limit_but_ui_verified(
             clicked=['[data-main-pane="history"]'],
         ),
     )
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     llm = ScriptedClient(
         [AssistantTurn(text='{"met": true, "reason": "rerun no longer overlaps +/- stats"}')]
     )
@@ -1262,7 +1262,7 @@ def test_review_goal_keeps_met_when_iteration_limit_but_ui_verified(
             load_project(tmp_path),
             llm,
             "Fix the overlapping of the past runs rerun button",
-            "diff --git a/src/agent_loco/templates/index.html",
+            "diff --git a/src/agent_lbw/templates/index.html",
             "Stopped after reaching the iteration limit.",
             True,
             stopped_reason="max_iterations",
