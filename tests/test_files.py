@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.files import file_tools
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools.files import file_tools
 
 
 def _tool(workspace: Workspace, name: str):
@@ -39,7 +39,7 @@ def test_str_replace_strips_numbered_read_prefixes(tmp_path: Path) -> None:
 
 def test_str_replace_missing_text_includes_nearby_lines(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / "note.txt").write_text("alpha loco beta\n", encoding="utf-8")
+    (tmp_path / "note.txt").write_text("alpha lbw beta\n", encoding="utf-8")
     missing = _tool(workspace, "str_replace").handler(
         path="note.txt",
         old_string="gamma",
@@ -48,11 +48,11 @@ def test_str_replace_missing_text_includes_nearby_lines(tmp_path: Path) -> None:
     assert not missing.ok
     assert "not found" in missing.output
     assert "File starts with:" in missing.output
-    assert "alpha loco beta" in missing.output
+    assert "alpha lbw beta" in missing.output
 
 
 def test_write_file_records_create_and_update_diffs(tmp_path: Path) -> None:
-    from agent_loco.progress import bind_progress, current_events, reset_progress
+    from agent_lbw.progress import bind_progress, current_events, reset_progress
 
     workspace = Workspace(tmp_path)
     token = bind_progress()
@@ -79,7 +79,7 @@ def test_write_file_records_create_and_update_diffs(tmp_path: Path) -> None:
 
 
 def test_str_replace_updates_unique_match(tmp_path: Path) -> None:
-    from agent_loco.progress import bind_progress, current_events, reset_progress
+    from agent_lbw.progress import bind_progress, current_events, reset_progress
 
     workspace = Workspace(tmp_path)
     (tmp_path / "ui.html").write_text("<header>old</header>\n<main></main>\n", encoding="utf-8")
@@ -145,7 +145,7 @@ def test_str_replace_requires_unique_match_unless_replace_all(tmp_path: Path) ->
 
 def test_search_finds_literal(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / "note.txt").write_text("alpha loco beta\n", encoding="utf-8")
-    result = _tool(workspace, "search_text").handler(query="loco")
+    (tmp_path / "note.txt").write_text("alpha lbw beta\n", encoding="utf-8")
+    result = _tool(workspace, "search_text").handler(query="lbw")
     assert result.ok
     assert "note.txt" in result.output

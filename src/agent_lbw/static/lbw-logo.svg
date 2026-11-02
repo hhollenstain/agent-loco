@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="LBW">
+  <title>LBW</title>
+  <rect width="32" height="32" rx="8" fill="#10243f"/>
+  <path d="M13 8.2 6.6 16 13 23.8" fill="none" stroke="#14824a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19 8.2 25.4 16 19 23.8" fill="none" stroke="#14824a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

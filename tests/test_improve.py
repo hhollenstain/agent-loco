@@ -5,20 +5,20 @@ from pathlib import Path
 import pytest
 from tests.support import init_git_repo
 
-from agent_loco.config import Settings
-from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.runtime.improve import resolve_create_pr, run_cycle
-from agent_loco.runtime.project import load_project
-from agent_loco.runtime.uireview import UiEvidence
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.base import ToolResult
-from agent_loco.tools.git import CO_AUTHORED_BY, current_branch, current_sha, run_git
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient, ToolCall
+from agent_lbw.runtime.improve import resolve_create_pr, run_cycle
+from agent_lbw.runtime.project import load_project
+from agent_lbw.runtime.uireview import UiEvidence
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools.base import ToolResult
+from agent_lbw.tools.git import CO_AUTHORED_BY, current_branch, current_sha, run_git
 
 
 @pytest.fixture(autouse=True)
 def _fake_agent_review_ui(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Queue task"),
     )
 
@@ -32,9 +32,9 @@ def _broken_project(root: Path) -> None:
         "from app import add\nassert add(2, 3) == 5\n",
         encoding="utf-8",
     )
-    loco = root / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = root / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\n"
         "test_command: python3 check.py\n"
         "max_repair_attempts: 0\n"
@@ -42,14 +42,14 @@ def _broken_project(root: Path) -> None:
         "goals_file: goals.md\n",
         encoding="utf-8",
     )
-    (loco / "goals.md").write_text("- [ ] Make the adder work\n", encoding="utf-8")
-    (root / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (lbw / "goals.md").write_text("- [ ] Make the adder work\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(root)
 
 
 def test_cycle_starts_from_a_clean_head_branch(tmp_path: Path, settings: Settings) -> None:
     (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
-    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
     head = current_branch(workspace) or "master"
@@ -68,7 +68,7 @@ def test_cycle_starts_from_a_clean_head_branch(tmp_path: Path, settings: Setting
 
 def test_cycle_uses_the_branch_named_in_the_goal(tmp_path: Path, settings: Settings) -> None:
     (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
-    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
     head = current_branch(workspace) or "master"
@@ -88,7 +88,7 @@ def test_cycle_uses_the_branch_named_in_the_goal(tmp_path: Path, settings: Setti
 
 def test_cycle_dropdown_branch_overrides_the_goal(tmp_path: Path, settings: Settings) -> None:
     (tmp_path / "app.py").write_text("print('base')\n", encoding="utf-8")
-    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(tmp_path)
     workspace = Workspace(tmp_path)
     head = current_branch(workspace) or "master"
@@ -176,7 +176,7 @@ def test_cycle_does_not_fail_when_pytest_is_missing(tmp_path: Path, settings: Se
         encoding="utf-8",
     )
     (tmp_path / "missing.sh").chmod(0o755)
-    (tmp_path / ".loco" / "config.yaml").write_text(
+    (tmp_path / ".lbw" / "config.yaml").write_text(
         "name: fixture\n"
         "test_command: sh missing.sh\n"
         "max_repair_attempts: 1\n"
@@ -224,7 +224,7 @@ def test_cycle_repairs_a_suite_that_actually_failed(tmp_path: Path, settings: Se
         "exit 1\n",
         encoding="utf-8",
     )
-    (tmp_path / ".loco" / "config.yaml").write_text(
+    (tmp_path / ".lbw" / "config.yaml").write_text(
         "name: fixture\n"
         "test_command: sh fail.sh\n"
         "max_repair_attempts: 1\n"
@@ -327,12 +327,12 @@ def test_cycle_skips_commit_when_tests_still_fail(tmp_path: Path, settings: Sett
 
 
 def test_cycle_sets_up_tests_when_none_are_configured(tmp_path: Path, settings: Settings) -> None:
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text(
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text(
         "name: fixture\nmax_repair_attempts: 1\npublish:\n  enabled: false\ngoals_file: goals.md\n",
         encoding="utf-8",
     )
-    (tmp_path / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(tmp_path)
     llm = ScriptedClient(
         [
@@ -364,7 +364,7 @@ def test_cycle_sets_up_tests_when_none_are_configured(tmp_path: Path, settings: 
                 call_id="write-check",
             ),
             _write_file_turn(
-                ".loco/config.yaml",
+                ".lbw/config.yaml",
                 "name: fixture\n"
                 "test_command: python3 check.py\n"
                 "max_repair_attempts: 1\n"
@@ -392,7 +392,7 @@ def test_cycle_sets_up_tests_when_none_are_configured(tmp_path: Path, settings: 
 
 def test_cycle_skips_commit_when_lint_fails(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         "name: fixture\n"
         "test_command: python3 check.py\n"
@@ -437,7 +437,7 @@ def test_cycle_skips_commit_when_lint_fails(tmp_path: Path, settings: Settings) 
 
 def test_cycle_attempts_lint_repair(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         "name: fixture\n"
         "test_command: python3 check.py\n"
@@ -483,7 +483,7 @@ def test_cycle_repairs_lint_in_untouched_files(tmp_path: Path, settings: Setting
         "raise SystemExit('F821 Undefined name `self`\\n   --> leftover.py:55:10')\n",
         encoding="utf-8",
     )
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         "name: fixture\n"
         "test_command: python3 check.py\n"
@@ -538,7 +538,7 @@ def test_cycle_skips_before_tests_when_a_goal_is_given(tmp_path: Path, settings:
 
 def test_no_create_pr_flag_wins_over_project_config(tmp_path: Path, settings: Settings) -> None:
     _broken_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "publish:\n  enabled: false\n",
@@ -566,9 +566,9 @@ def test_explicit_publish_off_still_disables_pr_on_a_git_repo(
     tmp_path: Path, settings: Settings
 ) -> None:
     (tmp_path / ".git").mkdir()
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\npublish:\n  enabled: false\n",
         encoding="utf-8",
     )
@@ -587,9 +587,9 @@ def _green_project(root: Path) -> None:
         "from app import add\nassert add(2, 3) == 5\n",
         encoding="utf-8",
     )
-    loco = root / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = root / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\n"
         "test_command: python3 check.py\n"
         "max_repair_attempts: 0\n"
@@ -597,10 +597,10 @@ def _green_project(root: Path) -> None:
         "goals_file: goals.md\n",
         encoding="utf-8",
     )
-    (loco / "goals.md").write_text("- [ ] Improve the UI\n", encoding="utf-8")
-    (root / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (lbw / "goals.md").write_text("- [ ] Improve the UI\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(root)
-    runs = loco / "runs"
+    runs = lbw / "runs"
     runs.mkdir()
     (runs / "old.json").write_text('{"status": "success"}\n', encoding="utf-8")
 
@@ -621,16 +621,16 @@ def test_cycle_does_not_commit_run_logs_or_plans(tmp_path: Path, settings: Setti
     assert result.committed is False
     assert result.published is False
     assert "no files changed and the goal is not already met" in (result.reason or "")
-    tracked = run_git(Workspace(tmp_path), ["ls-files", ".loco/runs"])
+    tracked = run_git(Workspace(tmp_path), ["ls-files", ".lbw/runs"])
     assert tracked.stdout.strip() == ""
-    assert (tmp_path / ".loco" / "runs" / "old.json").exists()
+    assert (tmp_path / ".lbw" / "runs" / "old.json").exists()
 
 
 def test_cycle_retries_when_agent_inspects_but_goal_is_unmet(
     tmp_path: Path, settings: Settings
 ) -> None:
     _green_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "max_repair_attempts: 0\n",
@@ -666,9 +666,9 @@ def test_cycle_repairs_tests_broken_by_empty_diff_retry(tmp_path: Path, settings
         "from pathlib import Path\nassert 'id=\"guidelines\"' in Path('ui.html').read_text()\n",
         encoding="utf-8",
     )
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\n"
         "test_command: python3 check.py\n"
         "max_repair_attempts: 1\n"
@@ -676,7 +676,7 @@ def test_cycle_repairs_tests_broken_by_empty_diff_retry(tmp_path: Path, settings
         "goals_file: goals.md\n",
         encoding="utf-8",
     )
-    (loco / "goals.md").write_text(
+    (lbw / "goals.md").write_text(
         "- [ ] Move guidelines into a settings menu\n",
         encoding="utf-8",
     )
@@ -717,7 +717,7 @@ def test_cycle_repairs_tests_broken_by_empty_diff_retry(tmp_path: Path, settings
 
 
 def test_retry_prompts_forbid_placeholder_work() -> None:
-    from agent_loco.runtime.improve import (
+    from agent_lbw.runtime.improve import (
         _empty_diff_retry_prompt,
         _goal_retry_prompt,
         _test_repair_prompt,
@@ -790,8 +790,8 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
         captured["pr_branch"] = current_branch(ws)
         return ToolResult(True, "https://example.test/pull/1")
 
-    monkeypatch.setattr("agent_loco.runtime.improve.push_changes", fake_push)
-    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_lbw.runtime.improve.push_changes", fake_push)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
     llm = ScriptedClient(
         [
             AssistantTurn(
@@ -820,7 +820,7 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
         event.get("kind") == "pr" and event.get("url") == result.pr_url for event in result.events
     )
     assert captured["push_branch"]
-    assert str(captured["push_branch"]).startswith("loco/")
+    assert str(captured["push_branch"]).startswith("lbw/")
     assert captured["push_branch"] != protected
     assert captured["push_current"] == captured["push_branch"]
     assert captured["pr_branch"] == captured["push_branch"]
@@ -832,14 +832,14 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert result.merged is False
     log = run_git(workspace, ["log", "-1", "--format=%B"]).stdout
     assert CO_AUTHORED_BY in log
-    assert current_branch(workspace).startswith("loco/")
+    assert current_branch(workspace).startswith("lbw/")
     assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == initial
     assert "Goal review confirmed the requested outcome" in str(captured["body"])
 
 
 def test_cycle_continuous_proposes_when_goals_are_empty(tmp_path: Path, settings: Settings) -> None:
     _green_project(tmp_path)
-    (tmp_path / ".loco" / "goals.md").write_text("- [x] Already done\n", encoding="utf-8")
+    (tmp_path / ".lbw" / "goals.md").write_text("- [x] Already done\n", encoding="utf-8")
     llm = ScriptedClient(
         [
             AssistantTurn(text=("GOAL: Add a module docstring to app.py\n\nDocument add().")),
@@ -876,7 +876,7 @@ def test_cycle_continuous_proposes_when_goals_are_empty(tmp_path: Path, settings
 
 def test_cycle_continuous_skips_when_nothing_to_do(tmp_path: Path, settings: Settings) -> None:
     _green_project(tmp_path)
-    (tmp_path / ".loco" / "goals.md").write_text("- [x] Already done\n", encoding="utf-8")
+    (tmp_path / ".lbw" / "goals.md").write_text("- [x] Already done\n", encoding="utf-8")
     llm = ScriptedClient([AssistantTurn(text="NOTHING_TO_DO")])
     result = run_cycle(tmp_path, settings, llm, continuous=True)
     assert result.status == "skipped"
@@ -904,10 +904,10 @@ def test_cycle_continuous_merges_after_review(
         captured["base"] = base
         return ToolResult(True, f"checked out {base}")
 
-    monkeypatch.setattr("agent_loco.runtime.improve.push_changes", fake_push)
-    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
-    monkeypatch.setattr("agent_loco.runtime.improve.merge_pull_request", fake_merge)
-    monkeypatch.setattr("agent_loco.runtime.improve.checkout_base_branch", fake_checkout)
+    monkeypatch.setattr("agent_lbw.runtime.improve.push_changes", fake_push)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_lbw.runtime.improve.merge_pull_request", fake_merge)
+    monkeypatch.setattr("agent_lbw.runtime.improve.checkout_base_branch", fake_checkout)
     llm = ScriptedClient(
         [
             AssistantTurn(
@@ -945,7 +945,7 @@ def test_cycle_pr_hosts_only_the_change_screenshot(
     tmp_path: Path, settings: Settings, monkeypatch
 ) -> None:
     _broken_project(tmp_path)
-    shots = tmp_path / ".loco" / "ui-screenshots"
+    shots = tmp_path / ".lbw" / "ui-screenshots"
     shots.mkdir(exist_ok=True)
     change = shots / "ui-review_goal_final.png"
     change.write_bytes(b"png-bytes")
@@ -953,7 +953,7 @@ def test_cycle_pr_hosts_only_the_change_screenshot(
     workspace = Workspace(tmp_path)
     run_git(workspace, ["remote", "add", "origin", "git@github.com:acme/repo.git"])
     monkeypatch.setattr(
-        "agent_loco.runtime.improve._pr_screenshot_names",
+        "agent_lbw.runtime.improve._pr_screenshot_names",
         lambda: ["ui-review_goal_final.png"],
     )
     captured: dict[str, str | None] = {}
@@ -967,8 +967,8 @@ def test_cycle_pr_hosts_only_the_change_screenshot(
         captured["sha"] = current_sha(ws)
         return ToolResult(True, "https://example.test/pull/2")
 
-    monkeypatch.setattr("agent_loco.runtime.improve.push_changes", fake_push)
-    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_lbw.runtime.improve.push_changes", fake_push)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
     llm = ScriptedClient(
         [
             AssistantTurn(
@@ -994,12 +994,12 @@ def test_cycle_pr_hosts_only_the_change_screenshot(
     body = str(captured["body"])
     sha = captured["sha"]
     assert sha
-    assert ".loco/ui-screenshots" not in body
+    assert ".lbw/ui-screenshots" not in body
     assert "ui-review_goal_final.png" not in body
     assert "ui-review_review-ui_dump.png" not in body
     tracked = run_git(
         workspace,
-        ["ls-files", "--", ".loco"],
+        ["ls-files", "--", ".lbw"],
     ).stdout.splitlines()
     assert tracked == []
 
@@ -1152,13 +1152,13 @@ def test_cycle_accepts_iteration_limit_when_rendered_ui_is_verified(
         ".addEventListener('click', () => fetch('/api/tasks/1/rerun'));</script>\n"
     )
     _green_project(tmp_path)
-    (tmp_path / "src" / "agent_loco" / "templates").mkdir(parents=True)
-    (tmp_path / "src" / "agent_loco" / "templates" / "index.html").write_text(
+    (tmp_path / "src" / "agent_lbw" / "templates").mkdir(parents=True)
+    (tmp_path / "src" / "agent_lbw" / "templates" / "index.html").write_text(
         html,
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(
             ok=True,
             snapshot=("button.rerun-btn: ↻ Rerun (72x24 @ 900,400)\nspan: +12 −3 (48x16 @ 16,400)"),
@@ -1170,7 +1170,7 @@ def test_cycle_accepts_iteration_limit_when_rendered_ui_is_verified(
     llm = ScriptedClient(
         [
             _write_file_turn(
-                "src/agent_loco/templates/index.html",
+                "src/agent_lbw/templates/index.html",
                 html,
             ),
             _review_turn(True, "rerun button no longer overlaps the line stats"),
@@ -1195,7 +1195,7 @@ def _inspect_only_turns() -> list[AssistantTurn]:
     ]
 
 
-def _commit_on_feature_branch(root: Path, name: str = "loco/existing-work") -> None:
+def _commit_on_feature_branch(root: Path, name: str = "lbw/existing-work") -> None:
     workspace = Workspace(root)
     run_git(workspace, ["checkout", "-b", name])
     app = root / "app.py"
@@ -1217,11 +1217,11 @@ def test_cycle_opens_pr_for_existing_feature_branch_without_new_files(
         return ToolResult(True, "https://example.test/pull/11")
 
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.push_changes",
+        "agent_lbw.runtime.improve.push_changes",
         lambda *args, **kwargs: ToolResult(True, "pushed"),
     )
-    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
-    monkeypatch.setattr("agent_loco.runtime.improve.existing_pull_request", lambda _ws: None)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_lbw.runtime.improve.existing_pull_request", lambda _ws: None)
     llm = ScriptedClient(
         [
             *_inspect_only_turns(),
@@ -1239,7 +1239,7 @@ def test_cycle_opens_pr_for_existing_feature_branch_without_new_files(
     assert result.committed is False
     assert result.published is True
     assert result.pr_url == "https://example.test/pull/11"
-    assert captured["branch"] == "loco/existing-work"
+    assert captured["branch"] == "lbw/existing-work"
     assert captured["base"] in {"main", "master"}
     assert "without new files" in (result.reason or "")
     assert any(
@@ -1265,13 +1265,13 @@ def test_cycle_reuses_existing_pr_without_creating_another(
         return ToolResult(True, "updated")
 
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.push_changes",
+        "agent_lbw.runtime.improve.push_changes",
         lambda *args, **kwargs: ToolResult(True, "pushed"),
     )
-    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
-    monkeypatch.setattr("agent_loco.runtime.improve.update_pull_request", fake_edit)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_lbw.runtime.improve.update_pull_request", fake_edit)
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.existing_pull_request",
+        "agent_lbw.runtime.improve.existing_pull_request",
         lambda _ws: "https://example.test/pull/7",
     )
     llm = ScriptedClient(
@@ -1306,10 +1306,10 @@ def test_cycle_does_not_open_pr_from_main_without_new_files(
         return ToolResult(True, "https://example.test/pull/3")
 
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.push_changes",
+        "agent_lbw.runtime.improve.push_changes",
         lambda *args, **kwargs: ToolResult(True, "pushed"),
     )
-    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
     llm = ScriptedClient(
         [
             *_inspect_only_turns(),
@@ -1336,11 +1336,11 @@ def test_cycle_skips_pr_when_goal_is_not_met(
 ) -> None:
     _green_project(tmp_path)
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.push_changes",
+        "agent_lbw.runtime.improve.push_changes",
         lambda *args, **kwargs: ToolResult(True, "pushed"),
     )
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.create_pull_request",
+        "agent_lbw.runtime.improve.create_pull_request",
         lambda *args, **kwargs: ToolResult(True, "https://example.test/pull/9"),
     )
     llm = ScriptedClient(
@@ -1361,6 +1361,11 @@ def test_cycle_skips_pr_when_goal_is_not_met(
     assert result.published is False
     assert result.committed is False
     assert "goal not met" in (result.reason or "")
+    assert "header is still present and the sidebar toggle is hidden" in (result.reason or "")
+    qa = [item for item in result.evidence if item.get("role") == "qa"]
+    assert qa
+    assert qa[0]["verdict"] == "send_back"
+    assert qa[0]["summary"] == "header is still present and the sidebar toggle is hidden"
     assert (result.summary or "").startswith("Failed:")
     assert current_branch(Workspace(tmp_path)) in {"main", "master"}
 
@@ -1370,11 +1375,11 @@ def test_cycle_rejects_a_visual_goal_when_nothing_renders(
 ) -> None:
     _broken_project(tmp_path)
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.collect_ui_evidence",
+        "agent_lbw.runtime.improve.collect_ui_evidence",
         lambda *_args, **_kwargs: UiEvidence(
             ok=False,
             notes=(
-                "No preview server for this workspace. Set preview_command in .loco/config.yaml."
+                "No preview server for this workspace. Set preview_command in .lbw/config.yaml."
             ),
         ),
     )
@@ -1401,7 +1406,7 @@ def test_cycle_looks_up_preview_command_for_a_visual_goal(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _green_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "max_repair_attempts: 0\n",
@@ -1416,10 +1421,10 @@ def test_cycle_looks_up_preview_command_for_a_visual_goal(
             return UiEvidence(ok=True, snapshot="Start game", url="http://127.0.0.1:9/")
         return UiEvidence(
             ok=False,
-            notes="No preview server for this workspace. Set preview_command in .loco/config.yaml.",
+            notes="No preview server for this workspace. Set preview_command in .lbw/config.yaml.",
         )
 
-    monkeypatch.setattr("agent_loco.runtime.improve.collect_ui_evidence", fake_ui)
+    monkeypatch.setattr("agent_lbw.runtime.improve.collect_ui_evidence", fake_ui)
     llm = ScriptedClient(
         [
             _write_file_turn(
@@ -1486,7 +1491,7 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
     tmp_path: Path, settings: Settings, monkeypatch
 ) -> None:
     _green_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "max_repair_attempts: 0\n",
@@ -1501,13 +1506,13 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
         return ToolResult(True, "https://example.test/pull/4")
 
     monkeypatch.setattr(
-        "agent_loco.runtime.improve.push_changes",
+        "agent_lbw.runtime.improve.push_changes",
         lambda *args, **kwargs: ToolResult(True, "pushed"),
     )
-    monkeypatch.setattr("agent_loco.runtime.improve.create_pull_request", fake_pr)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
     llm = ScriptedClient(
         [
-            _write_file_turn("ui.html", "<header>loco</header>\n"),
+            _write_file_turn("ui.html", "<header>lbw</header>\n"),
             _review_ui_turn("ui-header"),
             AssistantTurn(text="Added a header."),
             _review_turn(False, "the header is still there"),
@@ -1542,7 +1547,7 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
 
 def test_cycle_retries_unparsed_review(tmp_path: Path, settings: Settings) -> None:
     _green_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "max_repair_attempts: 0\n",
@@ -1582,7 +1587,7 @@ def test_cycle_retries_unparsed_review(tmp_path: Path, settings: Settings) -> No
 
 def test_cycle_keeps_retrying_after_noop_goal_retry(tmp_path: Path, settings: Settings) -> None:
     _green_project(tmp_path)
-    config = tmp_path / ".loco" / "config.yaml"
+    config = tmp_path / ".lbw" / "config.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "max_repair_attempts: 0\n",
@@ -1593,7 +1598,7 @@ def test_cycle_keeps_retrying_after_noop_goal_retry(tmp_path: Path, settings: Se
     tight = settings.model_copy(update={"max_iterations": 4})
     llm = ScriptedClient(
         [
-            _write_file_turn("ui.html", "<header>loco</header>\n"),
+            _write_file_turn("ui.html", "<header>lbw</header>\n"),
             _review_ui_turn("ui-header"),
             AssistantTurn(text="Added a header."),
             _review_turn(False, "CSS files are returning 404"),
@@ -1706,7 +1711,7 @@ def _discord_lockfile(version: str) -> str:
 def test_cycle_already_done_when_dependency_is_current(tmp_path: Path, settings: Settings) -> None:
     _green_project(tmp_path)
     goal = "Update the outdated discord.py library"
-    (tmp_path / ".loco" / "goals.md").write_text(f"- [ ] {goal}\n", encoding="utf-8")
+    (tmp_path / ".lbw" / "goals.md").write_text(f"- [ ] {goal}\n", encoding="utf-8")
     (tmp_path / "setup.py").write_text("INSTALL = ['discord.py==2.7.1']\n", encoding="utf-8")
     (tmp_path / "Pipfile.lock").write_text(_discord_lockfile("2.7.1"), encoding="utf-8")
     run_git(Workspace(tmp_path), ["add", "-A"])
@@ -1729,7 +1734,7 @@ def test_cycle_already_done_when_dependency_is_current(tmp_path: Path, settings:
     assert "not pushed" in (result.reason or "")
     assert "No work to do" in (result.summary or "")
     assert "- [x] Update the outdated discord.py library" in (
-        tmp_path / ".loco" / "goals.md"
+        tmp_path / ".lbw" / "goals.md"
     ).read_text(encoding="utf-8")
     review_messages = [
         message["content"]

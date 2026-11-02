@@ -1,7 +1,9 @@
-.PHONY: sync test lint doctor run watch up-mac up-nvidia pull-model
+.PHONY: sync test lint doctor run watch up-local up-mac up-nvidia pull-model
 
 WORKSPACE ?= examples/demo-project
 GOAL ?= Make the test suite pass.
+PORT ?= 8080
+LBW_POSTGRES_PORT ?= 5432
 
 sync:
 	uv sync --extra dev
@@ -14,13 +16,20 @@ lint:
 	uv run ruff check src tests
 
 doctor:
-	uv run loco doctor
+	uv run lbw doctor
 
 run:
-	uv run loco run --workspace $(WORKSPACE) --goal "$(GOAL)"
+	uv run lbw run --workspace $(WORKSPACE) --goal "$(GOAL)"
 
 watch:
-	uv run loco watch --workspace $(WORKSPACE)
+	uv run lbw watch --workspace $(WORKSPACE)
+
+up-local:
+	docker compose -f docker-compose.yml -f docker-compose.postgres.yml build agent
+	docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --wait postgres
+	trap 'docker compose -f docker-compose.yml -f docker-compose.postgres.yml stop postgres' EXIT INT TERM; \
+		LBW_DATABASE_URL=postgresql://lbw:lbw@127.0.0.1:$(LBW_POSTGRES_PORT)/lbw \
+		uv run lbw ui --host 127.0.0.1 --port $(PORT) --workspace $(WORKSPACE)
 
 up-mac:
 	docker compose -f docker-compose.yml -f docker-compose.mac.yml up --build

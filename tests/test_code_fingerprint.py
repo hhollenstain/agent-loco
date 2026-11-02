@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent_loco.tools.codechange import code_fingerprint
+from agent_lbw.tools.codechange import code_fingerprint
 
 
 def test_fingerprint_reuses_unchanged_files_and_sees_edits(tmp_path: Path) -> None:

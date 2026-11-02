@@ -24,9 +24,9 @@ services:
     depends_on:
       - ollama
     environment:
-      LOCO_MODEL_BASE_URL: http://ollama:11434/v1
-      LOCO_MODEL_NAME: ${LOCO_MODEL_NAME:-qwen2.5-coder:32b}
-      LOCO_MODEL_API_KEY: ollama
+      LBW_MODEL_BASE_URL: http://ollama:11434/v1
+      LBW_MODEL_NAME: ${LBW_MODEL_NAME:-qwen2.5-coder:32b}
+      LBW_MODEL_API_KEY: ollama
 
 volumes:
   ollama:

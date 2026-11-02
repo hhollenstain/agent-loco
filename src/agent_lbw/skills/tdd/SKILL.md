@@ -1,0 +1,55 @@
+---
+name: tdd
+description: >-
+  Test-driven development. Use when building features or fixing bugs
+  test-first, when the user mentions red-green-refactor, or when a change
+  must prove behavior at a public interface before it counts as done.
+---
+
+# Test-Driven Development
+
+TDD is the red → green loop. Tests verify behavior through public interfaces,
+not implementation details. A good test reads like a specification and survives
+refactors because it does not care about internal structure.
+
+## Seams
+
+A seam is the public boundary you test at: HTTP API, CLI, or rendered UI.
+Do not unit-test an unused helper. Do not add a function, class, or route
+that nothing calls.
+
+## Rules of the loop
+
+- **Red before green.** Write one failing test at the public seam first.
+  Call `run_tests` and confirm it fails on the current tree.
+- **Then implement.** Only enough production code to make that test pass.
+  Wire the API, CLI, or UI the test actually invokes.
+- **One slice at a time.** One seam, one test, one minimal implementation.
+- Do not write all tests first, then all implementation.
+- After the implementation, call `run_tests` once. If no code has changed
+  since the last run, including in another project, LBW does not run the
+  suite again. Do not keep calling `run_tests`, `run_lint`, or `review_ui`
+  until you edit code.
+- After tests, call `run_lint` when the project has a lint command. That
+  formats with ruff, then checks. Fix every finding, including files that
+  would be reformatted. The cycle will not commit or open a PR while lint fails.
+
+## Anti-patterns
+
+- **Unused helper:** a new function that nothing in the change calls.
+- **Implementation-coupled:** mocking internals or testing private methods.
+- **Tautological:** asserting a value the same way the code computes it.
+- **Already green:** a test that passed before the behavior existed is not proof.
+
+## In this workspace
+
+- After the failing test, implement, then call `run_tests` once more.
+  LBW does not run tests again when no code has changed.
+- If there is no test command, look up the official runner, add the failing test, and call `configure_project` with `test_command`, then call `run_tests`. The command must execute the suite and exit non-zero when a check fails.
+- If `run_tests` fails, fix the code or the test, then call `run_tests` again. Do not change the command so it exits 0 without running the failing check.
+- Then call `run_lint` if a lint command is configured. Unused imports,
+  long lines, and unformatted files must be fixed before a PR.
+- If the change is UI, `review_ui` is the rendered-page seam: click the new
+  control and fix errors, 404s, or dead buttons.
+- If existing tests assert old markup or APIs this goal replaces, update those
+  tests so they describe the new public behavior.

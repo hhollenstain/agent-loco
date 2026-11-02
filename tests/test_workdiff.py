@@ -4,7 +4,7 @@ from pathlib import Path
 
 from tests.support import init_git_repo
 
-from agent_loco.runtime.workdiff import (
+from agent_lbw.runtime.workdiff import (
     collect_current_evidence,
     collect_work_diff,
     extract_version_changes,
@@ -14,8 +14,8 @@ from agent_loco.runtime.workdiff import (
     summarize_lockfile_diff,
     summarize_lockfile_pair,
 )
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import current_sha
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools.git import current_sha
 
 
 def test_is_lockfile_detects_common_names() -> None:

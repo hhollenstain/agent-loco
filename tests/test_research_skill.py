@@ -4,8 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from agent_loco.runtime.project import write_default_project_files
-from agent_loco.runtime.skills import (
+from agent_lbw.runtime.project import write_default_project_files
+from agent_lbw.runtime.skills import (
     bundled_skills_root,
     compose_system_prompt,
     enabled_skill_names,
@@ -16,7 +16,7 @@ from agent_loco.runtime.skills import (
 
 def test_init_enables_research_skill(tmp_path: Path) -> None:
     write_default_project_files(tmp_path)
-    config = yaml.safe_load((tmp_path / ".loco" / "config.yaml").read_text(encoding="utf-8"))
+    config = yaml.safe_load((tmp_path / ".lbw" / "config.yaml").read_text(encoding="utf-8"))
     enabled = config.get("skills", {}).get("enabled", [])
     assert "research" in enabled
     assert "implement" in enabled

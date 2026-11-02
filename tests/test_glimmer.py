@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent_loco.agent.loop import CodingAgent
-from agent_loco.agent.prompts import SYSTEM_PROMPT, adapt_system_prompt
-from agent_loco.llm.client import AssistantTurn, OpenAICompatClient, ScriptedClient
-from agent_loco.llm.glimmer import is_atem_parse_error, uses_atem_tools
-from agent_loco.llm.toolparse import parse_tool_calls
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools
+from agent_lbw.agent.loop import CodingAgent
+from agent_lbw.agent.prompts import SYSTEM_PROMPT, adapt_system_prompt
+from agent_lbw.llm.client import AssistantTurn, OpenAICompatClient, ScriptedClient
+from agent_lbw.llm.glimmer import is_atem_parse_error, uses_atem_tools
+from agent_lbw.llm.toolparse import parse_tool_calls
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools
 
 
 class _FakeCompletions:
@@ -54,7 +54,7 @@ def test_is_atem_parse_error() -> None:
 
 
 def test_retries_truncated_xml_tool_call(monkeypatch) -> None:
-    monkeypatch.setattr("agent_loco.llm.client.time.sleep", lambda _delay: None)
+    monkeypatch.setattr("agent_lbw.llm.client.time.sleep", lambda _delay: None)
     failed = RuntimeError(
         "Error code: 500 - {'error': {'message': 'XML syntax error on line 3: unexpected EOF'}}"
     )

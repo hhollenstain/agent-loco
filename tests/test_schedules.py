@@ -7,9 +7,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from agent_loco.config import Settings
-from agent_loco.runtime.improve import CycleResult
-from agent_loco.runtime.schedules import (
+from agent_lbw.config import Settings
+from agent_lbw.runtime.improve import CycleResult
+from agent_lbw.runtime.schedules import (
     ScheduleClock,
     agenda,
     claim_due,
@@ -19,8 +19,8 @@ from agent_loco.runtime.schedules import (
     next_occurrence,
     upsert_schedule,
 )
-from agent_loco.runtime.tasks import Task, TaskManager
-from agent_loco.web_ui import create_app
+from agent_lbw.runtime.tasks import Task, TaskManager
+from agent_lbw.web_ui import create_app
 
 
 def _local(year: int, month: int, day: int, hour: int, minute: int) -> datetime:

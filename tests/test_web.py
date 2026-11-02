@@ -7,9 +7,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools, execute_tool
-from agent_loco.tools.web import (
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools, execute_tool
+from agent_lbw.tools.web import (
     check_public_url,
     fetch_url,
     html_to_text,
@@ -98,7 +98,7 @@ def _tool(workspace: Workspace, name: str):
 
 @pytest.fixture(autouse=True)
 def public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agent_loco.tools.web.socket.getaddrinfo", _public_addrinfo)
+    monkeypatch.setattr("agent_lbw.tools.web.socket.getaddrinfo", _public_addrinfo)
 
 
 def test_web_tools_are_in_build_tools(tmp_path: Path) -> None:
@@ -156,8 +156,8 @@ def test_web_search_merges_instant_answer_and_html(
         assert "html.duckduckgo.com" in str(url)
         return FakeResponse(url=str(url), content=DDG_HTML)
 
-    monkeypatch.setattr("agent_loco.tools.web.httpx.get", fake_get)
-    monkeypatch.setattr("agent_loco.tools.web.httpx.post", fake_post)
+    monkeypatch.setattr("agent_lbw.tools.web.httpx.get", fake_get)
+    monkeypatch.setattr("agent_lbw.tools.web.httpx.post", fake_post)
     result = _tool(Workspace(tmp_path), "web_search").handler(
         query="python asyncio official docs",
         max_results=5,
@@ -180,7 +180,7 @@ def test_web_search_reports_empty_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.web.httpx.get",
+        "agent_lbw.tools.web.httpx.get",
         lambda *args, **kwargs: FakeResponse(
             url="https://api.duckduckgo.com/",
             content="{}",
@@ -189,7 +189,7 @@ def test_web_search_reports_empty_results(
         ),
     )
     monkeypatch.setattr(
-        "agent_loco.tools.web.httpx.post",
+        "agent_lbw.tools.web.httpx.post",
         lambda *args, **kwargs: FakeResponse(
             url="https://html.duckduckgo.com/html/",
             content="<html><body>no results</body></html>",
@@ -205,7 +205,7 @@ def test_fetch_url_extracts_docs_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.web.httpx.get",
+        "agent_lbw.tools.web.httpx.get",
         lambda url, *args, **kwargs: FakeResponse(url=url, content=DOCS_HTML),
     )
     result = execute_tool(
@@ -225,7 +225,7 @@ def test_fetch_url_pretty_prints_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.web.httpx.get",
+        "agent_lbw.tools.web.httpx.get",
         lambda url, *args, **kwargs: FakeResponse(
             url=url,
             content='{"ok":true}',
@@ -253,7 +253,7 @@ def test_fetch_url_rewrites_github_blob(
             content_type="text/plain",
         )
 
-    monkeypatch.setattr("agent_loco.tools.web.httpx.get", fake_get)
+    monkeypatch.setattr("agent_lbw.tools.web.httpx.get", fake_get)
     result = fetch_url("https://github.com/acme/demo/blob/main/README.md")
     assert result.ok
     assert seen == ["https://raw.githubusercontent.com/acme/demo/main/README.md"]
@@ -277,7 +277,7 @@ def test_fetch_url_follows_public_redirect(
             )
         return FakeResponse(url=url, content=DOCS_HTML)
 
-    monkeypatch.setattr("agent_loco.tools.web.httpx.get", fake_get)
+    monkeypatch.setattr("agent_lbw.tools.web.httpx.get", fake_get)
     result = _tool(Workspace(tmp_path), "fetch_url").handler(
         url="https://docs.example.com/old",
     )
@@ -302,7 +302,7 @@ def test_fetch_url_rejects_resolved_private_host(monkeypatch: pytest.MonkeyPatch
     def lan_addrinfo(host, port, *args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.20", 0))]
 
-    monkeypatch.setattr("agent_loco.tools.web.socket.getaddrinfo", lan_addrinfo)
+    monkeypatch.setattr("agent_lbw.tools.web.socket.getaddrinfo", lan_addrinfo)
     result = fetch_url("https://docs.internal.example/guide")
     assert not result.ok
     assert "private" in result.output
@@ -310,7 +310,7 @@ def test_fetch_url_rejects_resolved_private_host(monkeypatch: pytest.MonkeyPatch
 
 def test_fetch_url_refuses_binary(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "agent_loco.tools.web.httpx.get",
+        "agent_lbw.tools.web.httpx.get",
         lambda url, *args, **kwargs: FakeResponse(
             url=url,
             content=b"%PDF-1.4",

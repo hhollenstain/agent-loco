@@ -5,11 +5,11 @@ from pathlib import Path
 
 from tests.test_improve import _broken_project
 
-from agent_loco.agent.loop import CodingAgent
-from agent_loco.config import Settings
-from agent_loco.llm.client import AssistantTurn, ScriptedClient
-from agent_loco.runtime.improve import run_cycle
-from agent_loco.runtime.palace import (
+from agent_lbw.agent.loop import CodingAgent
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient
+from agent_lbw.runtime.improve import run_cycle
+from agent_lbw.runtime.palace import (
     MEMORY_MARK,
     MemoryHit,
     NullPalace,
@@ -22,9 +22,9 @@ from agent_loco.runtime.palace import (
     seed_workspace,
     wing_name,
 )
-from agent_loco.runtime.tasks import Task, TaskManager, sibling_task_records
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools
+from agent_lbw.runtime.tasks import Task, TaskManager, sibling_task_records
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools
 
 
 class RecordingPalace:
@@ -56,7 +56,7 @@ class RecordingPalace:
 
 
 def test_wing_name_uses_the_workspace_directory() -> None:
-    assert wing_name(Path("/tmp/agent-loco")) == "agent-loco"
+    assert wing_name(Path("/tmp/agent-lbw")) == "agent-lbw"
 
 
 def test_render_task_record_includes_goal_and_summary() -> None:
@@ -221,7 +221,7 @@ def test_cycle_recalls_history_from_the_same_workspace(
         encoding="utf-8",
     )
     palace = RecordingPalace()
-    monkeypatch.setattr("agent_loco.runtime.palace.open_palace", lambda root: palace)
+    monkeypatch.setattr("agent_lbw.runtime.palace.open_palace", lambda root: palace)
     llm = ScriptedClient([AssistantTurn(text="I looked around and stopped.")])
     run_cycle(tmp_path, settings, llm, goal="Add logout")
     assert "bearer token" in llm.calls[0][1]["content"]

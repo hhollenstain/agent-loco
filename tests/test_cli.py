@@ -5,12 +5,12 @@ import re
 import pytest
 from typer.testing import CliRunner
 
-from agent_loco import __version__
-from agent_loco.cli import app
+from agent_lbw import __version__
+from agent_lbw.cli import app
 
 runner = CliRunner()
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-_TEST_ENV_VARS = {"LOCO_MODEL_NAME": "test-model", "LOCO_MODEL_BASE_URL": "http://test:9000"}
+_TEST_ENV_VARS = {"LBW_MODEL_NAME": "test-model", "LBW_MODEL_BASE_URL": "http://test:9000"}
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_clone_help_and_local_repo(tmp_path, monkeypatch, monkeypatch_env_vars: 
     assert "cloned" in result.stdout
     dest = parent / "checkout"
     assert (dest / "README.md").read_text(encoding="utf-8") == "demo\n"
-    assert (dest / ".loco" / "config.yaml").exists()
+    assert (dest / ".lbw" / "config.yaml").exists()
     missing = runner.invoke(app, ["clone", str(source), "checkout"])
     assert missing.exit_code != 0
 

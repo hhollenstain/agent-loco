@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from agent_loco.config import Settings
-from agent_loco.runtime.palace import NullPalace
-from agent_loco.runtime.uireview import UiEvidence
+from agent_lbw.config import Settings
+from agent_lbw.runtime.palace import NullPalace
+from agent_lbw.runtime.uireview import UiEvidence
 
 
 def _skipped_ui_evidence(*_args, **_kwargs) -> UiEvidence:
@@ -15,16 +15,16 @@ def _skipped_ui_evidence(*_args, **_kwargs) -> UiEvidence:
 def _skip_workspace_palace(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep cycle tests off Chroma and the embedding model."""
     monkeypatch.setattr(
-        "agent_loco.runtime.palace.open_palace",
+        "agent_lbw.runtime.palace.open_palace",
         lambda root: NullPalace(),
     )
 
 
 @pytest.fixture(autouse=True)
 def _skip_live_ui_review(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agent_loco.runtime.improve.collect_ui_evidence", _skipped_ui_evidence)
-    monkeypatch.setattr("agent_loco.runtime.uireview.collect_ui_evidence", _skipped_ui_evidence)
-    monkeypatch.setattr("agent_loco.tools.browser.collect_ui_evidence", _skipped_ui_evidence)
+    monkeypatch.setattr("agent_lbw.runtime.improve.collect_ui_evidence", _skipped_ui_evidence)
+    monkeypatch.setattr("agent_lbw.runtime.uireview.collect_ui_evidence", _skipped_ui_evidence)
+    monkeypatch.setattr("agent_lbw.tools.browser.collect_ui_evidence", _skipped_ui_evidence)
 
 
 @pytest.fixture
@@ -38,6 +38,6 @@ def settings() -> Settings:
         max_iterations=8,
         command_timeout_seconds=30,
         plan_goals=False,
-        git_author_name="loco-test",
-        git_author_email="loco@test.local",
+        git_author_name="lbw-test",
+        git_author_email="lbw@test.local",
     )

@@ -6,10 +6,10 @@ from pathlib import Path
 import httpx
 import pytest
 
-from agent_loco.runtime.project import load_project
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools
-from agent_loco.tools.kiwi import (
+from agent_lbw.runtime.project import load_project
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools
+from agent_lbw.tools.kiwi import (
     KiwiError,
     KiwiFS,
     check_kiwifs,
@@ -37,7 +37,7 @@ def test_prefix_uses_the_folder_name_outside_git(tmp_path: Path) -> None:
     assert resolve_kiwifs_prefix(folder, None) == "projects/my-notes/"
     assert resolve_kiwifs_prefix(folder, None, "notes/shared/") == "notes/shared/"
     assert resolve_kiwifs_prefix(folder, "") == ""
-    assert resolve_kiwifs_prefix(folder, "kb/loco") == "kb/loco/"
+    assert resolve_kiwifs_prefix(folder, "kb/lbw") == "kb/lbw/"
 
 
 def test_prefix_uses_the_git_remote_name(tmp_path: Path) -> None:
@@ -58,13 +58,13 @@ def test_prefix_uses_the_git_root_folder_without_a_remote(tmp_path: Path) -> Non
 
 
 def test_project_config_keeps_an_explicit_prefix(tmp_path) -> None:
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text("name: demo\nkiwifs_prefix: notes/demo\n", encoding="utf-8")
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text("name: demo\nkiwifs_prefix: notes/demo\n", encoding="utf-8")
     assert load_project(tmp_path).kiwifs_prefix == "notes/demo"
-    (loco / "config.yaml").write_text("name: demo\nkiwifs_prefix:\n", encoding="utf-8")
+    (lbw / "config.yaml").write_text("name: demo\nkiwifs_prefix:\n", encoding="utf-8")
     assert load_project(tmp_path).kiwifs_prefix == ""
-    (loco / "config.yaml").write_text("name: demo\n", encoding="utf-8")
+    (lbw / "config.yaml").write_text("name: demo\n", encoding="utf-8")
     assert load_project(tmp_path).kiwifs_prefix is None
 
 

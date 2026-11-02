@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from agent_loco.llm.client import AssistantTurn, ScriptedClient
-from agent_loco.progress import bind_progress, current_events, reset_progress
-from agent_loco.runtime.review import (
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient
+from agent_lbw.progress import bind_progress, current_events, reset_progress
+from agent_lbw.runtime.review import (
+    GoalReview,
     error_search_needle,
+    explain_miss,
     guard_only_fix,
     half_baked_diff_markers,
     is_open_pr_goal,
@@ -140,6 +142,58 @@ def test_parse_review_empty_is_unmet() -> None:
     assert review.parsed is False
 
 
+def test_parse_review_keeps_each_gap() -> None:
+    review = parse_review(
+        '{"met": false, "reason": "goal not met", '
+        '"gaps": ["app.py still raises NotImplementedError", "no caller uses rollback"]}'
+    )
+    assert review.gaps == (
+        "app.py still raises NotImplementedError",
+        "no caller uses rollback",
+    )
+
+
+def test_explain_miss_names_every_gap() -> None:
+    verdict = GoalReview(
+        False,
+        "goal not met",
+        gaps=("session.rollback is never called", "tests/test_db.py has no rollback case"),
+        ui_errors=("Rendered UI has a dead Rollback button",),
+    )
+    text = explain_miss(verdict)
+    assert "goal not met" not in text.splitlines()[0]
+    assert "session.rollback is never called" in text
+    assert "tests/test_db.py has no rollback case" in text
+    assert "dead Rollback button" in text
+    assert text.startswith("Still missing:")
+
+
+def test_review_goal_asks_again_when_the_miss_is_vague() -> None:
+    llm = ScriptedClient(
+        [
+            AssistantTurn(text='{"met": false, "reason": "goal not met"}'),
+            AssistantTurn(
+                text=(
+                    '{"met": false, "reason": "app.py still raises NotImplementedError", '
+                    '"gaps": ["add() does not return left + right"]}'
+                )
+            ),
+        ]
+    )
+    verdict = review_goal(
+        llm,
+        "Make add return the sum",
+        diff="+    raise NotImplementedError",
+        summary="left a stub",
+        tests_passed=True,
+    )
+    assert verdict.reason == "app.py still raises NotImplementedError"
+    assert verdict.gaps == ("add() does not return left + right",)
+    assert "NotImplementedError" in explain_miss(verdict)
+    assert "left + right" in explain_miss(verdict)
+    assert len(llm.calls) == 2
+
+
 def test_review_reason_includes_raw_snippet_when_unparsed() -> None:
     review = parse_review("Looks complete, discord.py is clearly newer.")
     text = review_reason(review)
@@ -230,17 +284,17 @@ def test_review_goal_existing_tree_uses_workspace_evidence() -> None:
 
 
 def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
-    from agent_loco.runtime.review import unwired_ui_markers
+    from agent_lbw.runtime.review import unwired_ui_markers
 
     stub = (
-        "diff --git a/src/agent_loco/templates/index.html b/src/agent_loco/templates/index.html\n"
-        "--- a/src/agent_loco/templates/index.html\n"
-        "+++ b/src/agent_loco/templates/index.html\n"
+        "diff --git a/src/agent_lbw/templates/index.html b/src/agent_lbw/templates/index.html\n"
+        "--- a/src/agent_lbw/templates/index.html\n"
+        "+++ b/src/agent_lbw/templates/index.html\n"
         '+            ? `<button type="button" class="rerun-btn" '
         'data-id="${task.id}">↻ Rerun</button>`\n'
-        "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
-        "--- a/src/agent_loco/web_ui.py\n"
-        "+++ b/src/agent_loco/web_ui.py\n"
+        "diff --git a/src/agent_lbw/web_ui.py b/src/agent_lbw/web_ui.py\n"
+        "--- a/src/agent_lbw/web_ui.py\n"
+        "+++ b/src/agent_lbw/web_ui.py\n"
         '+    @app.post("/api/tasks/{task_id}/rerun")\n'
         "+    def rerun_task(task_id: str) -> Any:\n"
         "+        return {}\n"
@@ -250,16 +304,16 @@ def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
     assert any("/rerun" in item for item in markers)
 
     wired = (
-        "diff --git a/src/agent_loco/templates/index.html b/src/agent_loco/templates/index.html\n"
-        "--- a/src/agent_loco/templates/index.html\n"
-        "+++ b/src/agent_loco/templates/index.html\n"
+        "diff --git a/src/agent_lbw/templates/index.html b/src/agent_lbw/templates/index.html\n"
+        "--- a/src/agent_lbw/templates/index.html\n"
+        "+++ b/src/agent_lbw/templates/index.html\n"
         '+            ? `<button type="button" class="rerun-btn" '
         'data-rerun-id="${task.id}">↻ Rerun</button>`\n'
         '+      const rerun = event.target.closest(".rerun-btn");\n'
         '+        const res = await fetch(`/api/tasks/${taskId}/rerun`, { method: "POST" });\n'
-        "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
-        "--- a/src/agent_loco/web_ui.py\n"
-        "+++ b/src/agent_loco/web_ui.py\n"
+        "diff --git a/src/agent_lbw/web_ui.py b/src/agent_lbw/web_ui.py\n"
+        "--- a/src/agent_lbw/web_ui.py\n"
+        "+++ b/src/agent_lbw/web_ui.py\n"
         '+    @app.post("/api/tasks/{task_id}/rerun")\n'
         "+    def rerun_task(task_id: str) -> Any:\n"
         "+        return {}\n"
@@ -268,57 +322,57 @@ def test_unwired_ui_markers_catch_dead_buttons_and_routes() -> None:
 
 
 def test_unwired_ui_markers_treat_event_source_as_a_client_call() -> None:
-    from agent_loco.runtime.review import unwired_ui_markers
+    from agent_lbw.runtime.review import unwired_ui_markers
 
     wired = (
-        "diff --git a/src/agent_loco/templates/index.html "
-        "b/src/agent_loco/templates/index.html\n"
-        "--- a/src/agent_loco/templates/index.html\n"
-        "+++ b/src/agent_loco/templates/index.html\n"
+        "diff --git a/src/agent_lbw/templates/index.html "
+        "b/src/agent_lbw/templates/index.html\n"
+        "--- a/src/agent_lbw/templates/index.html\n"
+        "+++ b/src/agent_lbw/templates/index.html\n"
         '+      source = new EventSource("/api/events/stream");\n'
-        "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
-        "--- a/src/agent_loco/web_ui.py\n"
-        "+++ b/src/agent_loco/web_ui.py\n"
+        "diff --git a/src/agent_lbw/web_ui.py b/src/agent_lbw/web_ui.py\n"
+        "--- a/src/agent_lbw/web_ui.py\n"
+        "+++ b/src/agent_lbw/web_ui.py\n"
         '+    @app.get("/api/events/stream")\n'
     )
     assert unwired_ui_markers(wired) == []
 
 
 def test_invalid_doc_commands_catch_docker_clone_and_overlay() -> None:
-    from agent_loco.runtime.review import invalid_doc_commands
+    from agent_lbw.runtime.review import invalid_doc_commands
 
     stub = (
         "diff --git a/README.md b/README.md\n"
         "--- a/README.md\n"
         "+++ b/README.md\n"
         "+docker clone git@github.com:user/repo.git /workspaces/my-repo\n"
-        "+loco frobnicate\n"
+        "+lbw frobnicate\n"
         "diff --git a/docker-compose.yml b/docker-compose.yml\n"
         "--- a/docker-compose.yml\n"
         "+++ b/docker-compose.yml\n"
-        "+      - ./.loco:/workspaces/.loco\n"
+        "+      - ./.lbw:/workspaces/.lbw\n"
     )
     markers = invalid_doc_commands(stub)
     assert any("docker clone" in item for item in markers)
-    assert any("loco frobnicate" in item for item in markers)
-    assert any("/workspaces/.loco" in item for item in markers)
+    assert any("lbw frobnicate" in item for item in markers)
+    assert any("/workspaces/.lbw" in item for item in markers)
 
     ok = (
         "diff --git a/README.md b/README.md\n"
         "--- a/README.md\n"
         "+++ b/README.md\n"
         "+docker compose run --rm agent clone git@github.com:user/repo.git\n"
-        "+loco init /workspaces/repo\n"
+        "+lbw init /workspaces/repo\n"
         "diff --git a/docker-compose.yml b/docker-compose.yml\n"
         "--- a/docker-compose.yml\n"
         "+++ b/docker-compose.yml\n"
-        "+      - ${LOCO_WORKSPACE:-./workspaces}:/workspaces\n"
+        "+      - ${LBW_WORKSPACE:-./workspaces}:/workspaces\n"
     )
     assert invalid_doc_commands(ok) == []
 
 
 def test_incomplete_agent_run_detects_iteration_limit() -> None:
-    from agent_loco.runtime.review import incomplete_agent_run
+    from agent_lbw.runtime.review import incomplete_agent_run
 
     assert incomplete_agent_run("done", "completed") is None
     assert incomplete_agent_run("Stopped after reaching the iteration limit.")
@@ -326,13 +380,13 @@ def test_incomplete_agent_run_detects_iteration_limit() -> None:
 
 
 def test_unused_new_symbols_catch_helpers_nothing_calls() -> None:
-    from agent_loco.runtime.review import unused_new_symbols
+    from agent_lbw.runtime.review import unused_new_symbols
 
     helper_only = (
-        "diff --git a/src/agent_loco/runtime/tasks.py "
-        "b/src/agent_loco/runtime/tasks.py\n"
-        "--- a/src/agent_loco/runtime/tasks.py\n"
-        "+++ b/src/agent_loco/runtime/tasks.py\n"
+        "diff --git a/src/agent_lbw/runtime/tasks.py "
+        "b/src/agent_lbw/runtime/tasks.py\n"
+        "--- a/src/agent_lbw/runtime/tasks.py\n"
+        "+++ b/src/agent_lbw/runtime/tasks.py\n"
         "     def list(self) -> list[Task]:\n"
         "         return list(self._tasks.values())\n"
         "+\n"
@@ -354,9 +408,9 @@ def test_unused_new_symbols_catch_helpers_nothing_calls() -> None:
     assert any("has_running_task" in item for item in markers)
 
     wired = (
-        helper_only + "diff --git a/src/agent_loco/web_ui.py b/src/agent_loco/web_ui.py\n"
-        "--- a/src/agent_loco/web_ui.py\n"
-        "+++ b/src/agent_loco/web_ui.py\n"
+        helper_only + "diff --git a/src/agent_lbw/web_ui.py b/src/agent_lbw/web_ui.py\n"
+        "--- a/src/agent_lbw/web_ui.py\n"
+        "+++ b/src/agent_lbw/web_ui.py\n"
         '+    @app.get("/api/tasks")\n'
         "+    def list_tasks(workspace_id: str | None = None) -> list[dict]:\n"
         "+        tasks = ui.manager.list_for_workspace(workspace_id)\n"

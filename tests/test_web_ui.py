@@ -9,12 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 from tests.support import init_git_repo
 
-from agent_loco.config import Settings
-from agent_loco.llm.client import model_ids_from_payload, normalize_model_base_url
-from agent_loco.runtime.improve import CycleResult
-from agent_loco.runtime.servers import remember_server
-from agent_loco.runtime.tasks import Task, TaskManager
-from agent_loco.web_ui import (
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import model_ids_from_payload, normalize_model_base_url
+from agent_lbw.runtime.improve import CycleResult
+from agent_lbw.runtime.servers import remember_server
+from agent_lbw.runtime.tasks import Task, TaskManager
+from agent_lbw.web_ui import (
     _PR_STATE_CACHE,
     _PR_STATE_LOCK,
     create_app,
@@ -128,10 +128,10 @@ def test_rerun_on_main_starts_clean_instead_of_resuming_the_dirty_tree(
         assert again.resume_branch is None
         assert again.resume_sha is None
         assert again.base_branch == "main"
-        first.branch = "loco/fix-the-player"
+        first.branch = "lbw/fix-the-player"
         feature = manager.rerun(first.id)
         assert feature is not None
-        assert feature.resume_branch == "loco/fix-the-player"
+        assert feature.resume_branch == "lbw/fix-the-player"
     finally:
         manager.shutdown(wait=False)
 
@@ -213,7 +213,7 @@ def test_continuous_queues_next_until_stopped(settings: Settings, tmp_path: Path
 
 
 def test_live_task_logs_follow_the_running_task(settings: Settings, tmp_path: Path) -> None:
-    from agent_loco.web_ui import _live_task_logs
+    from agent_lbw.web_ui import _live_task_logs
 
     gate = threading.Event()
 
@@ -248,7 +248,7 @@ def test_live_task_logs_follow_the_running_task(settings: Settings, tmp_path: Pa
 def test_serve_returns_after_keyboard_interrupt(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent_loco.web_ui import serve
+    from agent_lbw.web_ui import serve
 
     captured: dict[str, int | None] = {}
 
@@ -259,13 +259,13 @@ def test_serve_returns_after_keyboard_interrupt(
         def run(self) -> None:
             raise KeyboardInterrupt
 
-    monkeypatch.setattr("agent_loco.web_ui.uvicorn.Server", FakeServer)
+    monkeypatch.setattr("agent_lbw.web_ui.uvicorn.Server", FakeServer)
     serve(tmp_path, settings, host="127.0.0.1", port=8765)
     assert captured["timeout"] == 1
 
 
 def test_console_event_payload_splits_agent_and_model() -> None:
-    from agent_loco.web_ui import _console_event_payload
+    from agent_lbw.web_ui import _console_event_payload
 
     payload = _console_event_payload(
         {
@@ -274,7 +274,7 @@ def test_console_event_payload_splits_agent_and_model() -> None:
             "ok": True,
             "at": "2026-09-29T01:00:00Z",
             "messages": [
-                {"role": "system", "content": "You are loco."},
+                {"role": "system", "content": "You are lbw."},
                 {"role": "user", "content": "fix the live console colors"},
                 {"role": "assistant", "content": "I will look at index.html"},
             ],
@@ -301,9 +301,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert home.status_code == 200
         assert home.content.strip().startswith(b"<!DOCTYPE html>")
         assert b"</html>" in home.content
-        assert b"loco" in home.content
+        assert b"lbw" in home.content
         assert b'id="app-logo"' in home.content
-        assert b"<title>LoCO</title>" in home.content
+        assert b"<title>LBW</title>" in home.content
         assert b"<title>" in home.content
         assert b"<header>" not in home.content
         assert b'id="toggle-sidebar"' in home.content
@@ -401,7 +401,7 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'data-stage="' in home.content
         assert b"pinTimelineStage" in home.content
         assert b"function renderProgressStageBar(" in home.content
-        assert b"return board + (board ? \"\" : progressHtml) + renderTaskPanes" in home.content
+        assert b'return board + (board ? "" : progressHtml) + renderTaskPanes' in home.content
         assert b"${taskProgress}" not in home.content
         assert b"Before tests" in home.content
         assert b'event.kind === "lint"' in home.content
@@ -492,7 +492,7 @@ def test_web_ui_paginates_tasks_and_serves_favicon(settings: Settings, tmp_path:
         icon = client.get("/favicon.ico")
         assert icon.status_code == 200
         assert b"<svg" in icon.content
-        assert b"LoCO" in icon.content
+        assert b"LBW" in icon.content
         assert b"#c4e38a" in icon.content
         assert b"#11140f" in icon.content
         themes = client.get("/static/themes.css")
@@ -708,7 +708,7 @@ def test_web_ui_lists_models_from_requested_host(settings: Settings, tmp_path: P
         assert listed.json()["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert listed.json()["last_base_url"] == "http://10.0.0.8:8000/v1"
         assert listed.json()["last_model"] == "remote-coder"
-        saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))
+        saved = json.loads((tmp_path / ".lbw" / "servers.json").read_text(encoding="utf-8"))
         assert saved["servers"][0]["url"] == "http://10.0.0.8:8000/v1"
         assert saved["last_model"] == "remote-coder"
 
@@ -752,7 +752,7 @@ def test_list_models_skips_local_default_for_other_host(settings: Settings) -> N
 
 
 def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> None:
-    runs = tmp_path / ".loco" / "runs"
+    runs = tmp_path / ".lbw" / "runs"
     runs.mkdir(parents=True)
     (runs / "20260919T180000Z.json").write_text(
         '{"status": "success", "goal": "Past goal", "summary": "done"}\n',
@@ -784,10 +784,10 @@ def test_history_fills_token_window_from_current_model(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "agent_loco.web_ui.effective_context_window",
+        "agent_lbw.web_ui.effective_context_window",
         lambda *args, **kwargs: 32768,
     )
-    runs = tmp_path / ".loco" / "runs"
+    runs = tmp_path / ".lbw" / "runs"
     runs.mkdir(parents=True)
     (runs / "20260919T180000Z.json").write_text(
         json.dumps(
@@ -914,7 +914,7 @@ def test_task_and_history_polls_omit_llm_transcripts(settings: Settings, tmp_pat
 def test_history_load_reuses_unchanged_files(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent_loco.web_ui import UiState
+    from agent_lbw.web_ui import UiState
 
     (tmp_path / "history.json").write_text(
         json.dumps([{"status": "success", "goal": "cached"}]),
@@ -934,8 +934,8 @@ def test_history_load_reuses_unchanged_files(
         def boom(*_args: object, **_kwargs: object) -> object:
             raise AssertionError("history should be cached")
 
-        monkeypatch.setattr("agent_loco.web_ui.json.loads", boom)
-        monkeypatch.setattr("agent_loco.web_ui.json.load", boom)
+        monkeypatch.setattr("agent_lbw.web_ui.json.loads", boom)
+        monkeypatch.setattr("agent_lbw.web_ui.json.load", boom)
         second = ui.load_history(tmp_path)
         assert second is first
     finally:
@@ -964,7 +964,7 @@ def test_history_poll_skips_the_body_when_the_token_matches(
         def boom(*_args: object, **_kwargs: object) -> object:
             raise AssertionError("unchanged history should not be parsed again")
 
-        monkeypatch.setattr("agent_loco.web_ui.UiState.load_history", boom)
+        monkeypatch.setattr("agent_lbw.web_ui.UiState.load_history", boom)
         second = client.get("/api/history", params={"page_size": 100, "token": token})
         assert second.status_code == 200
         skipped = second.json()
@@ -985,12 +985,12 @@ def test_remember_server_dedupes_and_keeps_newest_first(tmp_path: Path) -> None:
     newer = remember_server(tmp_path, "http://10.0.0.9:11434/v1")
     assert newer[0]["url"] == "http://10.0.0.9:11434/v1"
     assert newer[1]["url"] == "http://10.0.0.8:8000/v1"
-    gitignore = (tmp_path / ".loco" / ".gitignore").read_text(encoding="utf-8")
+    gitignore = (tmp_path / ".lbw" / ".gitignore").read_text(encoding="utf-8")
     assert "*" in gitignore
-    assert ".loco/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert ".lbw/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
     remember_server(tmp_path, "http://10.0.0.8:8000/v1", model="remote-coder")
     remember_server(tmp_path, "http://10.0.0.8:8000/v1")
-    saved = json.loads((tmp_path / ".loco" / "servers.json").read_text(encoding="utf-8"))
+    saved = json.loads((tmp_path / ".lbw" / "servers.json").read_text(encoding="utf-8"))
     assert saved["last_base_url"] == "http://10.0.0.8:8000/v1"
     assert saved["last_model"] == "remote-coder"
 
@@ -1040,6 +1040,10 @@ def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_pa
         assert b'id="workspace-tabs"' not in home.content
         assert b'id="guidelines"' in home.content
         assert b'id="open-settings"' in home.content
+        sidebar = home.content.split(b'id="sidebar"', 1)[1].split(b"</aside>", 1)[0]
+        assert b'id="settings-dock"' in sidebar
+        assert b'id="open-profile"' in sidebar
+        assert b'id="theme-toggle"' in sidebar
         assert b'id="workspace-location"' in home.content
         assert b'id="workspace-summary"' in home.content
         assert b'class="icon-github"' in home.content
@@ -1085,7 +1089,7 @@ def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_pa
         selected = client.post("/api/workspaces/select", json={"path": str(other)})
         assert selected.status_code == 200
         assert selected.json()["current"] == str(other.resolve())
-        saved = json.loads((tmp_path / ".loco" / "workspaces.json").read_text(encoding="utf-8"))
+        saved = json.loads((tmp_path / ".lbw" / "workspaces.json").read_text(encoding="utf-8"))
         assert saved["last"] == str(other.resolve())
 
         created = client.post(
@@ -1095,7 +1099,7 @@ def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_pa
         assert created.status_code == 200
         fresh = tmp_path / "fresh-app"
         assert created.json()["current"] == str(fresh.resolve())
-        assert (fresh / ".loco" / "config.yaml").exists()
+        assert (fresh / ".lbw" / "config.yaml").exists()
         assert (fresh / ".git").exists()
 
         missing = client.post("/api/workspaces/select", json={"path": str(tmp_path / "nope")})
@@ -1116,7 +1120,7 @@ def test_web_ui_workspace_guidelines_and_tabs(settings: Settings, tmp_path: Path
         listed = client.get("/api/workspaces")
         body = listed.json()
         assert body["current"] == str(tmp_path.resolve())
-        assert "You are loco" in body["default_guidelines"]
+        assert "You are LBW" in body["default_guidelines"]
         assert body["custom_guidelines"] is False
         saved = client.put(
             "/api/workspaces/guidelines",
@@ -1165,9 +1169,9 @@ def test_web_ui_workspace_guidelines_and_tabs(settings: Settings, tmp_path: Path
 def test_web_ui_restores_last_workspace(settings: Settings, tmp_path: Path) -> None:
     last = tmp_path / "picked"
     last.mkdir()
-    loco = tmp_path / ".loco"
-    loco.mkdir()
-    (loco / "workspaces.json").write_text(
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    (lbw / "workspaces.json").write_text(
         json.dumps(
             {
                 "last": str(last.resolve()),
@@ -1297,7 +1301,7 @@ def test_web_ui_clones_repository_into_local_workspace(settings: Settings, tmp_p
         dest = tmp_path / "projects" / "checkout"
         assert cloned.json()["current"] == str(dest.resolve())
         assert (dest / "readme.txt").read_text(encoding="utf-8") == "hello\n"
-        assert (dest / ".loco" / "config.yaml").exists()
+        assert (dest / ".lbw" / "config.yaml").exists()
         again = client.post(
             "/api/workspaces/clone",
             json={"url": str(source), "parent": str(tmp_path / "projects"), "name": "checkout"},
@@ -1371,7 +1375,7 @@ def test_web_ui_lists_enables_and_clones_workspace_skills(
 def test_web_ui_progress_includes_file_history_and_timestamps(
     settings: Settings, tmp_path: Path
 ) -> None:
-    from agent_loco.progress import record_event
+    from agent_lbw.progress import record_event
 
     def runner(task: Task) -> CycleResult:
         record_event(
@@ -1450,11 +1454,11 @@ def test_web_ui_progress_includes_file_history_and_timestamps(
 
 
 def test_ui_screenshot_api_serves_pngs(settings: Settings, tmp_path: Path) -> None:
-    loco = tmp_path / ".loco"
-    shots = loco / "ui-screenshots"
+    lbw = tmp_path / ".lbw"
+    shots = lbw / "ui-screenshots"
     shots.mkdir(parents=True)
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
-    (loco / "ui-review.png").write_bytes(png)
+    (lbw / "ui-review.png").write_bytes(png)
     (shots / "ui-review_goal.png").write_bytes(png)
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
@@ -1476,8 +1480,8 @@ def test_ui_screenshot_api_serves_pngs(settings: Settings, tmp_path: Path) -> No
 def _github_workspace(root: Path) -> None:
     from tests.support import init_git_repo
 
-    from agent_loco.sandbox import Workspace
-    from agent_loco.tools.git import run_git
+    from agent_lbw.sandbox import Workspace
+    from agent_lbw.tools.git import run_git
 
     (root / "readme.txt").write_text("hello\n", encoding="utf-8")
     init_git_repo(root)
@@ -1533,7 +1537,7 @@ def test_web_ui_loads_github_issues_from_workspace_remote(
             "state": state,
         }
 
-    monkeypatch.setattr("agent_loco.runtime.importer.load_goals_from_issues", fake_load)
+    monkeypatch.setattr("agent_lbw.runtime.importer.load_goals_from_issues", fake_load)
     manager = TaskManager(settings, runner=lambda task: _ok_result())
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -1583,7 +1587,7 @@ def test_web_ui_reruns_failed_task(settings: Settings, tmp_path: Path) -> None:
     def runner(task: Task) -> CycleResult:
         status = next(statuses)
         if status == "failed":
-            return _failed_result(task.goal, branch="loco/feature")
+            return _failed_result(task.goal, branch="lbw/feature")
         return _ok_result(task.goal)
 
     manager = TaskManager(settings, runner=runner)
@@ -1619,7 +1623,7 @@ def test_web_ui_reruns_failed_task(settings: Settings, tmp_path: Path) -> None:
 def test_web_ui_updates_successful_task_on_its_branch(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", lambda _url: "open")
+    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", lambda _url: "open")
     seen: list[Task] = []
 
     def runner(task: Task) -> CycleResult:
@@ -1634,7 +1638,7 @@ def test_web_ui_updates_successful_task_on_its_branch(
             commit_sha="abc123",
             reason="completed",
             pr_url="https://example.test/pull/9",
-            branch="loco/feature",
+            branch="lbw/feature",
         )
 
     manager = TaskManager(settings, runner=runner)
@@ -1657,7 +1661,7 @@ def test_web_ui_updates_successful_task_on_its_branch(
             time.sleep(0.05)
         assert body is not None
         assert body["status"] == "success"
-        assert body["branch"] == "loco/feature"
+        assert body["branch"] == "lbw/feature"
         updated = client.post(
             f"/api/tasks/{task_id}/rerun",
             json={"goal": "Ship the panel\n\nAlso leave room for the PR link"},
@@ -1674,7 +1678,7 @@ def test_web_ui_updates_successful_task_on_its_branch(
                 break
             time.sleep(0.05)
         assert follow is not None
-        assert follow.resume_branch == "loco/feature"
+        assert follow.resume_branch == "lbw/feature"
         assert follow.resume_sha == "abc123"
     finally:
         manager.shutdown(wait=False)
@@ -1683,7 +1687,7 @@ def test_web_ui_updates_successful_task_on_its_branch(
 def test_web_ui_refuses_update_when_pull_request_is_not_open(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", lambda _url: "merged")
+    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", lambda _url: "merged")
 
     def runner(task: Task) -> CycleResult:
         return CycleResult(
@@ -1696,7 +1700,7 @@ def test_web_ui_refuses_update_when_pull_request_is_not_open(
             commit_sha="abc123",
             reason="completed",
             pr_url="https://example.test/pull/10",
-            branch="loco/feature",
+            branch="lbw/feature",
         )
 
     manager = TaskManager(settings, runner=runner)
@@ -1728,7 +1732,7 @@ def test_web_ui_refuses_update_when_pull_request_is_not_open(
                 "workspace": str(tmp_path),
                 "goal": "More context",
                 "pr_url": "https://example.test/pull/10",
-                "resume_branch": "loco/feature",
+                "resume_branch": "lbw/feature",
             },
         )
         assert queued.status_code == 409
@@ -1775,7 +1779,7 @@ def test_web_ui_reports_pull_request_states(
         return ""
 
     _clear_pr_state_cache()
-    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", fake_state)
+    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", fake_state)
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -1820,8 +1824,8 @@ def test_pull_status_caches_closed_and_merged_until_forced(
         return ""
 
     _clear_pr_state_cache()
-    monkeypatch.setattr("agent_loco.web_ui.pull_request_state", fake_state)
-    monkeypatch.setattr("agent_loco.web_ui._PR_STATE_TTL", 0)
+    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", fake_state)
+    monkeypatch.setattr("agent_lbw.web_ui._PR_STATE_TTL", 0)
     manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
     app = create_app(manager, default_workspace=tmp_path)
     client = TestClient(app)
@@ -1838,7 +1842,7 @@ def test_pull_status_caches_closed_and_merged_until_forced(
             urls[1]: "closed",
             urls[2]: "open",
         }
-        saved = json.loads((tmp_path / ".loco" / "pr-states.json").read_text(encoding="utf-8"))
+        saved = json.loads((tmp_path / ".lbw" / "pr-states.json").read_text(encoding="utf-8"))
         assert saved == {urls[0]: "merged", urls[1]: "closed"}
 
         calls.clear()
@@ -1867,12 +1871,12 @@ def test_pull_status_caches_closed_and_merged_until_forced(
             return ""
 
         calls.clear()
-        monkeypatch.setattr("agent_loco.web_ui.pull_request_state", unknown)
+        monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", unknown)
         missed = client.post("/api/pulls/status", json={"urls": urls, "force": True})
         assert set(calls) == set(urls)
         assert missed.json()["states"][urls[0]] == "merged"
         assert missed.json()["states"][urls[1]] == "closed"
-        kept = json.loads((tmp_path / ".loco" / "pr-states.json").read_text(encoding="utf-8"))
+        kept = json.loads((tmp_path / ".lbw" / "pr-states.json").read_text(encoding="utf-8"))
         assert kept == {urls[0]: "merged", urls[1]: "closed"}
 
         def reopened(url: str) -> str:
@@ -1884,10 +1888,10 @@ def test_pull_status_caches_closed_and_merged_until_forced(
             return ""
 
         calls.clear()
-        monkeypatch.setattr("agent_loco.web_ui.pull_request_state", reopened)
+        monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", reopened)
         opened = client.post("/api/pulls/status", json={"urls": urls, "force": True})
         assert opened.json()["states"][urls[1]] == "open"
-        kept = json.loads((tmp_path / ".loco" / "pr-states.json").read_text(encoding="utf-8"))
+        kept = json.loads((tmp_path / ".lbw" / "pr-states.json").read_text(encoding="utf-8"))
         assert kept == {urls[0]: "merged"}
     finally:
         _clear_pr_state_cache()
@@ -1910,7 +1914,7 @@ def test_submit_accepts_resume_branch(settings: Settings, tmp_path: Path) -> Non
             json={
                 "workspace": str(tmp_path),
                 "goal": "Continue the work",
-                "resume_branch": "loco/feature",
+                "resume_branch": "lbw/feature",
                 "auto_commit": False,
             },
         )
@@ -1920,7 +1924,7 @@ def test_submit_accepts_resume_branch(settings: Settings, tmp_path: Path) -> Non
             if listed and listed[0]["status"] not in {"queued", "running"}:
                 break
             time.sleep(0.05)
-        assert seen == ["loco/feature"]
+        assert seen == ["lbw/feature"]
     finally:
         manager.shutdown(wait=False)
 
@@ -1988,6 +1992,12 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b'data-rail="changes"' in home.content
         assert b'data-rail="releases"' in home.content
         assert b'id="release-list"' in home.content
+        assert b"function releaseBucket(" in home.content
+        assert b"for (const entry of workspaceRuns())" in home.content
+        assert b"No open pull requests." in home.content
+        assert b"No merged pull requests." in home.content
+        assert b"No closed pull requests." in home.content
+        assert b"release-group release-${bucket}" in home.content
         assert b"Ask for a change" in home.content
         assert b'id="theme-toggle"' in home.content
         assert b"function applyTheme(" in home.content
@@ -2000,9 +2010,24 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b'id="bypass-gates"' in home.content
         assert b'data-change-decision="build"' in home.content
         assert b'data-change-decision="approve"' in home.content
+        assert b'data-reply-continue="1"' in home.content
+        assert b"function continueChange(" in home.content
+        assert b"function sentBackText(" in home.content
+        assert b"function stepMetrics(" in home.content
+        assert b" tok" in home.content
+        assert b"${stepPill(step.pill[0], step.pill[1])}${usage}</summary>" in home.content
+        assert b'id="open-profile"' in home.content
+        assert b'id="org-name"' in home.content
+        assert b"Why it was sent back" in home.content
         layout = client.get("/static/layout.css")
         assert b".inbox" in layout.content
         assert b".step-card" in layout.content
+        assert b".reply-box" in layout.content
+        assert b".step-card > summary .step-usage" in layout.content
+        assert b".profile-panel" in layout.content
+        assert b".release-open" in layout.content
+        assert b".release-merged" in layout.content
+        assert b".release-closed" in layout.content
         catalog = client.get("/api/workspaces/roles", params={"path": str(tmp_path)})
         assert catalog.status_code == 200
         names = [role["name"] for role in catalog.json()["roles"]]
@@ -2175,5 +2200,84 @@ def test_waiting_change_accepts_build_and_rejects_a_late_decision(
         assert done["stage"] == "done"
         late = client.post(f"/api/tasks/{task_id}/decide", json={"decision": "build"})
         assert late.status_code == 409
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_sent_back_change_continues_from_a_note(settings: Settings, tmp_path: Path) -> None:
+    seen: list[tuple[str | None, str]] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append((task.decision, task.review_notes))
+        if task.decision == "continue":
+            return CycleResult(
+                status="success",
+                goal=task.goal,
+                summary="continued",
+                tests_passed=True,
+                committed=False,
+                published=False,
+                commit_sha=None,
+                reason="completed",
+                stage="done",
+            )
+        return CycleResult(
+            status="failed",
+            goal=task.goal,
+            summary="QA sent it back",
+            tests_passed=True,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="goal not met; PR skipped: missing a rollback test",
+            stage="review",
+            evidence=[
+                {
+                    "role": "qa",
+                    "title": "QA engineer",
+                    "job": "review",
+                    "verdict": "send_back",
+                    "summary": "missing a rollback test",
+                }
+            ],
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Roll back stuck transactions"},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        failed = None
+        for _ in range(50):
+            body = client.get(f"/api/tasks/{task_id}").json()
+            if body["status"] == "failed":
+                failed = body
+                break
+            time.sleep(0.05)
+        assert failed is not None
+        empty = client.post(f"/api/tasks/{task_id}/decide", json={"decision": "continue"})
+        assert empty.status_code == 400
+        continued = client.post(
+            f"/api/tasks/{task_id}/decide",
+            json={"decision": "continue", "note": "Cover the session.rollback path."},
+        )
+        assert continued.status_code == 200
+        done = None
+        for _ in range(50):
+            body = client.get(f"/api/tasks/{task_id}").json()
+            if body["status"] == "success":
+                done = body
+                break
+            time.sleep(0.05)
+        assert done is not None
+        assert seen[-1] == (
+            "continue",
+            "QA engineer: missing a rollback test\n\nCover the session.rollback path.",
+        )
     finally:
         manager.shutdown(wait=False)

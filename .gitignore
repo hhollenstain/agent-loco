@@ -17,6 +17,7 @@ build/
 
 # Local env and runtime
 history.json
+.lbw/
 .loco/
 .env
 .env.*

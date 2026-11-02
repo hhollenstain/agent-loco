@@ -2,11 +2,41 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_loco.agent.loop import CodingAgent
-from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.runtime.uireview import UiEvidence
-from agent_loco.sandbox import Workspace
-from agent_loco.tools import build_tools
+from agent_lbw.agent.loop import CodingAgent
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient, ToolCall
+from agent_lbw.runtime.uireview import UiEvidence
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools import build_tools
+
+
+def test_agent_stops_to_ask_the_user(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    tools = build_tools(
+        workspace,
+        test_command=None,
+        command_timeout_seconds=10,
+        git_author_name=None,
+        git_author_email=None,
+    )
+    llm = ScriptedClient(
+        [
+            AssistantTurn(
+                text=None,
+                tool_calls=[
+                    ToolCall(
+                        id="ask-1",
+                        name="ask_user",
+                        arguments={"question": "Which database should the rollback cover?"},
+                    )
+                ],
+            ),
+            AssistantTurn(text="I guessed."),
+        ]
+    )
+    result = CodingAgent(llm, tools, max_iterations=4).run("Fix stuck transactions")
+    assert result.stopped_reason == "ask"
+    assert result.question == "Which database should the rollback cover?"
+    assert result.tool_calls == 1
 
 
 def test_agent_writes_file_then_stops(tmp_path: Path) -> None:
@@ -85,7 +115,7 @@ def test_agent_logs_llm_response_time(tmp_path: Path, caplog) -> None:
             AssistantTurn(text="Wrote note.txt"),
         ]
     )
-    caplog.set_level(logging.INFO, logger="loco")
+    caplog.set_level(logging.INFO, logger="lbw")
     CodingAgent(llm, tools, max_iterations=5).run("Write note.txt")
     messages = [record.getMessage() for record in caplog.records]
     assert any(message.startswith("llm agent response in ") for message in messages)
@@ -183,7 +213,7 @@ def test_agent_nudges_through_multiple_plan_turns(tmp_path: Path) -> None:
 
 
 def test_looks_unfinished_detects_mid_work_replies() -> None:
-    from agent_loco.agent.loop import looks_unfinished
+    from agent_lbw.agent.loop import looks_unfinished
 
     assert looks_unfinished(
         "There are two failing tests - I need to fix the mocks. Let me update the tests:"
@@ -300,11 +330,11 @@ def test_agent_nudges_after_inspect_only_tools(tmp_path: Path) -> None:
 
 def test_agent_does_not_inspect_nudge_after_review_ui(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Queue task"),
     )
     tools = build_tools(
@@ -356,11 +386,11 @@ def test_agent_does_not_inspect_nudge_after_review_ui(tmp_path: Path, monkeypatc
 
 def test_agent_str_replace_counts_as_mutation(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(ok=True, snapshot="stages"),
     )
     tools = build_tools(
@@ -409,11 +439,11 @@ def test_agent_str_replace_counts_as_mutation(tmp_path: Path, monkeypatch) -> No
 
 def test_agent_accepts_qwen_xml_str_replace(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(ok=True, snapshot="stages"),
     )
     tools = build_tools(
@@ -492,11 +522,11 @@ def test_agent_require_change_keeps_going_until_edit(tmp_path: Path) -> None:
 
 def test_agent_requires_review_ui_after_html_edit(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Rerun"),
     )
     tools = build_tools(
@@ -634,12 +664,12 @@ def test_agent_requires_run_tests_after_readme_edit(tmp_path: Path) -> None:
 
 def test_agent_stops_rerunning_checks_when_code_does_not_change(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    marker = tmp_path / ".loco" / "runs.txt"
+    (tmp_path / ".lbw").mkdir()
+    marker = tmp_path / ".lbw" / "runs.txt"
     (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
     (tmp_path / "check.py").write_text(
         "from pathlib import Path\n"
-        "marker = Path('.loco/runs.txt')\n"
+        "marker = Path('.lbw/runs.txt')\n"
         "count = int(marker.read_text()) if marker.exists() else 0\n"
         "marker.write_text(str(count + 1))\n",
         encoding="utf-8",
@@ -693,11 +723,11 @@ def test_agent_stops_rerunning_checks_when_code_does_not_change(tmp_path: Path) 
 
 def test_agent_verifies_ui_itself_when_it_hits_the_turn_cap(tmp_path: Path, monkeypatch) -> None:
     workspace = Workspace(tmp_path)
-    (tmp_path / ".loco").mkdir()
-    (tmp_path / ".loco" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / ".lbw").mkdir()
+    (tmp_path / ".lbw" / "config.yaml").write_text("name: fixture\n", encoding="utf-8")
     (tmp_path / "ui.html").write_text("<main></main>\n", encoding="utf-8")
     monkeypatch.setattr(
-        "agent_loco.tools.browser.collect_ui_evidence",
+        "agent_lbw.tools.browser.collect_ui_evidence",
         lambda *args, **kwargs: UiEvidence(ok=True, snapshot="Rerun (72x24)"),
     )
     tools = build_tools(

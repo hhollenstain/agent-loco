@@ -1,6 +1,6 @@
-# agent-loco
+# LBW
 
-A home-lab coding agent that sits on a project, makes a change, runs that project's tests locally, and only then commits (and optionally publishes) the result. Create-PR also requires a separate review that the diff actually fulfills the stated goal — green tests alone are not enough.
+Look both ways. LBW sits on a project, makes a change, runs that project's tests locally, and only then commits (and optionally publishes) the result. Create-PR also requires a separate review that the diff actually fulfills the stated goal — green tests alone are not enough.
 
 ## Install / Quick start
 
@@ -13,7 +13,7 @@ uv sync --extra dev
 
 CLI entry point:
 ```bash
-loco --help
+lbw --help
 ```
 
 Test / lint:
@@ -25,7 +25,7 @@ ruff check src tests
 
 See the bundled demo:
 - `examples/demo-project/`
-- Skill conventions: `skills/agent-loco/SKILL.md`
+- Skill conventions: `skills/agent-lbw/SKILL.md`
 
 The agent process is the same on an Apple Silicon MacBook and on a Linux box with an NVIDIA GPU. Inference is a separate OpenAI-compatible server:
 
@@ -45,14 +45,14 @@ A change moves through roles you can turn on, turn off, or add:
 The web UI waits before any code and again before the pull request. Changes
 in the left menu groups every project into waiting for you, in progress, and
 done, and shows the step each change is on. Uncheck one gate
-to skip that review, or bypass all gates. Keep improving, `loco run`, and
-`loco watch` pass the gates themselves. Builder and QA stay on. Add a review
-role at `.loco/roles/<name>/ROLE.md` (`job: review`) and enable it from the
-Roles panel or `roles.enabled` in `.loco/config.yaml`. `loco roles` lists
+to skip that review, or bypass all gates. Keep improving, `lbw run`, and
+`lbw watch` pass the gates themselves. Builder and QA stay on. Add a review
+role at `.lbw/roles/<name>/ROLE.md` (`job: review`) and enable it from the
+Roles panel or `roles.enabled` in `.lbw/config.yaml`. `lbw roles` lists
 the catalog.
 
 ```
-  loco run / watch          loco ui
+  lbw run / watch          lbw ui
         │                       │
         ├─ architect plans      ├─ architect plans, then waits
         ├─ builder writes       ├─ you choose Build or Hand off
@@ -82,14 +82,14 @@ Docker is optional. This repo's own tests do not need a model or a GPU.
 ## Local MacBook
 
 ```bash
-cd agent-loco
+cd agent-lbw
 cp .env.example .env
 uv sync --extra dev
 uv run pytest -q
-uv run loco doctor
+uv run lbw doctor
 ```
 
-`doctor` tells you whether you are on Apple Silicon or NVIDIA, which backend to use, and whether the model endpoint is reachable. `LOCO_MODEL_NAME` must match a name from `ollama list` (on this Mac that is `Qwen2.5-Coder:14b`, not the library alias).
+`doctor` tells you whether you are on Apple Silicon or NVIDIA, which backend to use, and whether the model endpoint is reachable. `LBW_MODEL_NAME` must match a name from `ollama list` (on this Mac that is `Qwen2.5-Coder:14b`, not the library alias).
 
 Point the agent at the bundled demo (it has a failing test on purpose):
 
@@ -100,62 +100,73 @@ git add -A
 git commit -m "Initial demo project"
 cd ../..
 
-uv run loco init examples/demo-project
-uv run loco run --workspace examples/demo-project --goal "Make the test suite pass."
+uv run lbw init examples/demo-project
+uv run lbw run --workspace examples/demo-project --goal "Make the test suite pass."
 ```
 
-Continuous mode, using `.loco/goals.md` plus failing tests as the backlog:
+Continuous mode, using `.lbw/goals.md` plus failing tests as the backlog:
 
 ```bash
-uv run loco watch --workspace /path/to/your/project
+uv run lbw watch --workspace /path/to/your/project
 ```
 
 Attach any local git checkout. The agent will not read or write outside that workspace.
 
-Local models often cannot hold the context the server advertises. Set `LOCO_CONTEXT_WINDOW` (or `--context-window`, or the Context window field in the web UI) to the number of tokens this machine can run, for example `8192`. Loco fits each prompt to that window and, on Ollama, sends it as `num_ctx`. Leave it unset to use the window the server reports.
+Local models often cannot hold the context the server advertises. Set `LBW_CONTEXT_WINDOW` (or `--context-window`, or the Context window field in the web UI) to the number of tokens this machine can run, for example `8192`. LBW fits each prompt to that window and, on Ollama, sends it as `num_ctx`. Leave it unset to use the window the server reports.
 
-The web UI (`loco ui`) lets you queue cycles, pick an LLM server, choose a model from that host, and switch workspaces. Browse local folders, create a new loco project, or clone a git repo onto this machine so you can run and open PRs locally. Remembered folders live in `.loco/workspaces.json`. Archive a tab to hide it from the session, or remove it from the list; neither deletes the folder on disk. The default LLM server is local Ollama at `http://127.0.0.1:11434/v1`. Change the LLM server field (host:port or a full `/v1` URL) and load models to point at another OpenAI-compatible endpoint. Used servers are remembered in `.loco/servers.json` so they stay selectable after a refresh or restart. `--base-url` on `run`, `watch`, and `ui` does the same from the CLI.
+The web UI (`lbw ui`) lets you queue cycles, pick an LLM server, choose a model from that host, and switch workspaces. Browse local folders, create a new LBW project, or clone a git repo onto this machine so you can run and open PRs locally. Remembered folders live in `.lbw/workspaces.json`. Archive a tab to hide it from the session, or remove it from the list; neither deletes the folder on disk. The default LLM server is local Ollama at `http://127.0.0.1:11434/v1`. Change the LLM server field (host:port or a full `/v1` URL) and load models to point at another OpenAI-compatible endpoint. Used servers are remembered in `.lbw/servers.json` so they stay selectable after a refresh or restart. `--base-url` on `run`, `watch`, and `ui` does the same from the CLI.
 
 ## Onboard a project
 
 ```bash
-uv run loco init /path/to/your/project
+uv run lbw init /path/to/your/project
 ```
 
 That writes:
 
 ```text
-.loco/config.yaml   # test command, publish settings
-.loco/goals.md      # checkbox backlog the watcher consumes
-.loco/runs/         # JSON logs written after every cycle
-.loco/servers.json  # remembered LLM hosts for the web UI
-.loco/workspaces.json  # remembered folders for the workspace picker
+.lbw/config.yaml   # test command, publish settings
+.lbw/goals.md      # checkbox backlog the watcher consumes
+.lbw/runs/         # JSON logs written after every cycle
+.lbw/servers.json  # remembered LLM hosts for the web UI
+.lbw/workspaces.json  # remembered folders for the workspace picker
+.lbw/lbw.db       # organization and people (SQLite)
 ```
 
-If `test_command` is omitted, loco infers one (`pytest`, `npm test`, `make test`, `cargo test`, `go test`).
+If `test_command` is omitted, LBW infers one (`pytest`, `npm test`, `make test`, `cargo test`, `go test`).
 
 New workspaces enable the bundled process skills: debug, explore, implement,
 research, review, security, tdd, ui, and kiwi. Turn them on or off in the Skills
 panel. They are the agent's process. The kiwi skill is the one that tells the
 agent how to use a KiwiFS server.
 
-Publish/create-PR is off until you turn it on in `.loco/config.yaml` or pass `--create-pr`. That option opens a feature branch and pull request; it never pushes to `main`. Commits still require a green test run when `LOCO_REQUIRE_TESTS=true`.
+Publish/create-PR is off until you turn it on in `.lbw/config.yaml` or pass `--create-pr`. That option opens a feature branch and pull request; it never pushes to `main`. Commits still require a green test run when `LBW_REQUIRE_TESTS=true`.
 
 ## Containerized
 
 The agent image is multi-arch (`linux/arm64` and `linux/amd64`) and does **not** need a GPU. Mount a host directory at `/workspaces` and talk to a model server.
 
-`LOCO_WORKSPACE` (default `./workspaces`) is the only project volume. Cloned repos and each project's `.loco/` (config, goals, run history) persist on the host because they live *inside* that folder. Do not bind-mount this app's `.loco` over `/workspaces/.loco`; that hides the mounted project's own config.
+`LBW_WORKSPACE` (default `./workspaces`) is the only project volume. Cloned repos and each project's `.lbw/` (config, goals, run history) persist on the host because they live *inside* that folder. Do not bind-mount this app's `.lbw` over `/workspaces/.lbw`; that hides the mounted project's own config.
 
 `docker compose up` starts the web UI on [http://127.0.0.1:8080](http://127.0.0.1:8080). One-off commands replace that with `run`, `clone`, `init`, `watch`, or `doctor`.
 
+With no `LBW_DATABASE_URL`, the organization and its people are stored in SQLite at `.lbw/lbw.db` on the install. `make up-local` rebuilds the `agent-lbw:local` image when the files it copies have changed, then starts Postgres and the web UI on this machine at [http://127.0.0.1:8080](http://127.0.0.1:8080), with the UI pointed at that database. `WORKSPACE` defaults to `examples/demo-project` and `PORT` defaults to `8080`. Stopping the UI stops Postgres.
+
+To run the agent container against the same database:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up
+```
+
+Postgres listens on `127.0.0.1:5432` (`lbw` / `lbw`, database `lbw`). Its files stay in the `lbw-postgres` Docker volume, so the organization and people survive a restart. With Postgres stopped, `docker volume rm lbw-postgres` drops that data. The agent container receives `LBW_DATABASE_URL` on the compose network. Project files, run logs, and remembered folders stay on disk.
+
 ### Clone a repo into the container
 
-`git` is in the image; the entrypoint is `loco`, so clone with `loco clone` (or clone on the host into `$LOCO_WORKSPACE`). The destination must not exist yet — clone first, then `init` only if you still need scaffolding.
+`git` is in the image; the entrypoint is `lbw`, so clone with `lbw clone` (or clone on the host into `$LBW_WORKSPACE`). The destination must not exist yet — clone first, then `init` only if you still need scaffolding.
 
 ```bash
 mkdir -p workspaces
-export LOCO_WORKSPACE="$(pwd)/workspaces"
+export LBW_WORKSPACE="$(pwd)/workspaces"
 docker compose run --rm agent clone git@github.com:user/repo.git
 docker compose run --rm agent init /workspaces/repo
 docker compose run --rm agent run -w /workspaces/repo --goal "Add a README.md"
@@ -164,7 +175,7 @@ docker compose run --rm agent run -w /workspaces/repo --goal "Add a README.md"
 Private GitHub repos need the SSH mount in `docker-compose.yml` uncommented, or clone on the host:
 
 ```bash
-git clone git@github.com:user/repo.git "$LOCO_WORKSPACE/repo"
+git clone git@github.com:user/repo.git "$LBW_WORKSPACE/repo"
 ```
 
 ### Mac + Docker Desktop
@@ -172,7 +183,7 @@ git clone git@github.com:user/repo.git "$LOCO_WORKSPACE/repo"
 Keep Ollama on the host (Metal), then:
 
 ```bash
-export LOCO_WORKSPACE="$(pwd)/workspaces"
+export LBW_WORKSPACE="$(pwd)/workspaces"
 docker compose -f docker-compose.yml -f docker-compose.mac.yml run --rm agent doctor
 docker compose -f docker-compose.yml -f docker-compose.mac.yml up --build
 # UI: http://127.0.0.1:8080
@@ -191,8 +202,8 @@ On the Linux host:
 Then:
 
 ```bash
-export LOCO_WORKSPACE="$(pwd)/workspaces"
-export LOCO_MODEL_NAME=qwen2.5-coder:32b
+export LBW_WORKSPACE="$(pwd)/workspaces"
+export LBW_MODEL_NAME=qwen2.5-coder:32b
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up --build -d ollama
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml exec ollama ollama pull qwen2.5-coder:32b
 docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent doctor
@@ -202,26 +213,26 @@ docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm agent
   watch --workspace /workspaces/repo
 ```
 
-A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LOCO_MODEL_NAME` if you prefer vLLM or a larger quant. Any server that speaks `/v1/chat/completions` works; set `LOCO_MODEL_BASE_URL` accordingly.
+A 32B coder model is a reasonable default on a 32 GB 5090. Swap `LBW_MODEL_NAME` if you prefer vLLM or a larger quant. Any server that speaks `/v1/chat/completions` works; set `LBW_MODEL_BASE_URL` accordingly.
 
 ## KiwiFS
 
-Loco keeps project memory in [KiwiFS](https://github.com/kiwifs/kiwifs), a markdown knowledge base with search. A local model cannot hold the repository and a pile of notes in one prompt. The agent asks KiwiFS for a short brief, then writes the conclusion back so the next cycle does not rediscover it.
+LBW keeps project memory in [KiwiFS](https://github.com/kiwifs/kiwifs), a markdown knowledge base with search. A local model cannot hold the repository and a pile of notes in one prompt. The agent asks KiwiFS for a short brief, then writes the conclusion back so the next cycle does not rediscover it.
 
 The default server is the one already running on this machine:
 
 ```bash
 curl -sS http://127.0.0.1:3333/api/kiwi/context
-uv run loco doctor
+uv run lbw doctor
 ```
 
-`doctor` reports whether that server answers. `LOCO_KIWIFS_URL` overrides the address. Set it empty to turn the tools off. If the server requires a key, set `LOCO_KIWIFS_API_KEY` (sent as `Authorization: Bearer …`).
+`doctor` reports whether that server answers. `LBW_KIWIFS_URL` overrides the address. Set it empty to turn the tools off. If the server requires a key, set `LBW_KIWIFS_API_KEY` (sent as `Authorization: Bearer …`).
 
 ### One base, one folder per project
 
-Reads search the whole base, including guides that are already there. Writes stay under `projects/<name>/`, so a cycle cannot overwrite `guides/` or `getting-started/`. For a git repo, `<name>` is the origin repository (`agent-loco` from `github.com/you/agent-loco.git`), including when loco is pointed at a subdirectory. A folder that is not a git repo uses that folder's name. A repo with no remote uses the git root folder's name. Set `kiwifs_prefix` in `.loco/config.yaml` to use a different folder. `LOCO_KIWIFS_PREFIX` does the same when the project config does not. An explicit empty `kiwifs_prefix:` removes the fence and lets writes land anywhere in the base.
+Reads search the whole base, including guides that are already there. Writes stay under `projects/<name>/`, so a cycle cannot overwrite `guides/` or `getting-started/`. For a git repo, `<name>` is the origin repository (`agent-lbw` from `github.com/you/agent-lbw.git`), including when LBW is pointed at a subdirectory. A folder that is not a git repo uses that folder's name. A repo with no remote uses the git root folder's name. Set `kiwifs_prefix` in `.lbw/config.yaml` to use a different folder. `LBW_KIWIFS_PREFIX` does the same when the project config does not. An explicit empty `kiwifs_prefix:` removes the fence and lets writes land anywhere in the base.
 
-New projects enable the bundled `kiwi` skill. On a project that already has `.loco/config.yaml`, add `kiwi` under `skills.enabled`.
+New projects enable the bundled `kiwi` skill. On a project that already has `.lbw/config.yaml`, add `kiwi` under `skills.enabled`.
 
 ### How a small model should use it
 
@@ -246,10 +257,10 @@ Keyword search does not need a second model. Leave vector search off while the c
 A container does not see the host's `localhost`. On Docker Desktop, point at the host:
 
 ```bash
-export LOCO_KIWIFS_URL=http://host.docker.internal:3333
+export LBW_KIWIFS_URL=http://host.docker.internal:3333
 ```
 
-The Mac compose file uses that address unless `LOCO_KIWIFS_URL` is already set.
+The Mac compose file uses that address unless `LBW_KIWIFS_URL` is already set.
 
 ## Safety
 
@@ -258,8 +269,8 @@ The Mac compose file uses that address unless `LOCO_KIWIFS_URL` is already set.
   loopback, and link-local addresses are rejected.
 - Likely secrets (`.env`, keys, `credentials.json`) cannot be committed.
 - Force-push and `--no-verify` are not available.
-- Auto-commit is skipped when tests fail and `LOCO_REQUIRE_TESTS` is on.
-- Create-PR never pushes to `main`/`master`. It opens a `loco/*` branch and a pull request instead.
+- Auto-commit is skipped when tests fail and `LBW_REQUIRE_TESTS` is on.
+- Create-PR never pushes to `main`/`master`. It opens an `lbw/*` branch and a pull request instead.
 
 This is still a coding agent with a shell inside a trusted workspace. Do not point it at a tree you would not edit yourself.
 
@@ -267,11 +278,11 @@ This is still a coding agent with a shell inside a trusted workspace. Do not poi
 
 | Command | Purpose |
 | --- | --- |
-| `loco doctor` | Hardware, git/docker, model health, KiwiFS |
-| `loco init [path]` | Write `.loco/` scaffolding (path must already exist) |
-| `loco clone URL [DIR]` | `git clone` into `DIR` or `./<repo>` and write `.loco/` |
-| `loco run -w PATH -g "..." -m MODEL --base-url URL` | One improve → test → commit cycle |
-| `loco ui -w PATH --base-url URL` | Local web UI to queue and run tasks (`--web-ui` on `run` also works) |
-| `loco watch -w PATH` | Repeat cycles on an interval |
+| `lbw doctor` | Hardware, git/docker, model health, KiwiFS |
+| `lbw init [path]` | Write `.lbw/` scaffolding (path must already exist) |
+| `lbw clone URL [DIR]` | `git clone` into `DIR` or `./<repo>` and write `.lbw/` |
+| `lbw run -w PATH -g "..." -m MODEL --base-url URL` | One improve → test → commit cycle |
+| `lbw ui -w PATH --base-url URL` | Local web UI to queue and run tasks (`--web-ui` on `run` also works) |
+| `lbw watch -w PATH` | Repeat cycles on an interval |
 
 Environment variables are listed in `.env.example`.

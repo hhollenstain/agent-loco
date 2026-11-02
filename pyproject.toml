@@ -1,7 +1,7 @@
 [project]
-name = "agent-loco"
+name = "agent-lbw"
 version = "0.1.0"
-description = "Home-lab coding agent that improves projects, tests locally, and publishes green commits."
+description = "Look both ways. Plans a change, builds it, and holds the merge until the goal is met."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -22,6 +22,7 @@ dependencies = [
     "playwright>=1.49",
     "mempalace>=3.10",
     "docker>=7.0",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,7 @@ browser = [
 ]
 
 [project.scripts]
-loco = "agent_loco.cli:app"
+lbw = "agent_lbw.cli:app"
 
 [build-system]
 requires = ["setuptools>=75", "wheel"]
@@ -47,7 +48,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-agent_loco = ["templates/*.html", "static/*.css", "static/*.svg", "templates/Dockerfile.sandbox", "skills/*/SKILL.md", "roles/*/ROLE.md"]
+agent_lbw = ["templates/*.html", "static/*.css", "static/*.svg", "templates/Dockerfile.sandbox", "skills/*/SKILL.md", "roles/*/ROLE.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

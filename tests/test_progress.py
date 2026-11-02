@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from agent_loco.llm.client import AssistantTurn, ScriptedClient
-from agent_loco.logging import UtcFormatter, format_elapsed, utcnow_iso
-from agent_loco.progress import (
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient
+from agent_lbw.logging import UtcFormatter, format_elapsed, utcnow_iso
+from agent_lbw.progress import (
     bind_progress,
     clip_output,
     current_events,
@@ -18,7 +18,7 @@ from agent_loco.progress import (
 
 def test_utc_formatter_uses_iso_timestamps() -> None:
     record = logging.LogRecord(
-        name="loco",
+        name="lbw",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,

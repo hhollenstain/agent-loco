@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_loco.llm.toolparse import parse_tool_calls
+from agent_lbw.llm.toolparse import parse_tool_calls
 
 
 def test_parse_fenced_json() -> None:
@@ -21,7 +21,7 @@ def test_ignores_unknown_tools() -> None:
 def test_parse_qwen_xml_function_call() -> None:
     text = """<tool_call>
 <function=str_replace>
-<parameter=path>src/agent_loco/templates/index.html</parameter>
+<parameter=path>src/agent_lbw/templates/index.html</parameter>
 <parameter=old_string>
 <div class="task"></div>
 </parameter>
@@ -34,7 +34,7 @@ def test_parse_qwen_xml_function_call() -> None:
     assert len(calls) == 1
     assert calls[0].name == "str_replace"
     assert calls[0].arguments == {
-        "path": "src/agent_loco/templates/index.html",
+        "path": "src/agent_lbw/templates/index.html",
         "old_string": '<div class="task"></div>',
         "new_string": '<div class="task-stages">progress</div>',
     }
@@ -64,13 +64,13 @@ def test_parse_atem_function_calls() -> None:
     text = """<|start|>assistant to=read_file<|message|>
 <atem:function_calls>
 <atem:invoke name="read_file">
-<atem:parameter name="path">src/agent_loco/cli.py</atem:parameter>
+<atem:parameter name="path">src/agent_lbw/cli.py</atem:parameter>
 </atem:invoke>
 </atem:function_calls>"""
     calls = parse_tool_calls(text, {"read_file", "write_file"})
     assert len(calls) == 1
     assert calls[0].name == "read_file"
-    assert calls[0].arguments == {"path": "src/agent_loco/cli.py"}
+    assert calls[0].arguments == {"path": "src/agent_lbw/cli.py"}
 
 
 def test_parse_atem_invoke_without_wrapper() -> None:
@@ -101,9 +101,9 @@ def test_parse_atem_namespaced_tool() -> None:
 def test_parse_json_embedded_in_prose() -> None:
     text = (
         "Let's inspect the dependencies and then decide.\n\n"
-        '{"name": "read_file", "arguments": {"path": "src/agent_loco/cli.py"}}'
+        '{"name": "read_file", "arguments": {"path": "src/agent_lbw/cli.py"}}'
     )
     calls = parse_tool_calls(text, {"read_file", "write_file"})
     assert len(calls) == 1
     assert calls[0].name == "read_file"
-    assert calls[0].arguments == {"path": "src/agent_loco/cli.py"}
+    assert calls[0].arguments == {"path": "src/agent_lbw/cli.py"}

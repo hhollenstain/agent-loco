@@ -4,21 +4,21 @@ from pathlib import Path
 
 from tests.support import init_git_repo
 
-from agent_loco.config import Settings
-from agent_loco.llm.client import AssistantTurn, ScriptedClient, ToolCall
-from agent_loco.runtime.improve import run_cycle
-from agent_loco.runtime.roles import (
+from agent_lbw.config import Settings
+from agent_lbw.llm.client import AssistantTurn, ScriptedClient, ToolCall
+from agent_lbw.runtime.improve import run_cycle
+from agent_lbw.runtime.roles import (
     list_roles,
     optional_review_roles,
     parse_role_verdict,
     save_enabled_roles,
 )
-from agent_loco.sandbox import Workspace
-from agent_loco.tools.git import current_sha, has_changes
+from agent_lbw.sandbox import Workspace
+from agent_lbw.tools.git import current_sha, has_changes
 
 
 def test_catalog_includes_bundled_roles_and_a_local_one(tmp_path: Path) -> None:
-    role_dir = tmp_path / ".loco" / "roles" / "policy"
+    role_dir = tmp_path / ".lbw" / "roles" / "policy"
     role_dir.mkdir(parents=True)
     (role_dir / "ROLE.md").write_text(
         "---\nname: policy\ntitle: Policy reviewer\njob: review\n"
@@ -84,9 +84,9 @@ def _broken_adder(root: Path) -> None:
         "from app import add\nassert add(2, 3) == 5\n",
         encoding="utf-8",
     )
-    loco = root / ".loco"
-    loco.mkdir()
-    (loco / "config.yaml").write_text(
+    lbw = root / ".lbw"
+    lbw.mkdir()
+    (lbw / "config.yaml").write_text(
         "name: fixture\n"
         "test_command: python3 check.py\n"
         "max_repair_attempts: 0\n"
@@ -94,8 +94,8 @@ def _broken_adder(root: Path) -> None:
         "goals_file: goals.md\n",
         encoding="utf-8",
     )
-    (loco / "goals.md").write_text("- [ ] Make the adder work\n", encoding="utf-8")
-    (root / ".gitignore").write_text(".loco/\n", encoding="utf-8")
+    (lbw / "goals.md").write_text("- [ ] Make the adder work\n", encoding="utf-8")
+    (root / ".gitignore").write_text(".lbw/\n", encoding="utf-8")
     init_git_repo(root)
 
 
@@ -200,7 +200,7 @@ def test_skipping_pull_request_review_commits_after_the_plan(
 
 def test_enabled_review_role_can_block_the_commit(tmp_path: Path, settings: Settings) -> None:
     _broken_adder(tmp_path)
-    role_dir = tmp_path / ".loco" / "roles" / "policy"
+    role_dir = tmp_path / ".lbw" / "roles" / "policy"
     role_dir.mkdir(parents=True)
     (role_dir / "ROLE.md").write_text(
         "---\nname: policy\ntitle: Policy reviewer\njob: review\n"

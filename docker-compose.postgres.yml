@@ -1,0 +1,31 @@
+# Production-like database. Use it with the agent compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up
+# The agent then stores the organization and its people in Postgres.
+# Host checks use the published port:
+#   LBW_DATABASE_URL=postgresql://lbw:lbw@127.0.0.1:5432/lbw uv run pytest -q tests/test_account.py
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lbw
+      POSTGRES_PASSWORD: lbw
+      POSTGRES_DB: lbw
+    ports:
+      - "${LBW_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - lbw-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lbw -d lbw"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+  agent:
+    environment:
+      LBW_DATABASE_URL: postgresql://lbw:lbw@postgres:5432/lbw
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  lbw-postgres:
+    name: lbw-postgres
