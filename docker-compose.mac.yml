@@ -7,4 +7,4 @@ services:
     environment:
       LBW_MODEL_BASE_URL: ${LBW_MODEL_BASE_URL:-http://host.docker.internal:11434/v1}
       LBW_MODEL_NAME: ${LBW_MODEL_NAME:-qwen2.5-coder:14b}
-      LBW_KIWIFS_URL: ${LBW_KIWIFS_URL:-http://host.docker.internal:3333}
+      LBW_KIWIFS_URL: ${LBW_KIWIFS_URL:-http://kiwifs:3333}

@@ -89,6 +89,16 @@ def _clean_prefix(value: str) -> str:
     return f"{rel}/"
 
 
+_SPACE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def _space_name(name: str) -> str:
+    cleaned = (name or "").strip()
+    if not _SPACE_NAME.fullmatch(cleaned):
+        raise KiwiError("invalid space")
+    return cleaned
+
+
 def _relative_path(path: str) -> str:
     rel = (path or "").strip().replace("\\", "/").lstrip("/")
     if not rel:
@@ -121,6 +131,7 @@ class KiwiFS:
         api_key: str = "",
         actor: str = "lbw",
         prefix: str = "",
+        space: str = "",
         client: httpx.Client | None = None,
         timeout: float = 15.0,
     ) -> None:
@@ -128,8 +139,45 @@ class KiwiFS:
         self.api_key = (api_key or "").strip()
         self.actor = (actor or "lbw").strip() or "lbw"
         self.prefix = _clean_prefix(prefix) if (prefix or "").strip() else ""
+        self.space = _space_name(space) if (space or "").strip() else ""
         self._client = client
         self.timeout = timeout
+
+    def in_space(self, name: str) -> KiwiFS:
+        """A client that reads and writes one space and no other."""
+        return KiwiFS(
+            self.base_url,
+            api_key=self.api_key,
+            actor=self.actor,
+            prefix="",
+            space=name,
+            client=self._client,
+            timeout=self.timeout,
+        )
+
+    def ensure_space(self, name: str) -> None:
+        """Create the space when it is missing. A 409 means it is already there."""
+        cleaned = _space_name(name)
+        try:
+            self._json(
+                "POST",
+                "/api/spaces",
+                json={"name": cleaned, "template": "blank"},
+                space="",
+            )
+        except KiwiError as exc:
+            if "KiwiFS 409" in str(exc):
+                return
+            raise
+
+    def raw(self, path: str) -> str:
+        rel = _relative_path(path)
+        return self._send("GET", "/api/kiwi/file", params={"path": rel}).text
+
+    def delete(self, path: str) -> str:
+        rel = self._write_path(path)
+        self._send("DELETE", "/api/kiwi/file", params={"path": rel})
+        return f"deleted {rel}"
 
     def search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict[str, Any]]:
         cleaned = (query or "").strip()
@@ -260,6 +308,10 @@ class KiwiFS:
 
     def _send(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         headers = dict(kwargs.pop("headers", {}) or {})
+        space = kwargs.pop("space", None)
+        chosen = self.space if space is None else space
+        if chosen:
+            headers["X-Kiwi-Space"] = chosen
         headers.setdefault("X-Actor", self.actor)
         if self.api_key:
             token = self.api_key

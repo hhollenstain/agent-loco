@@ -904,14 +904,22 @@ def unverified_interactive_ui(goal: str, evidence: UiEvidence) -> str | None:
                 "search and status filters were not verified"
             )
     if re.search(r"\bskills?\b", goal or "", re.I) and re.search(
-        r"skills-panel|open-skills", snapshot, re.I
+        r"skills-panel|open-skills|skills-view|data-rail=\"skills\"", snapshot, re.I
     ):
-        if "open-skills" not in clicked and "skills-panel" not in clicked:
+        if (
+            "open-skills" not in clicked
+            and "skills-panel" not in clicked
+            and 'data-rail="skills"' not in clicked
+        ):
             return "Rendered UI never opened Skills; the control was not clicked"
     if re.search(r"\bguidelines?\b|\brules?\b", goal or "", re.I) and re.search(
-        r"guidelines-panel|open-guidelines", snapshot, re.I
+        r"guidelines-panel|open-guidelines|rules-view|data-rail=\"rules\"", snapshot, re.I
     ):
-        if "open-guidelines" not in clicked and "guidelines-panel" not in clicked:
+        if (
+            "open-guidelines" not in clicked
+            and "guidelines-panel" not in clicked
+            and 'data-rail="rules"' not in clicked
+        ):
             return "Rendered UI never opened Rules; the control was not clicked"
     if re.search(r"overlap|overlapping", goal or "", re.I):
         if evidence.smashed:
@@ -1401,9 +1409,9 @@ def _goal_clicks(root: Path, goal: str) -> list[str]:
     clicks: list[str] = []
     moved_out_of_settings = bool(re.search(r"out of (the )?settings", goal, re.I))
     if re.search(r"\bguidelines?\b|\brules?\b", goal, re.I):
-        clicks.append("#open-guidelines")
+        clicks.append('[data-rail="rules"]')
     if re.search(r"\bskills?\b", goal, re.I):
-        clicks.append("#open-skills")
+        clicks.append('[data-rail="skills"]')
     if re.search(r"\bsettings?\b", goal, re.I) and not moved_out_of_settings:
         clicks.append("#open-settings")
     if re.search(

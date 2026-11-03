@@ -25,6 +25,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      kiwifs:
+        condition: service_started
 
 volumes:
   lbw-postgres:

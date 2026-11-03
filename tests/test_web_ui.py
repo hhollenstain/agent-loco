@@ -1057,11 +1057,11 @@ def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_pa
         assert b'id="save-guidelines"' in home.content
         assert b'id="workspace-skills"' in home.content
         assert home.content.count(b'id="workspace-skills"') == 1
-        assert b'id="open-skills"' in home.content
+        assert b'data-rail="skills"' in home.content
         assert b'id="skills-panel"' in home.content
         assert b'id="skills-search"' in home.content
-        assert b'id="open-guidelines"' in home.content
-        assert b'id="guidelines-panel"' in home.content
+        assert b'data-rail="rules"' in home.content
+        assert b'id="rules-view"' in home.content
         assert b'id="skills-popup"' not in home.content
         assert b'id="guidelines-popup"' not in home.content
         assert b'id="clone-skill-source"' in home.content
@@ -1312,9 +1312,13 @@ def test_web_ui_clones_repository_into_local_workspace(settings: Settings, tmp_p
 
 
 def test_web_ui_lists_enables_and_clones_workspace_skills(
-    settings: Settings, tmp_path: Path
+    settings: Settings, tmp_path: Path, monkeypatch
 ) -> None:
     from tests.support import init_git_repo
+    from tests.test_rules import MemoryKiwi
+
+    memory = MemoryKiwi()
+    monkeypatch.setattr("agent_lbw.rules_http.open_kiwi", lambda *_args, **_kwargs: memory)
 
     remote = tmp_path / "skill-origin"
     skill = remote / "skills" / "review"
@@ -1359,15 +1363,21 @@ def test_web_ui_lists_enables_and_clones_workspace_skills(
         assert cloned.status_code == 200
         cloned_names = [item["name"] for item in cloned.json()["skills"]]
         assert "code-review" in cloned_names
-        assert cloned.json()["sources"]
+        added = cloned.json()["added"]
+        assert added["sha"]
+        assert added["space"].startswith("sk-org-")
+        assert tmp_path.name.casefold() not in added["space"]
+        assert "code-review" not in added["space"]
+        assert memory.files
         pulled = client.post(
             "/api/workspaces/skills/sources/sync",
             json={
                 "path": str(tmp_path),
-                "slug": cloned.json()["added"]["slug"],
+                "slug": added["id"],
             },
         )
         assert pulled.status_code == 200
+        assert pulled.json()["synced"]["sha"] == added["sha"]
     finally:
         manager.shutdown(wait=False)
 
@@ -1509,7 +1519,13 @@ def test_web_ui_loads_github_issues_from_workspace_remote(
 ) -> None:
     _github_workspace(tmp_path)
 
-    def fake_load(owner: str, repo: str, state: str = "open", per_page: int = 100) -> dict:
+    def fake_load(
+        owner: str,
+        repo: str,
+        state: str = "open",
+        per_page: int = 100,
+        token: str | None = None,
+    ) -> dict:
         assert owner == "acme"
         assert repo == "demo"
         assert state == "open"
@@ -1623,7 +1639,7 @@ def test_web_ui_reruns_failed_task(settings: Settings, tmp_path: Path) -> None:
 def test_web_ui_updates_successful_task_on_its_branch(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", lambda _url: "open")
+    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", lambda _url, token=None: "open")
     seen: list[Task] = []
 
     def runner(task: Task) -> CycleResult:
@@ -1687,7 +1703,7 @@ def test_web_ui_updates_successful_task_on_its_branch(
 def test_web_ui_refuses_update_when_pull_request_is_not_open(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", lambda _url: "merged")
+    monkeypatch.setattr("agent_lbw.web_ui.pull_request_state", lambda _url, token=None: "merged")
 
     def runner(task: Task) -> CycleResult:
         return CycleResult(
@@ -1771,7 +1787,7 @@ def _clear_pr_state_cache() -> None:
 def test_web_ui_reports_pull_request_states(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def fake_state(url: str) -> str:
+    def fake_state(url: str, token: str | None = None) -> str:
         if url.endswith("/9"):
             return "open"
         if url.endswith("/10"):
@@ -1813,7 +1829,7 @@ def test_pull_status_caches_closed_and_merged_until_forced(
 ) -> None:
     calls: list[str] = []
 
-    def fake_state(url: str) -> str:
+    def fake_state(url: str, token: str | None = None) -> str:
         calls.append(url)
         if url.endswith("/1"):
             return "merged"
@@ -1866,7 +1882,7 @@ def test_pull_status_caches_closed_and_merged_until_forced(
         assert set(calls) == set(urls)
         assert forced.json()["states"][urls[0]] == "merged"
 
-        def unknown(_url: str) -> str:
+        def unknown(_url: str, token: str | None = None) -> str:
             calls.append(_url)
             return ""
 
@@ -1879,7 +1895,7 @@ def test_pull_status_caches_closed_and_merged_until_forced(
         kept = json.loads((tmp_path / ".lbw" / "pr-states.json").read_text(encoding="utf-8"))
         assert kept == {urls[0]: "merged", urls[1]: "closed"}
 
-        def reopened(url: str) -> str:
+        def reopened(url: str, token: str | None = None) -> str:
             calls.append(url)
             if url.endswith("/2"):
                 return "open"
@@ -1991,6 +2007,8 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b'data-rail="proposals"' in home.content
         assert b'data-rail="changes"' in home.content
         assert b'data-rail="releases"' in home.content
+        assert b'data-rail="rules"' in home.content
+        assert b'data-rail="skills"' in home.content
         assert b'id="release-list"' in home.content
         assert b"function releaseBucket(" in home.content
         assert b"for (const entry of workspaceRuns())" in home.content
@@ -2024,7 +2042,7 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b".step-card" in layout.content
         assert b".reply-box" in layout.content
         assert b".step-card > summary .step-usage" in layout.content
-        assert b".profile-panel" in layout.content
+        assert b".account-menu" in layout.content
         assert b".release-open" in layout.content
         assert b".release-merged" in layout.content
         assert b".release-closed" in layout.content

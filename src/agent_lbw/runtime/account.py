@@ -44,7 +44,8 @@ def update_account(
     """Rename the organization, the current person, or both."""
     with database(root, database_url) as db:
         account = _require(db, root)
-        if org_name is not None:
+        if org_name is not None and org_name != account["org"]["name"]:
+            _require_manager(account)
             account["org"]["name"] = _clean_name(org_name, "organization")
         if user_name is not None:
             rename_member(account, _clean_name(user_name, "name"))
@@ -56,6 +57,7 @@ def add_user(root: Path, name: str, *, database_url: str = "") -> dict:
     """Add a person to the organization."""
     with database(root, database_url) as db:
         account = _require(db, root)
+        _require_manager(account)
         clean = _clean_name(name, "name")
         if _name_taken(account, clean):
             raise ValueError(f"{clean} is already in this organization")
@@ -68,6 +70,7 @@ def remove_user(root: Path, user_id: str, *, database_url: str = "") -> dict:
     """Remove a person who is not the current user and not the last owner."""
     with database(root, database_url) as db:
         account = _require(db, root)
+        _require_manager(account)
         target = next((user for user in account["users"] if user["id"] == user_id), None)
         if target is None:
             raise KeyError(user_id)
@@ -123,6 +126,15 @@ def _machine_name() -> str:
 
 def _new_id(kind: str) -> str:
     return f"{kind}_{uuid.uuid4().hex[:12]}"
+
+
+def _require_manager(account: dict) -> None:
+    current = next(
+        (user for user in account["users"] if user["id"] == account["current_user_id"]),
+        None,
+    )
+    if current is None or current["role"] not in {"owner", "admin"}:
+        raise PermissionError("an owner or admin manages the organization")
 
 
 def _clean_name(value: str, label: str) -> str:

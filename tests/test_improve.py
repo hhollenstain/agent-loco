@@ -778,12 +778,12 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     initial = current_sha(workspace)
     captured: dict[str, str | None] = {}
 
-    def fake_push(ws, remote="origin", branch=None):
+    def fake_push(ws, remote="origin", branch=None, token=None):
         captured["push_branch"] = branch
         captured["push_current"] = current_branch(ws)
         return ToolResult(True, "pushed")
 
-    def fake_pr(ws, title, body, *, base=None):
+    def fake_pr(ws, title, body, *, base=None, token=None):
         captured["title"] = title
         captured["body"] = body
         captured["base"] = base
@@ -889,18 +889,18 @@ def test_cycle_continuous_merges_after_review(
     _broken_project(tmp_path)
     captured: dict[str, str | None] = {}
 
-    def fake_push(ws, remote="origin", branch=None):
+    def fake_push(ws, remote="origin", branch=None, token=None):
         return ToolResult(True, "pushed")
 
-    def fake_pr(ws, title, body, *, base=None):
+    def fake_pr(ws, title, body, *, base=None, token=None):
         captured["pr"] = "https://example.test/pull/9"
         return ToolResult(True, captured["pr"])
 
-    def fake_merge(ws, url=None, *, squash=True):
+    def fake_merge(ws, url=None, *, squash=True, token=None):
         captured["merged"] = url
         return ToolResult(True, "merged")
 
-    def fake_checkout(ws, base, remote="origin"):
+    def fake_checkout(ws, base, remote="origin", *, token=None):
         captured["base"] = base
         return ToolResult(True, f"checked out {base}")
 
@@ -958,11 +958,11 @@ def test_cycle_pr_hosts_only_the_change_screenshot(
     )
     captured: dict[str, str | None] = {}
 
-    def fake_push(ws, remote="origin", branch=None):
+    def fake_push(ws, remote="origin", branch=None, token=None):
         captured["push_branch"] = branch
         return ToolResult(True, "pushed")
 
-    def fake_pr(ws, title, body, *, base=None):
+    def fake_pr(ws, title, body, *, base=None, token=None):
         captured["body"] = body
         captured["sha"] = current_sha(ws)
         return ToolResult(True, "https://example.test/pull/2")
@@ -1211,7 +1211,7 @@ def test_cycle_opens_pr_for_existing_feature_branch_without_new_files(
     _commit_on_feature_branch(tmp_path)
     captured: dict[str, str | None] = {}
 
-    def fake_pr(ws, title, body, *, base=None):
+    def fake_pr(ws, title, body, *, base=None, token=None):
         captured["branch"] = current_branch(ws)
         captured["base"] = base
         return ToolResult(True, "https://example.test/pull/11")
@@ -1221,7 +1221,9 @@ def test_cycle_opens_pr_for_existing_feature_branch_without_new_files(
         lambda *args, **kwargs: ToolResult(True, "pushed"),
     )
     monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
-    monkeypatch.setattr("agent_lbw.runtime.improve.existing_pull_request", lambda _ws: None)
+    monkeypatch.setattr(
+        "agent_lbw.runtime.improve.existing_pull_request", lambda _ws, token=None: None
+    )
     llm = ScriptedClient(
         [
             *_inspect_only_turns(),
@@ -1272,7 +1274,7 @@ def test_cycle_reuses_existing_pr_without_creating_another(
     monkeypatch.setattr("agent_lbw.runtime.improve.update_pull_request", fake_edit)
     monkeypatch.setattr(
         "agent_lbw.runtime.improve.existing_pull_request",
-        lambda _ws: "https://example.test/pull/7",
+        lambda _ws, token=None: "https://example.test/pull/7",
     )
     llm = ScriptedClient(
         [
@@ -1501,7 +1503,7 @@ def test_cycle_retries_then_opens_pr_when_goal_is_met(
     )
     captured: dict[str, str | None] = {}
 
-    def fake_pr(ws, title, body, *, base=None):
+    def fake_pr(ws, title, body, *, base=None, token=None):
         captured["body"] = body
         return ToolResult(True, "https://example.test/pull/4")
 

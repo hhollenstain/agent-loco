@@ -183,6 +183,17 @@ form, .tasks {
 
 .center-view[hidden] { display: none; }
 
+#skills-view { position: relative; }
+
+.section-page .rule-card textarea,
+.section-page #project-rule-body,
+.section-page #project-rule-ask,
+.section-page #org-rule-ask,
+.section-page #guidelines {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
 .rail-nav {
   display: flex;
   flex-direction: column;
@@ -727,172 +738,8 @@ button.secondary.icon-button[hidden] { display: none; }
 
 .modal-actions-no-top-margin { margin-top: 0.65rem; }
 
-/* App switcher: a slim edge tab. The mode rail slides out over the page. */
-.app-switch {
-  position: fixed;
-  left: 0;
-  top: 50%;
-  z-index: 80;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  transform: translateY(-50%);
-}
-
-.app-switch-rail { order: 0; }
-button.app-switch-tab { order: 1; }
-
-.app-switch-rail {
-  width: 0;
+#schedules-view {
   overflow: hidden;
-  transition: width 0.16s ease;
-}
-
-.app-switch:hover .app-switch-rail,
-.app-switch.open .app-switch-rail,
-.app-switch:focus-within .app-switch-rail {
-  width: 11.8rem;
-}
-
-.app-switch-rail-inner {
-  width: 11.8rem;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.4rem;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-left: 0;
-  border-radius: 0 0.75rem 0.75rem 0;
-  box-shadow: 8px 0 24px rgba(0, 0, 0, 0.28);
-}
-
-button.app-switch-tab {
-  width: 0.8rem;
-  height: 4.4rem;
-  min-width: 0.8rem;
-  padding: 0;
-  border-radius: 0 0.45rem 0.45rem 0;
-  border: 1px solid var(--line);
-  border-left: 0;
-  background: var(--panel-2);
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-button.app-switch-tab svg {
-  width: 0.45rem;
-  height: 0.9rem;
-  transition: transform 0.16s ease;
-}
-
-.app-switch:hover button.app-switch-tab,
-.app-switch.open button.app-switch-tab,
-.app-switch:focus-within button.app-switch-tab {
-  color: var(--ink);
-}
-
-.app-switch:hover button.app-switch-tab svg,
-.app-switch.open button.app-switch-tab svg,
-.app-switch:focus-within button.app-switch-tab svg {
-  transform: rotate(180deg);
-}
-
-button.app-mode {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  width: 100%;
-  padding: 0.45rem 0.6rem;
-  background: transparent;
-  color: var(--ink);
-  border: 0;
-  border-radius: 8px;
-  font-size: 0.86rem;
-  font-weight: 600;
-  text-align: left;
-}
-
-button.app-mode svg {
-  width: 1.2rem;
-  height: 1.2rem;
-  flex: 0 0 auto;
-}
-
-button.app-mode[aria-pressed="true"] {
-  background: var(--panel-2);
-  color: var(--accent);
-}
-
-button.app-mode:hover,
-button.app-mode:focus-visible {
-  background: var(--panel-2);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-switch-rail,
-  button.app-switch-tab svg {
-    transition: none;
-  }
-}
-
-html:not([data-app-mode="schedules"]) .schedules-app {
-  display: none;
-}
-
-html[data-app-mode="schedules"] #main {
-  display: flex;
-  position: fixed;
-  left: 0;
-  bottom: 0;
-  width: min(22rem, 100%);
-  height: auto;
-  z-index: 24;
-  overflow: visible;
-  background: transparent;
-  pointer-events: none;
-  grid-template-columns: none;
-}
-
-html[data-app-mode="schedules"] #main > .tasks,
-html[data-app-mode="schedules"] .sidebar-bar,
-html[data-app-mode="schedules"] .sidebar-stack,
-html[data-app-mode="schedules"] .sidebar-tools {
-  display: none;
-}
-
-html[data-app-mode="schedules"] .sidebar {
-  display: block;
-  width: 100%;
-  min-height: 0;
-  overflow: visible;
-  border: 0;
-  background: transparent;
-  pointer-events: none;
-}
-
-html[data-app-mode="schedules"] .settings-dock {
-  pointer-events: auto;
-  width: 100%;
-  background: var(--bg);
-  border-right: 1px solid var(--line);
-  border-top: 1px solid var(--line);
-}
-
-html[data-app-mode="schedules"] #main.collapsed .settings-dock {
-  flex-direction: row;
-  align-items: center;
-  margin-top: 0;
-  padding: 0.5rem 0.75rem 0.65rem;
-}
-
-html[data-app-mode="schedules"] #main.collapsed .settings-panel,
-html[data-app-mode="schedules"] #main.collapsed .profile-panel {
-  left: 0;
-  bottom: calc(100% + 0.45rem);
 }
 
 .schedules-app {
@@ -908,7 +755,7 @@ html[data-app-mode="schedules"] #main.collapsed .profile-panel {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0.9rem 0.9rem 4.2rem;
+  padding: 0.9rem;
   border-right: 1px solid var(--line);
   background: var(--bg);
 }
@@ -1469,26 +1316,67 @@ button.schedule-target[aria-pressed="true"] {
   text-overflow: ellipsis;
 }
 
-.profile-panel {
-  display: none;
-  width: min(26rem, calc(100vw - 2rem));
-  max-height: min(32rem, calc(100vh - 5.5rem));
-  overflow: hidden;
+.account-menu {
   position: absolute;
-  top: auto;
-  right: auto;
   left: 0;
   bottom: calc(100% + 0.45rem);
   z-index: 8;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  padding: 0.35rem;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: var(--shadow);
 }
 
-.settings-dock.profile-open .profile-panel {
-  display: flex;
-  flex-direction: column;
+.account-menu[hidden] { display: none; }
+
+.account-menu button {
+  justify-content: flex-start;
+  text-align: left;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  box-shadow: none;
+}
+
+.account-menu button:hover,
+.account-menu button:focus {
+  background: var(--panel-2);
+}
+
+.profile-section {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.profile-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.profile-section h3 {
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.profile-section h3:first-child {
+  margin-top: 0;
+}
+
+.github-app {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.github-app-key {
+  min-height: 5.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .account-users {
@@ -1503,6 +1391,11 @@ button.schedule-target[aria-pressed="true"] {
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
+}
+
+.account-user .github-login {
+  width: 9rem;
+  flex: none;
 }
 
 .account-user .name {
@@ -1525,6 +1418,58 @@ button.schedule-target[aria-pressed="true"] {
 }
 
 .account-add input { flex: 1; min-width: 0; }
+
+.rule-list,
+.inherited-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rule-heading {
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rule-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+}
+
+.rule-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.rule-source {
+  margin: 0.35rem 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.rule-body {
+  white-space: pre-wrap;
+  margin: 0.35rem 0 0;
+}
+
+.rule-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+}
+
+.rule-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
 
 .change-board h3 {
   margin: 0.75rem 0 0.3rem;
@@ -1619,13 +1564,5 @@ button.schedule-target[aria-pressed="true"] {
 
   .schedules-detail {
     padding-top: 1rem;
-  }
-
-  html[data-app-mode="schedules"] #main {
-    width: 100%;
-  }
-
-  html[data-app-mode="schedules"] .settings-dock {
-    border-right: 0;
   }
 }

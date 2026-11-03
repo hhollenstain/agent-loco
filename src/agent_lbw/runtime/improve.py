@@ -48,6 +48,7 @@ from agent_lbw.runtime.roles import (
     review_with_role,
     role_evidence,
 )
+from agent_lbw.runtime.rules import rules_for_prompt
 from agent_lbw.runtime.skills import compose_system_prompt
 from agent_lbw.runtime.steward import propose_improvement_goal
 from agent_lbw.runtime.uireview import (
@@ -300,6 +301,7 @@ def run_cycle(
     decision: str | None = None,
     review_notes: str = "",
     held_summary: str = "",
+    store_root: Path | None = None,
 ) -> CycleResult:
     progress = bind_progress()
     token = _TASK_ID.set(task_id)
@@ -324,6 +326,7 @@ def run_cycle(
             decision=decision,
             review_notes=review_notes,
             held_summary=held_summary,
+            store_root=store_root,
         )
     finally:
         _PALACE.reset(palace_token)
@@ -351,6 +354,7 @@ def _run_cycle(
     decision: str | None = None,
     review_notes: str = "",
     held_summary: str = "",
+    store_root: Path | None = None,
 ) -> CycleResult:
     log_progress("Initializing workspace...")
     triage_choice, approval_choice = resolve_human_gates(gate, triage_gate, approval_gate)
@@ -463,6 +467,8 @@ def _run_cycle(
             project.kiwifs_prefix,
             settings.kiwifs_prefix,
         ),
+        store_root=store_root,
+        database_url=settings.database_url,
     )
 
     log_progress(f"Selected goal: {goal_headline(selected_goal)}")
@@ -470,6 +476,10 @@ def _run_cycle(
     sha_before = current_sha(workspace)
     log_progress("Initializing coding agent...")
     extra_skills = ("steward",) if continuous else ()
+    extra_skills = tuple(extra_skills) + tuple(
+        _assigned_skills(store_root, settings.database_url, workspace.root)
+    )
+    included_skills = _scoped_skills(store_root, settings, workspace.root)
     palace = _workspace_palace(
         workspace.root,
         siblings=sibling_tasks,
@@ -479,11 +489,25 @@ def _run_cycle(
         llm,
         tools,
         max_iterations=settings.max_iterations,
-        system_prompt=compose_system_prompt(workspace.root, extra_skills),
+        system_prompt=compose_system_prompt(workspace.root, extra_skills, included_skills),
         palace=palace,
         context_window=context_window,
     )
     base_context = collect_context(workspace.root, project, allow_publish=allow_create_pr)
+    if store_root is not None:
+        try:
+            rules_text = rules_for_prompt(
+                store_root,
+                workspace.root,
+                database_url=settings.database_url,
+                kiwifs_url=settings.kiwifs_url,
+                kiwifs_api_key=settings.kiwifs_api_key,
+            )
+        except Exception as exc:  # noqa: BLE001 - a rules outage must not stop the cycle
+            log_progress(f"Rules were not loaded: {exc}")
+            rules_text = ""
+        if rules_text:
+            base_context = f"{base_context}\n\n{rules_text}"
     named_files = format_goal_files(workspace.root, selected_goal)
     plan = None
     architect = plan_role(workspace.root)
@@ -858,7 +882,9 @@ def _run_cycle(
         sha = current_sha(workspace)
         log_progress(f"Committed SHA: {sha}")
 
+    github_token = None
     if allow_create_pr:
+        github_token = _github_token(store_root, settings.database_url)
         published, pr_url, failed = _publish_pull_request(
             workspace,
             project,
@@ -868,6 +894,7 @@ def _run_cycle(
             sha=sha,
             committed=committed,
             screenshot_files=screenshot_files,
+            token=github_token,
         )
         if failed is not None:
             return failed
@@ -880,12 +907,14 @@ def _run_cycle(
     merged = False
     if continuous and pr_url and tests_passed is not False:
         log_progress(f"Merging pull request {pr_url}...")
-        merged_pr = merge_pull_request(workspace, pr_url)
+        merged_pr = merge_pull_request(workspace, pr_url, token=github_token)
         if merged_pr.ok:
             merged = True
             log_progress(merged_pr.output or f"merged {pr_url}")
             base = default_base_branch(workspace, project.publish_branch)
-            returned = checkout_base_branch(workspace, base, project.publish_remote)
+            returned = checkout_base_branch(
+                workspace, base, project.publish_remote, token=github_token
+            )
             log_progress(returned.output)
         else:
             log_progress(f"Could not merge pull request: {merged_pr.output}")
@@ -1242,6 +1271,60 @@ def _publish_held(
     return result
 
 
+def _scoped_skills(store_root: Path | None, settings: Settings, workspace: Path) -> list:
+    if store_root is None:
+        return []
+    from agent_lbw.rules_http import open_kiwi
+    from agent_lbw.runtime.db import database
+    from agent_lbw.runtime.skills import enabled_skill_names
+    from agent_lbw.runtime.store.install import require_account
+    from agent_lbw.runtime.store.rules import project_for_workspace
+    from agent_lbw.runtime.store.skill_repos import skills_for_project, visible_repos
+    from agent_lbw.tools.kiwi import KiwiError, normalize_kiwifs_url
+
+    url = normalize_kiwifs_url(settings.kiwifs_url)
+    if not url:
+        return []
+    try:
+        with database(store_root, settings.database_url) as db:
+            account = require_account(db)
+            project = project_for_workspace(db, account["org"]["id"], workspace)
+            if project is None or not visible_repos(db, account["org"]["id"], project["id"]):
+                return []
+            return skills_for_project(
+                db,
+                open_kiwi(url, settings.kiwifs_api_key),
+                tenant_id=account["org"]["id"],
+                project_id=project["id"],
+                enabled=set(enabled_skill_names(workspace)),
+            )
+    except (KiwiError, OSError, ValueError):
+        return []
+
+
+def _assigned_skills(store_root: Path | None, database_url: str, workspace: Path) -> list[str]:
+    if store_root is None:
+        return []
+    from agent_lbw.org_http import assigned_skill_names
+
+    return assigned_skill_names(store_root, workspace, database_url)
+
+
+def _github_token(store_root: Path | None, database_url: str) -> str | None:
+    if store_root is None:
+        return None
+    from agent_lbw.runtime.store.github import GitHubAppError, current_token
+
+    try:
+        return current_token(store_root, database_url)
+    except GitHubAppError as exc:
+        log_progress(f"GitHub App token was not loaded: {exc}")
+        return None
+    except Exception:
+        log_progress("GitHub App token was not loaded")
+        return None
+
+
 def _publish_pull_request(
     workspace: Workspace,
     project: ProjectConfig,
@@ -1252,6 +1335,7 @@ def _publish_pull_request(
     sha: str | None,
     committed: bool,
     screenshot_files: list[Path],
+    token: str | None = None,
 ) -> tuple[bool, str | None, CycleResult | None]:
     """Push the current feature branch and open a PR if this branch does not already have one."""
     branch = current_branch(workspace)
@@ -1272,7 +1356,7 @@ def _publish_pull_request(
             _append_to_history(workspace.root, result)
             return False, None, result
         return False, None, None
-    existing = existing_pull_request(workspace)
+    existing = existing_pull_request(workspace, token=token)
     base = default_base_branch(workspace, project.publish_branch)
     if not committed and commits_ahead_of_base(workspace, base) <= 0:
         if existing:
@@ -1281,7 +1365,7 @@ def _publish_pull_request(
             return True, existing, None
         return False, None, None
     log_progress(f"Pushing branch {branch}...")
-    pushed = push_changes(workspace, project.publish_remote, branch)
+    pushed = push_changes(workspace, project.publish_remote, branch, token)
     if not pushed.ok:
         log_progress(f"Push failed: {pushed.output}")
         result = CycleResult(
@@ -1315,6 +1399,7 @@ def _publish_pull_request(
                     project.publish_remote,
                 ),
             ),
+            token=token,
         )
         if updated.ok:
             log_progress(f"Updated pull request {existing}")
@@ -1342,6 +1427,7 @@ def _publish_pull_request(
             ),
         ),
         base=base,
+        token=token,
     )
     pr_url = extract_pr_url(pr.output)
     if not pr.ok:

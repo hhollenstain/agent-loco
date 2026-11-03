@@ -42,6 +42,7 @@ def watch(
             cli_create_pr=cli_create_pr,
             continuous=continuous,
             context_window=context_window,
+            store_root=workspace_path,
         )
         log.info(
             "cycle status=%s committed=%s published=%s merged=%s reason=%s",

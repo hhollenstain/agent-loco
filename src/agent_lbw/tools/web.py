@@ -15,7 +15,7 @@ from agent_lbw.tools.base import ToolResult, ToolSpec, object_schema
 
 SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
 INSTANT_ENDPOINT = "https://api.duckduckgo.com/"
-USER_AGENT = "Mozilla/5.0 (compatible; LBW/0.1.0; +https://github.com/hhollenstain/agent-lbw)"
+USER_AGENT = "Mozilla/5.0 (compatible; LBW/0.1.0; +https://github.com/hhollenstain/lbw)"
 HEADERS = {
     "User-Agent": USER_AGENT,
     "Accept": "text/html,application/json,text/plain;q=0.9,*/*;q=0.8",

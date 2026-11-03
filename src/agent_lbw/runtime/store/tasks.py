@@ -30,7 +30,7 @@ def save_task_request(
     """Insert a request. A person who cannot use the project is refused."""
     if not can_access(db, requester_id, project_id, need="use"):
         raise PermissionError("that project is closed to this person")
-    ciphertext = None if goal is None else seal(_dek(db, root, tenant_id), goal)
+    ciphertext = None if goal is None else seal(tenant_dek(db, root, tenant_id), goal)
     db.execute(
         """
         INSERT INTO tasks (
@@ -90,7 +90,7 @@ def read_task(db: Database, root: Path, *, task_id: str, identity_id: str) -> di
         raise PermissionError("that project is closed to this person")
     goal = None
     if row["goal_ciphertext"]:
-        goal = open_secret(_dek(db, root, row["tenant_id"]), row["goal_ciphertext"])
+        goal = open_secret(tenant_dek(db, root, row["tenant_id"]), row["goal_ciphertext"])
     return {
         "id": row["id"],
         "project_id": row["project_id"],
@@ -104,7 +104,7 @@ def read_task(db: Database, root: Path, *, task_id: str, identity_id: str) -> di
     }
 
 
-def _dek(db: Database, root: Path, tenant_id: str) -> bytes:
+def tenant_dek(db: Database, root: Path, tenant_id: str) -> bytes:
     row = db.fetchone("SELECT wrapped_key FROM tenant_keys WHERE tenant_id = ?", (tenant_id,))
     master = master_key(root)
     if row is None:

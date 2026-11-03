@@ -7,7 +7,7 @@ import uuid
 
 NAME_LIMIT = 80
 RANKS = frozenset({"owner", "admin", "member"})
-DUTIES = frozenset({"billing", "security"})
+DUTIES = frozenset({"billing", "security", "rules"})
 TENANT_KINDS = frozenset({"personal", "organization"})
 PROJECT_KINDS = frozenset({"github", "git", "folder"})
 ACCESS_LEVELS = frozenset({"use", "manage"})

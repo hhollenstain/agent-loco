@@ -3,7 +3,7 @@
 FROM python:3.12-slim-bookworm
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates bash \
+    && apt-get install -y --no-install-recommends git gh ca-certificates bash \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

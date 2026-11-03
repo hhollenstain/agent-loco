@@ -310,6 +310,7 @@ def clone_workspace(
     parent: str | Path,
     *,
     name: str | None = None,
+    git_config: list[str] | None = None,
 ) -> dict[str, str | bool]:
     repo = url.strip()
     if not repo:
@@ -322,7 +323,7 @@ def clone_workspace(
         raise ValueError(f"already exists: {dest}")
     try:
         cloned = subprocess.run(
-            ["git", "clone", repo, str(dest)],
+            ["git", *(git_config or []), "clone", repo, str(dest)],
             check=False,
             capture_output=True,
             text=True,

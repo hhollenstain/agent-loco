@@ -8,7 +8,7 @@ services:
       LBW_MODEL_NAME: ${LBW_MODEL_NAME:-qwen2.5-coder:14b}
       LBW_MODEL_BASE_URL: ${LBW_MODEL_BASE_URL:-http://127.0.0.1:11434/v1}
       LBW_MODEL_API_KEY: ${LBW_MODEL_API_KEY:-ollama}
-      LBW_KIWIFS_URL: ${LBW_KIWIFS_URL:-http://127.0.0.1:3333}
+      LBW_KIWIFS_URL: ${LBW_KIWIFS_URL:-http://kiwifs:3333}
       LBW_KIWIFS_API_KEY: ${LBW_KIWIFS_API_KEY:-}
       LBW_AUTO_COMMIT: ${LBW_AUTO_COMMIT:-true}
       LBW_REQUIRE_TESTS: ${LBW_REQUIRE_TESTS:-true}
@@ -22,5 +22,20 @@ services:
     ports:
       - "${LBW_UI_PORT:-8080}:8080"
     command: ["ui", "--host", "0.0.0.0", "--port", "8080", "--workspace", "/workspaces"]
+    depends_on:
+      kiwifs:
+        condition: service_started
     stdin_open: true
     tty: true
+
+  kiwifs:
+    image: ameliaanhlam/kiwifs:latest
+    ports:
+      - "${LBW_KIWIFS_PORT:-3333}:3333"
+    volumes:
+      - lbw-kiwifs:/data
+    restart: unless-stopped
+
+volumes:
+  lbw-kiwifs:
+    name: lbw-kiwifs

@@ -32,6 +32,10 @@ A note is a few sentences. No diffs, logs, or source dumps. Writes stay under
 `projects/<repo-name>/`. A workspace that is not a git repo uses its folder
 name there instead. Do not rewrite the shared guides.
 
+Organization, team, project, and personal rules are separate KiwiFS spaces.
+Save those with `write_rule`, not `kiwi_write`. Do not read a space that
+belongs to another organization, team, or person.
+
 ## Why the budget stays small
 
 A 7B–14B local model is already spending its context on the system prompt,

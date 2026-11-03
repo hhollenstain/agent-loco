@@ -5,15 +5,55 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_up_local_builds_the_agent_image_before_postgres() -> None:
+def _recipe(name: str) -> str:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    recipe = makefile.split("up-local:\n", 1)[1].split("\nup-", 1)[0]
+    marker = f"{name}:"
+    start = makefile.find(marker)
+    assert start != -1
+    lines = makefile[start + len(marker) :].splitlines()
+    kept: list[str] = []
+    for index, line in enumerate(lines):
+        if index and line and not line.startswith(("\t", " ", "#")):
+            break
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def test_up_local_builds_the_agent_image_before_postgres() -> None:
+    recipe = _recipe("up-local")
     build_at = recipe.find("build agent")
     postgres_at = recipe.find("up -d --wait postgres")
-    built = "docker compose -f docker-compose.yml -f docker-compose.postgres.yml build agent"
-    assert built in recipe
+    assert "docker compose -f docker-compose.yml -f docker-compose.postgres.yml" in (
+        ROOT / "Makefile"
+    ).read_text(encoding="utf-8")
     assert build_at != -1 and postgres_at != -1
     assert build_at < postgres_at
+
+
+def test_up_local_starts_kiwifs_and_the_agent() -> None:
+    recipe = _recipe("up-local")
+    assert "up -d kiwifs" in recipe
+    assert "up -d --no-deps agent" in recipe
+    assert "stop postgres kiwifs" not in recipe
+    assert "nohup" not in recipe
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "image: ameliaanhlam/kiwifs:latest" in compose
+    assert "lbw-kiwifs:/data" in compose
+    assert "http://kiwifs:3333" in compose
+    mac = (ROOT / "docker-compose.mac.yml").read_text(encoding="utf-8")
+    assert "http://kiwifs:3333" in mac
+
+
+def test_restart_local_rebuilds_only_the_agent() -> None:
+    recipe = _recipe("restart-local")
+    assert "up -d --build --no-deps --force-recreate agent" in recipe
+    assert "postgres" not in recipe
+    assert "kiwifs" not in recipe
+
+
+def test_agent_image_installs_the_github_cli() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "git gh ca-certificates" in dockerfile
 
 
 def test_compose_mounts_workspace_not_app_lbw() -> None:

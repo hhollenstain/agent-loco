@@ -632,13 +632,13 @@ def test_lbw_review_clicks_open_goal_panels_last(tmp_path: Path) -> None:
         None,
         "For overall user experience move the skills out of the settings cog",
     )
-    assert clicks[-1] == "#open-skills"
+    assert clicks[-1] == '[data-rail="skills"]'
     assert "#open-settings" not in clicks
     assert '[data-task-pane="progress"]' in clicks
-    assert clicks.index('[data-task-pane="progress"]') < clicks.index("#open-skills")
+    assert clicks.index('[data-task-pane="progress"]') < clicks.index('[data-rail="skills"]')
 
     rule_clicks = _review_clicks(tmp_path, None, "Move rules into the left pane")
-    assert rule_clicks[-1] == "#open-guidelines"
+    assert rule_clicks[-1] == '[data-rail="rules"]'
 
 
 def test_file_manager_goal_leaves_the_changes_pane_open(tmp_path: Path) -> None:

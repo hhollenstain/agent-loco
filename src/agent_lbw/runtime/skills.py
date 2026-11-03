@@ -182,8 +182,12 @@ def list_skills(root: Path) -> list[Skill]:
     ]
 
 
-def save_enabled_skills(root: Path, names: list[str] | None) -> list[Skill]:
-    known = {skill.name for skill in list_skills(root)}
+def save_enabled_skills(
+    root: Path,
+    names: list[str] | None,
+    extra_known: Sequence[str] = (),
+) -> list[Skill]:
+    known = {skill.name for skill in list_skills(root)} | set(extra_known)
     enabled = [name for name in _string_list(names) if name in known]
     _update_skills_config(root, enabled=enabled)
     return list_skills(root)
@@ -223,11 +227,20 @@ def sync_skill_source(root: Path, slug: str, *, ref: str | None = None) -> Skill
     return replace(source, path=str(dest))
 
 
-def format_enabled_skills(root: Path, extra_names: Sequence[str] = ()) -> str:
+def format_enabled_skills(
+    root: Path,
+    extra_names: Sequence[str] = (),
+    included: Sequence[Skill] = (),
+) -> str:
     extra = {name for name in extra_names if name}
+    by_name = {skill.name: skill for skill in list_skills(root)}
+    for skill in included:
+        current = by_name.get(skill.name)
+        if current is None or current.origin in {"bundled", "source"}:
+            by_name[skill.name] = skill
     selected = [
         skill
-        for skill in list_skills(root)
+        for skill in sorted(by_name.values(), key=lambda item: item.name)
         if skill.enabled or skill.name in extra or skill.origin == "repo"
     ]
     if not selected:
@@ -249,11 +262,15 @@ def format_enabled_skills(root: Path, extra_names: Sequence[str] = ()) -> str:
     return "\n".join(parts).strip()
 
 
-def compose_system_prompt(root: Path, extra_names: Sequence[str] = ()) -> str:
+def compose_system_prompt(
+    root: Path,
+    extra_names: Sequence[str] = (),
+    included: Sequence[Skill] = (),
+) -> str:
     from agent_lbw.runtime.project import load_guidelines
 
     base = load_guidelines(root).rstrip()
-    skills = format_enabled_skills(root, extra_names)
+    skills = format_enabled_skills(root, extra_names, included)
     if not skills:
         return f"{base}\n"
     return f"{base}\n\n{skills}\n"
@@ -424,6 +441,70 @@ def _update_skills_config(
     if not raw["skills"]["sources"]:
         raw["skills"].pop("sources", None)
     _write_raw_config(root, raw)
+
+
+def fetch_skill_checkout(cache: Path, url: str, dirname: str, *, ref: str = "") -> tuple[Path, str]:
+    """Clone or update a skill repository and return its checkout and commit."""
+    if not re.fullmatch(r"src_[a-f0-9]{12}", dirname):
+        raise ValueError("unknown skill repository")
+    repo = (url or "").strip()
+    if not repo:
+        raise ValueError("repository URL is required")
+    source = SkillSource(url=repo, slug=dirname, ref=(ref or "").strip())
+    dest = _clone_or_pull(cache, source)
+    return dest, _head_sha(dest)
+
+
+def skill_documents(checkout: Path) -> list[tuple[str, str]]:
+    """SKILL.md files in a checkout, as relative path and text."""
+    found: list[tuple[str, str]] = []
+    for path in sorted(checkout.rglob("*")):
+        if not path.is_file() or path.name not in SKILL_FILENAMES:
+            continue
+        if any(part in SKIP_WALK or part == ".git" for part in path.parts):
+            continue
+        relative = path.relative_to(checkout).as_posix()
+        if ".." in relative.split("/") or not _SKILL_REL.fullmatch(relative):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"could not read {relative}") from exc
+        if not text.strip():
+            continue
+        if len(text) > 100_000:
+            raise ValueError(f"{relative} is too large")
+        found.append((relative, text))
+    if len(found) > 200:
+        raise ValueError("that repository has too many skills")
+    if not found:
+        raise ValueError("that repository has no skills")
+    return found
+
+
+_SKILL_REL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,160}$")
+
+
+def _head_sha(checkout: Path) -> str:
+    from agent_lbw.runtime.workspaces import CLONE_TIMEOUT_SECONDS
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=checkout,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=CLONE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("git timed out") from exc
+    except OSError as exc:
+        raise ValueError(f"git failed: {exc}") from exc
+    sha = (result.stdout or "").strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("could not read the repository revision")
+    return sha
 
 
 def _clone_or_pull(root: Path, source: SkillSource) -> Path:

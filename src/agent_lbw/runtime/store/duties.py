@@ -17,7 +17,7 @@ def grant_duty(
     if scope_type not in {"tenant", "team"}:
         raise ValueError("scope must be tenant or team")
     if duty not in DUTIES:
-        raise ValueError("duty must be billing or security")
+        raise ValueError("duty must be billing, security, or rules")
     tenant_id = _tenant_for_scope(db, scope_type, scope_id)
     membership = db.fetchone(
         "SELECT rank FROM tenant_memberships WHERE tenant_id = ? AND identity_id = ?",

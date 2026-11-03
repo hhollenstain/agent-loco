@@ -198,3 +198,20 @@ def test_check_and_url_normalization() -> None:
     ok, detail = check_kiwifs("")
     assert ok is False
     assert detail == "off"
+
+
+def test_a_space_is_addressed_by_header_and_rejects_a_foreign_name() -> None:
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("x-kiwi-space"))
+        if request.url.path == "/api/spaces":
+            return httpx.Response(409, text="already exists")
+        return httpx.Response(200, text="hello")
+
+    kiwi = KiwiFS("http://kiwi.test", client=_client(handler))
+    kiwi.ensure_space("org-abc123")
+    assert kiwi.in_space("org-abc123").raw("rules/rule_abc123abc123.md") == "hello"
+    assert seen == [None, "org-abc123"]
+    with pytest.raises(KiwiError, match="invalid space"):
+        kiwi.in_space("../other")

@@ -584,6 +584,7 @@ class TaskManager:
             decision=task.decision,
             review_notes=task.review_notes,
             held_summary=task.summary or "",
+            store_root=self.store_root,
         )
 
     def _sync_stored_task(self, task: Task) -> None:

@@ -24,7 +24,10 @@ class Database:
         self.kind = kind
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> Any:
-        statement = sql.replace("?", "%s") if self.kind == "postgres" else sql
+        if self.kind == "postgres":
+            statement = sql.replace("%", "%%").replace("?", "%s")
+        else:
+            statement = sql
         cursor = self.raw.cursor()
         cursor.execute(statement, params)
         return cursor

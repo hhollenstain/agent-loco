@@ -24,6 +24,7 @@ DEFAULT_ENABLED = [
     "tdd",
     "ui",
     "kiwi",
+    "rules",
 ]
 
 
@@ -42,6 +43,7 @@ def test_process_skills_are_bundled_and_injected(tmp_path: Path) -> None:
         "review": ("Spec", "unused helper"),
         "security": ("Untrusted input", "secrets"),
         "polloco": ("review_changes", "Do not ask the user"),
+        "rules": ("write_rule", "another organization"),
     }
     skills = {item.name: item for item in list_skills(tmp_path)}
     write_default_project_files(tmp_path)

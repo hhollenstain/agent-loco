@@ -11,6 +11,7 @@ _STATEMENTS = (
         id TEXT PRIMARY KEY,
         email TEXT,
         display_name TEXT NOT NULL,
+        github_login TEXT,
         created INTEGER NOT NULL
     )
     """,
@@ -55,7 +56,7 @@ _STATEMENTS = (
         scope_type TEXT NOT NULL CHECK (scope_type IN ('tenant', 'team')),
         scope_id TEXT NOT NULL,
         identity_id TEXT NOT NULL REFERENCES identities (id),
-        duty TEXT NOT NULL CHECK (duty IN ('billing', 'security')),
+        duty TEXT NOT NULL CHECK (duty IN ('billing', 'security', 'rules')),
         UNIQUE (scope_type, scope_id, identity_id, duty)
     )
     """,
@@ -77,6 +78,84 @@ _STATEMENTS = (
         subject_id TEXT NOT NULL,
         access TEXT NOT NULL CHECK (access IN ('use', 'manage')),
         UNIQUE (project_id, subject_type, subject_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS rules (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        scope_type TEXT NOT NULL CHECK (
+            scope_type IN ('tenant', 'team', 'project', 'identity')
+        ),
+        scope_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        space_name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        created_by TEXT NOT NULL REFERENCES identities (id),
+        created INTEGER NOT NULL,
+        UNIQUE (tenant_id, scope_type, scope_id, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS rule_requirements (
+        rule_id TEXT NOT NULL REFERENCES rules (id),
+        project_id TEXT NOT NULL REFERENCES projects (id),
+        PRIMARY KEY (rule_id, project_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS skill_grants (
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        skill_name TEXT NOT NULL,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, skill_name, scope_type, scope_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS skill_repos (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        scope_type TEXT NOT NULL CHECK (scope_type IN ('tenant', 'team', 'project')),
+        scope_id TEXT NOT NULL,
+        team_id TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL,
+        sha TEXT NOT NULL,
+        space_name TEXT NOT NULL,
+        UNIQUE (tenant_id, scope_type, scope_id, team_id, url)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS skill_repo_files (
+        repo_id TEXT NOT NULL REFERENCES skill_repos (id),
+        path TEXT NOT NULL,
+        PRIMARY KEY (repo_id, path)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS role_requirements (
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        role_name TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, role_name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS github_apps (
+        tenant_id TEXT PRIMARY KEY REFERENCES tenants (id),
+        app_id TEXT NOT NULL,
+        private_key_ciphertext TEXT NOT NULL,
+        installation_id TEXT,
+        account_login TEXT,
+        account_type TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS github_installations (
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        installation_id TEXT NOT NULL,
+        account_login TEXT NOT NULL DEFAULT '',
+        account_type TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (tenant_id, installation_id)
     )
     """,
     """
@@ -121,6 +200,14 @@ _STATEMENTS = (
 
 # Child rows go before the identity and tenant they point at.
 CLEAR_ORDER = (
+    "github_installations",
+    "github_apps",
+    "skill_repo_files",
+    "skill_repos",
+    "skill_grants",
+    "role_requirements",
+    "rule_requirements",
+    "rules",
     "schedules",
     "tasks",
     "project_grants",
@@ -161,6 +248,16 @@ def apply_schema(db: Database) -> None:
             db.execute(f"DROP TABLE {name}")
     for statement in _STATEMENTS:
         db.execute(statement)
+    _add_column(db, "identities", "github_login", "TEXT")
+    _add_column(db, "github_apps", "account_type", "TEXT")
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS identities_github_login
+        ON identities (github_login)
+        WHERE github_login IS NOT NULL
+        """
+    )
+    _widen_duty_check(db)
     if legacy is not None:
         _write_legacy(db, legacy)
 
@@ -185,6 +282,11 @@ def table_columns(db: Database, table: str) -> set[str]:
         (table,),
     )
     return {str(row["name"]) for row in rows}
+
+
+def _add_column(db: Database, table: str, column: str, ddl: str) -> None:
+    if column not in table_columns(db, table):
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 def _has_table(db: Database, name: str) -> bool:
@@ -237,4 +339,70 @@ def _write_legacy(db: Database, legacy: dict) -> None:
     db.execute(
         "INSERT INTO install (id, tenant_id, current_identity_id) VALUES (1, ?, ?)",
         (install["org_id"], install["current_user_id"]),
+    )
+
+
+def _duty_check_has_rules(db: Database) -> bool:
+    if db.kind == "sqlite":
+        row = db.fetchone(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'duty_grants'"
+        )
+        return row is not None and "rules" in str(row["sql"] or "")
+    row = db.fetchone(
+        """
+        SELECT pg_get_constraintdef(oid) AS sql
+        FROM pg_constraint
+        WHERE conrelid = 'duty_grants'::regclass
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) LIKE '%duty%'
+        """
+    )
+    return row is not None and "rules" in str(row["sql"])
+
+
+def _widen_duty_check(db: Database) -> None:
+    """Let an existing duty table accept the rules duty."""
+    if not _has_table(db, "duty_grants") or _duty_check_has_rules(db):
+        return
+    if db.kind == "sqlite":
+        db.execute("ALTER TABLE duty_grants RENAME TO duty_grants_prev")
+        db.execute(
+            """
+            CREATE TABLE duty_grants (
+                id TEXT PRIMARY KEY,
+                scope_type TEXT NOT NULL CHECK (scope_type IN ('tenant', 'team')),
+                scope_id TEXT NOT NULL,
+                identity_id TEXT NOT NULL REFERENCES identities (id),
+                duty TEXT NOT NULL CHECK (duty IN ('billing', 'security', 'rules')),
+                UNIQUE (scope_type, scope_id, identity_id, duty)
+            )
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO duty_grants (id, scope_type, scope_id, identity_id, duty)
+            SELECT id, scope_type, scope_id, identity_id, duty FROM duty_grants_prev
+            """
+        )
+        db.execute("DROP TABLE duty_grants_prev")
+        return
+    rows = db.fetchall(
+        """
+        SELECT conname AS name
+        FROM pg_constraint
+        WHERE conrelid = 'duty_grants'::regclass
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) LIKE '%duty%'
+          AND pg_get_constraintdef(oid) NOT LIKE '%rules%'
+        """
+    )
+    for row in rows:
+        name = str(row["name"]).replace('"', "")
+        db.execute(f'ALTER TABLE duty_grants DROP CONSTRAINT "{name}"')
+    db.execute(
+        """
+        ALTER TABLE duty_grants
+        ADD CONSTRAINT duty_grants_duty_check
+        CHECK (duty IN ('billing', 'security', 'rules'))
+        """
     )

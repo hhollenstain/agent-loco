@@ -284,11 +284,28 @@ def clone(
             console.print(f"parent does not exist: {parent}")
             raise typer.Exit(code=1)
     try:
-        cloned: dict[str, Any] = clone_workspace(url, parent, name=name)
+        cloned: dict[str, Any] = clone_workspace(
+            url, parent, name=name, git_config=_github_clone_config(url)
+        )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
     console.print(f"cloned {cloned['path']}")
+
+
+def _github_clone_config(url: str) -> list[str] | None:
+    from agent_lbw.runtime.store.github import GitHubAppError, current_token
+    from agent_lbw.tools.git import github_auth_args, parse_github_remote
+
+    if parse_github_remote(url) is None:
+        return None
+    try:
+        token = current_token(Path.cwd(), _settings().database_url)
+    except (GitHubAppError, OSError, ValueError):
+        return None
+    if not token:
+        return None
+    return github_auth_args(token)
 
 
 def _serve_ui(
@@ -413,6 +430,7 @@ def run(
         cli_create_pr=True if continuous and create_pr is None else create_pr,
         continuous=continuous,
         context_window=_cycle_context_window(settings),
+        store_root=workspace,
     )
     console.print(
         f"[bold]{result.status}[/bold] stage={result.stage or 'done'} "

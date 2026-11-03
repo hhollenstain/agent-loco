@@ -25,7 +25,8 @@ rendered page. Do not add a helper, route, or control that nothing calls.
 
 The directory database is `runtime/store/`, one module per concern. Read
 `AGENTS.md` before adding a table, a grant, or a column. Task goals are
-ciphertext. Model context stays in the run directory.
+ciphertext. Rule text stays in that scope's KiwiFS space. Model context stays
+in the run directory.
 
 ## Process
 

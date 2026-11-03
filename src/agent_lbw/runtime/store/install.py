@@ -23,7 +23,8 @@ def read_account(db: Database) -> dict | None:
         return None
     people = db.fetchall(
         """
-        SELECT identities.id, identities.display_name, tenant_memberships.rank
+        SELECT identities.id, identities.display_name, identities.github_login,
+               tenant_memberships.rank
         FROM tenant_memberships
         JOIN identities ON identities.id = tenant_memberships.identity_id
         WHERE tenant_memberships.tenant_id = ?
@@ -39,7 +40,12 @@ def read_account(db: Database) -> dict | None:
         "mode": mode,
         "org": {"id": tenant["id"], "name": tenant["name"], "kind": tenant["kind"]},
         "users": [
-            {"id": person["id"], "name": person["display_name"], "role": person["rank"]}
+            {
+                "id": person["id"],
+                "name": person["display_name"],
+                "role": person["rank"],
+                "github_login": person["github_login"] or "",
+            }
             for person in people
         ],
         "current_user_id": current,

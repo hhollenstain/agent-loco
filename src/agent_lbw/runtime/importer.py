@@ -141,14 +141,14 @@ def github_repo_for_workspace(root: Path | str) -> tuple[str, str] | None:
     return github_owner_repo(workspace)
 
 
-def _github_headers() -> dict[str, str]:
+def _github_headers(token: str | None = None) -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    api_key = os.environ.get("GITHUB_TOKEN")
-    if api_key:
-        headers["Authorization"] = f"token {api_key}"
+    secret = (token or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if secret:
+        headers["Authorization"] = f"Bearer {secret}"
     return headers
 
 
@@ -186,40 +186,75 @@ def load_goals_from_issues(
     repo: str,
     state: str = "open",
     per_page: int = 100,
+    token: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Load GitHub issues as selectable goals.
-
-    Args:
-        owner: GitHub repository owner (e.g., 'octocat')
-        repo: GitHub repository name (e.g., 'Spoon-Knife')
-        state: Filter by issue state ('open', 'closed', or 'all')
-        per_page: Max issues to fetch (max 100)
-    """
+    """Load GitHub issues as selectable goals. Pull requests are counted apart."""
     status = state if state in ALLOWED_ISSUE_STATES else "open"
-    url = f"https://api.github.com/repos/{owner}/{repo}/issues"
-    params = {"state": status, "per_page": min(max(per_page, 1), 100)}
-    headers = _github_headers()
-
     try:
-        response = httpx.get(url, params=params, headers=headers, timeout=30)
+        return _read_issue_pages(owner, repo, status, per_page, token)
+    except httpx.HTTPStatusError as exc:
+        code = exc.response.status_code
+        if code == 403 and token:
+            public = load_goals_from_issues(owner, repo, state=status, per_page=per_page)
+            if "error" not in public:
+                return public
+        return _issue_failure(owner, repo, status, _issue_http_message(code, exc))
+    except httpx.HTTPError as exc:
+        return _issue_failure(owner, repo, status, str(exc))
+    except Exception as exc:
+        return _issue_failure(owner, repo, status, str(exc))
+
+
+def _issue_failure(owner: str, repo: str, state: str, message: str) -> dict[str, Any]:
+    return {
+        "issues": [],
+        "pull_requests": 0,
+        "error": message,
+        "owner": owner,
+        "repo": repo,
+        "state": state,
+    }
+
+
+def _issue_http_message(code: int, exc: httpx.HTTPStatusError) -> str:
+    if code in {401, 403}:
+        return "GitHub refused to list issues. Grant the app Issues read."
+    if code == 404:
+        return "GitHub could not find that repository."
+    return str(exc)
+
+
+def _read_issue_pages(
+    owner: str,
+    repo: str,
+    state: str,
+    per_page: int,
+    token: str | None,
+) -> dict[str, Any]:
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues"
+    page_size = min(max(per_page, 1), 100)
+    headers = _github_headers(token)
+    issues: list[dict] = []
+    pull_requests = 0
+    for page in range(1, 6):
+        response = httpx.get(
+            url,
+            params={"state": state, "per_page": page_size, "page": page},
+            headers=headers,
+            timeout=30,
+        )
         response.raise_for_status()
         data = response.json()
         if not isinstance(data, list):
-            return {
-                "issues": [],
-                "error": "GitHub did not return a list of issues",
-                "owner": owner,
-                "repo": repo,
-                "state": status,
-            }
-
-        issues = []
+            return _issue_failure(owner, repo, state, "GitHub did not return a list of issues")
         for item in data:
-            if not isinstance(item, dict) or item.get("pull_request"):
+            if not isinstance(item, dict):
+                continue
+            if item.get("pull_request"):
+                pull_requests += 1
                 continue
             number = int(item["number"])
-            comments = []
+            comments: list[dict] = []
             if int(item.get("comments") or 0) > 0:
                 comments = _fetch_issue_comments(owner, repo, number, headers)
             issue = GitHubIssue(
@@ -236,33 +271,33 @@ def load_goals_from_issues(
             payload["goal"] = issue.as_goal()
             payload["label"] = issue.short_label()
             issues.append(payload)
-
-        return {
-            "issues": issues,
-            "owner": owner,
-            "repo": repo,
-            "state": status,
-        }
-
-    except httpx.HTTPError as exc:
-        return {"issues": [], "error": str(exc), "owner": owner, "repo": repo, "state": status}
-    except Exception as exc:
-        return {"issues": [], "error": str(exc), "owner": owner, "repo": repo, "state": status}
+        if len(data) < page_size:
+            break
+    return {
+        "issues": issues,
+        "pull_requests": pull_requests,
+        "owner": owner,
+        "repo": repo,
+        "state": state,
+    }
 
 
 def load_goals_from_workspace(
     root: Path | str,
     state: str = "open",
+    token: str | None = None,
 ) -> dict[str, Any]:
     """Load issues for the GitHub remote attached to this workspace."""
     parsed = github_repo_for_workspace(root)
+    status = state if state in ALLOWED_ISSUE_STATES else "open"
     if not parsed:
         return {
             "issues": [],
+            "pull_requests": 0,
             "error": "workspace is not a GitHub repository",
             "owner": None,
             "repo": None,
-            "state": state if state in ALLOWED_ISSUE_STATES else "open",
+            "state": status,
         }
     owner, repo = parsed
-    return load_goals_from_issues(owner, repo, state=state)
+    return load_goals_from_issues(owner, repo, state=status, token=token)

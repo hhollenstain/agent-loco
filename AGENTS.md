@@ -35,11 +35,10 @@ itself is also in `skills/agent-lbw/SKILL.md`.
 
 - JavaScript in `index.html` uses double quotes and `function` declarations for
   named behavior. Iterate with `for...of`.
-- Sidebar panels (`#skills-panel`, `#guidelines-panel`) are overlays on the
-  sidebar. The skills list fills the overlay and scrolls. Close the skills
-  panel from its Close button or a click outside the panel. Clicks inside the
-  panel, including search and clone, leave it open.
-- The main task pane stays visible beside an open sidebar overlay.
+- Rules, Skills, and Schedules are rail sections beside Proposals, Changes,
+ and Releases. Schedules save documents. A project run is not a schedule.
+  The main pane shows the selected section. Roles stays a sidebar overlay.
+  Close the roles overlay from its Close button or a click outside it.
 - UI layout is the bundled `ui` skill. New workspaces enable it with `tdd`.
   After a UI edit, exercise the control in a browser: open it, use it, and
   close it. A template diff is not done. `review_ui` must show the control
@@ -73,15 +72,21 @@ file scheduler call.
   Promotion keeps the tenant id, so projects and tasks stay put.
 - A person is an identity, separate from a membership. Rank is `owner`, `admin`,
   or `member`, once on the tenant and once on a team. Duties are additive
-  grants, `billing` or `security`, on a tenant or a team. An owner already holds
-  every duty, so do not write a duty row for an owner. A new duty is a new
-  value, not a new kind of person.
+  grants, `billing`, `security`, or `rules`, on a tenant or a team. An owner
+  already holds every duty, so do not write a duty row for an owner. A new duty
+  is a new value, not a new kind of person.
 - An organization owner or admin can use every project in the tenant. Everyone
   else needs a `use` or `manage` grant on their team or on themselves. `manage`
   includes `use`.
-- Seal task goals with `runtime/store/crypto.py` and the tenant key. The master
-  key stays in `.lbw/master.key`. It does not go in the database, a prompt, or
-  a commit. Do not add a second cipher.
+- Seal task goals and the GitHub App private key with `runtime/store/crypto.py`
+  and the tenant key. The master key stays in `.lbw/master.key`. It does not go
+  in the database, a prompt, or a commit. Do not add a second cipher. The
+  `github_apps` row stores the app id, the sealed key, and the chosen
+  installation. Do not store an installation token. A connected app can add a
+  repository it can see to the organization, a person, or a team. The checkout
+  is the workspace. `identities.github_login` links a person to a GitHub
+  account. Sync copies that account's organization role, team membership, and
+  repository access onto the existing grants. It does not create people.
 - Do not store model context, prompts, tool traces, diffs, or file contents in
   the database. Those stay in the run directory. A task row is the request:
   tenant, project, requester, status, branch, pull request, `run_ref`, and
@@ -89,6 +94,26 @@ file scheduler call.
 - A schedule row is an index. The instruction stays in the schedule file.
   `change` indexes a file schedule. `scan` indexes a scan. Do not copy the
   instruction into the database.
+- A rule's text lives in its own KiwiFS space: one for the tenant, one for a
+  team, one for a project, and one for a person. The `rules` table indexes it.
+  `rule_requirements` says which organization rules a project must follow. Do
+  not store the rule body in the database. Derive the space from the scope id.
+  Do not take a space name from the client. The `rules` duty lets a member edit
+  rules for that tenant or team. Project rules follow `manage`.
+- A cloned skill repository is indexed in `skill_repos`. The files and the git
+  commit stay in KiwiFS. The space is `sk-org-<id>`, `sk-org-<id>-team-<id>`,
+  or `sk-org-<id>-team-<id>-proj-<id>`. Derive it from those ids. Do not put an
+  organization, team, or project name in the space. A project reads the
+  organization space, a team space only when that team can use the project,
+  and its own project space.
+- The hierarchy is organization, then teams, then projects. An organization
+  rule or skill reaches a project only when it is assigned there: an
+  organization rule through `rule_requirements`, a team rule through a project
+  grant, a skill through `skill_grants` on the organization, a team, or that
+  project. Organization rules and skills are edited in organization settings.
+  A project page shows the ones assigned to it. Roles are chosen on the
+  project. `role_requirements` is the set an organization owner or admin
+  enforces on every project.
 - Extend these checks when adding access. Do not add a second permission table.
 
 ## Git

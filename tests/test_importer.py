@@ -109,6 +109,69 @@ def test_load_goals_from_issues_includes_body_and_comments(monkeypatch) -> None:
     assert "Implement this GitHub issue" in issue["goal"]
 
 
+def test_issue_list_uses_the_app_token_and_keeps_reading_past_pull_requests(
+    monkeypatch,
+) -> None:
+    calls: list[tuple[int, str]] = []
+
+    class FakeResponse:
+        def __init__(self, page: int) -> None:
+            self.page = page
+            self.status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict]:
+            if self.page == 1:
+                return [
+                    {
+                        "id": 1,
+                        "number": 1,
+                        "title": "A PR",
+                        "body": "",
+                        "html_url": "https://github.com/acme/demo/pull/1",
+                        "state": "open",
+                        "pull_request": {"url": "https://api.github.com/repos/acme/demo/pulls/1"},
+                    },
+                    {
+                        "id": 3,
+                        "number": 3,
+                        "title": "Another PR",
+                        "body": "",
+                        "html_url": "https://github.com/acme/demo/pull/3",
+                        "state": "open",
+                        "pull_request": {"url": "https://api.github.com/repos/acme/demo/pulls/3"},
+                    },
+                ]
+            return [
+                {
+                    "id": 2,
+                    "number": 2,
+                    "title": "Real issue",
+                    "body": "Do the thing",
+                    "html_url": "https://github.com/acme/demo/issues/2",
+                    "state": "open",
+                    "comments": 0,
+                }
+            ]
+
+    def fake_get(
+        url: str, params: dict | None = None, headers: dict | None = None, timeout: float = 30
+    ):
+        assert params is not None
+        assert headers is not None
+        calls.append((params["page"], headers["Authorization"]))
+        return FakeResponse(params["page"])
+
+    monkeypatch.setattr("agent_lbw.runtime.importer.httpx.get", fake_get)
+    result = load_goals_from_issues("acme", "demo", per_page=2, token="ghs_secret")
+    assert "error" not in result
+    assert result["pull_requests"] == 2
+    assert [issue["number"] for issue in result["issues"]] == [2]
+    assert calls == [(1, "Bearer ghs_secret"), (2, "Bearer ghs_secret")]
+
+
 def test_load_goals_from_workspace_requires_github_remote(tmp_path: Path) -> None:
     result = load_goals_from_workspace(tmp_path)
     assert result["issues"] == []

@@ -26,9 +26,16 @@ done.
   bottom-right, and `.history-line-stats` owns the bottom-left. A new control
   in either corner overlaps them. Put a new card action in a footer row, or
   reuse the existing rerun button, and keep the card's bottom padding.
-- Sidebar panels (`#skills-panel`, `#guidelines-panel`) cover the sidebar
-  only. The main task pane stays visible. The list fills the overlay and
-  scrolls. Do not push the form down to make room for the list.
+- Rules, Skills, and Schedules are rail sections beside Proposals, Changes,
+  and Releases. The main pane shows the selected section. Schedules save
+  documents; they do not run a goal in a project. A project shows an organization
+  or team rule, and an organization skill, only when it is assigned to that
+  project. Roles stays a sidebar overlay that covers the sidebar only. Close
+  roles from its Close button or a click outside it. Settings opens a small
+  menu for Personal, Organization, and Workspace. Personal and Organization
+  fill the main window. A connected GitHub App can add one of its repositories
+  to the organization, a person, or a team, and can sync access for people who
+  have a GitHub login. Do not put Rules or Skills back in an overlay.
 - A new dialog uses the existing `.modal-backdrop` and `.modal`, starts
   `hidden`, and closes from its button or a click on the backdrop. A closed
   dialog must not intercept clicks.
@@ -79,12 +86,16 @@ there is no preview server, add one before claiming the control works.
 
 ## UI Component Patterns
 
-### Sidebar Panels
-Sidebar panels such as `#skills-panel` and `#guidelines-panel` are overlays that:
-- Cover only the sidebar area, keeping the main task pane visible
-- The panel list fills the overlay and scrolls
-- Clicking outside the panel or using the close button dismisses it
-- These panels must not interfere with existing UI elements
+### Project sections
+Rules, Skills, and Schedules sit in the project rail with Proposals, Changes, and Releases.
+A cloned skill repository is stored in a KiwiFS space named from the organization,
+team, and project ids. Resync pulls the latest commit into that space.
+Selecting one shows that section in the main pane. Those pages list what is
+assigned to the project. Settings opens a small menu. Personal and
+Organization then fill the main window. Roles
+remains a sidebar overlay: it covers the sidebar, closes from its Close
+button or a click outside, and leaves the main pane visible. A role enforced
+by the organization stays on and its checkbox cannot turn it off.
 
 ### Modal Dialogs
 Modal dialogs should follow this structure:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent_lbw.sandbox import SandboxError, Workspace
 from agent_lbw.tools.ask import ask_tools
 from agent_lbw.tools.base import ToolResult, ToolSpec
@@ -11,6 +13,7 @@ from agent_lbw.tools.issues import issues_tools
 from agent_lbw.tools.kiwi import kiwi_tools
 from agent_lbw.tools.lint import lint_tools
 from agent_lbw.tools.polloco import polloco_tools
+from agent_lbw.tools.rules import rule_tools
 from agent_lbw.tools.shell import shell_tools
 from agent_lbw.tools.tests import test_tools
 from agent_lbw.tools.web import web_tools
@@ -29,10 +32,18 @@ def build_tools(
     kiwifs_url: str = "",
     kiwifs_api_key: str = "",
     kiwifs_prefix: str = "",
+    store_root: Path | None = None,
+    database_url: str = "",
 ) -> list[ToolSpec]:
     return [
         *file_tools(workspace),
         *kiwi_tools(base_url=kiwifs_url, api_key=kiwifs_api_key, prefix=kiwifs_prefix),
+        *rule_tools(
+            base_url=kiwifs_url,
+            api_key=kiwifs_api_key,
+            store_root=store_root,
+            database_url=database_url,
+        ),
         *config_tools(workspace),
         *web_tools(workspace),
         *browser_tools(workspace, goal=goal),
@@ -40,7 +51,14 @@ def build_tools(
         *test_tools(workspace, test_command, command_timeout_seconds),
         *lint_tools(workspace, lint_command, command_timeout_seconds),
         *polloco_tools(workspace, goal),
-        *git_tools(workspace, git_author_name, git_author_email, allow_publish=allow_publish),
+        *git_tools(
+            workspace,
+            git_author_name,
+            git_author_email,
+            allow_publish=allow_publish,
+            store_root=store_root,
+            database_url=database_url,
+        ),
         *issues_tools(workspace),
         *ask_tools(),
     ]

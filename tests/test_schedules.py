@@ -140,10 +140,12 @@ def test_schedule_api_saves_updates_runs_and_lists_results(
     try:
         page = client.get("/")
         assert page.status_code == 200
-        assert b'id="app-switch"' in page.content
-        assert b'id="mode-projects"' in page.content
-        assert b'id="mode-schedules"' in page.content
+        assert b'id="app-switch"' not in page.content
+        assert b'data-rail="schedules"' in page.content
         assert b'id="schedules-app"' in page.content
+        assert b'id="schedule-output"' in page.content
+        assert b'id="target-project"' not in page.content
+        assert b'id="schedule-commit"' not in page.content
         assert b"/api/schedules" in page.content
 
         missing = client.post(
@@ -215,8 +217,8 @@ def test_schedule_api_saves_updates_runs_and_lists_results(
         assert client.get("/api/schedules").json()["schedules"] == []
         assert client.delete(f"/api/schedules/{body['id']}").status_code == 404
         home = page.content
-        assert b'id="target-files"' in home
-        assert b"schedule-target" in home
+        assert b'id="schedule-output"' in home
+        assert b"schedule-target" not in home
     finally:
         manager.shutdown(wait=False)
 

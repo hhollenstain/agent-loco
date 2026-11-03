@@ -56,7 +56,6 @@ from agent_lbw.runtime.servers import (
     update_server_alias,
 )
 from agent_lbw.runtime.skills import (
-    add_skill_source,
     get_skill,
     save_enabled_skills,
     skills_catalog,
@@ -81,6 +80,7 @@ from agent_lbw.tools.git import (
     pull_request_state,
     valid_branch_name,
 )
+from agent_lbw.tools.kiwi import KiwiError
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -151,7 +151,7 @@ def store_pr_states(root: Path, states: dict[str, str]) -> None:
         return
 
 
-def lookup_pull_state(url: str, *, force: bool = False) -> str:
+def lookup_pull_state(url: str, *, force: bool = False, token: str | None = None) -> str:
     """Cached pull-request state. Closed and merged stay cached until a forced refresh."""
     clean = extract_pr_url(url or "") or ""
     if not clean:
@@ -165,7 +165,7 @@ def lookup_pull_state(url: str, *, force: bool = False) -> str:
                     return cached[1]
                 if now - cached[0] < _PR_STATE_TTL:
                     return cached[1]
-    state = pull_request_state(clean)
+    state = pull_request_state(clean, token=token)
     if not state and force:
         with _PR_STATE_LOCK:
             previous = _PR_STATE_CACHE.get(clean)
@@ -260,6 +260,7 @@ class WorkspaceSkillSource(BaseModel):
     path: str | None = None
     url: str
     ref: str | None = None
+    team_id: str | None = None
 
 
 class WorkspaceSkillSync(BaseModel):
@@ -480,7 +481,15 @@ class UiState:
     ) -> dict[str, Any]:
         """Load issues as selectable goals from the workspace's GitHub remote."""
         root = Path(workspace or self.default_workspace)
-        return load_goals_from_workspace(root, state=state)
+        return load_goals_from_workspace(root, state=state, token=self._installation_token())
+
+    def _installation_token(self) -> str | None:
+        from agent_lbw.runtime.store.github import GitHubAppError, current_token
+
+        try:
+            return current_token(Path(self.store_root), self.manager.settings.database_url)
+        except GitHubAppError:
+            return None
 
     def paginate_history(
         self,
@@ -953,7 +962,10 @@ def create_app(
             return JSONResponse({"error": "task not found"}, status_code=404)
         if old_task.status not in ("failed", "error", "success"):
             return JSONResponse({"error": "task not rerunnable"}, status_code=400)
-        if old_task.status == "success" and lookup_pull_state(old_task.pr_url or "") != "open":
+        if (
+            old_task.status == "success"
+            and lookup_pull_state(old_task.pr_url or "", token=_ui_github_token(ui)) != "open"
+        ):
             return JSONResponse({"error": "pull request is not open"}, status_code=409)
         goal_to_use = new_goal or old_task.goal
         new_task = ui.manager.rerun(
@@ -1011,7 +1023,7 @@ def create_app(
     ) -> JSONResponse:
         ui: UiState = request.app.state.ui
         body = payload or TaskCreate()
-        if body.pr_url and lookup_pull_state(body.pr_url) != "open":
+        if body.pr_url and lookup_pull_state(body.pr_url, token=_ui_github_token(ui)) != "open":
             return JSONResponse({"error": "pull request is not open"}, status_code=409)
         picked = (body.base_branch or "").strip()
         if picked and not valid_branch_name(picked):
@@ -1077,8 +1089,10 @@ def create_app(
         if not urls:
             return {"states": {}}
 
+        token = _ui_github_token(ui)
+
         def one(url: str) -> str:
-            return lookup_pull_state(url, force=body.force)
+            return lookup_pull_state(url, force=body.force, token=token)
 
         with ThreadPoolExecutor(max_workers=min(8, len(urls))) as pool:
             states = dict(zip(urls, pool.map(one, urls), strict=True))
@@ -1218,6 +1232,8 @@ def create_app(
                 user_name=payload.user_name,
                 database_url=url,
             )
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=403)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1227,6 +1243,8 @@ def create_app(
         root, url = _account_store(ui)
         try:
             return add_user(root, payload.name, database_url=url)
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=403)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1236,6 +1254,8 @@ def create_app(
         root, url = _account_store(ui)
         try:
             return remove_user(root, user_id, database_url=url)
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=403)
         except KeyError:
             return JSONResponse({"error": "person not found"}, status_code=404)
         except ValueError as exc:
@@ -1278,7 +1298,12 @@ def create_app(
         ui: UiState = request.app.state.ui
         parent = payload.parent or str(Path.home() / "projects")
         try:
-            cloned = clone_workspace(payload.url, parent, name=payload.name)
+            cloned = clone_workspace(
+                payload.url,
+                parent,
+                name=payload.name,
+                git_config=_github_clone_config(ui, payload.url),
+            )
             _seed_guidelines(str(cloned["path"]), payload.guidelines)
             ui.set_workspace(str(cloned["path"]))
         except ValueError as exc:
@@ -1309,7 +1334,7 @@ def create_app(
             root = _workspace_root(ui, path)
             if not root.is_dir():
                 raise ValueError(f"workspace is not a directory: {root}")
-            return roles_catalog(root)
+            return _roles_for_workspace(ui, root)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1323,8 +1348,9 @@ def create_app(
             root = _workspace_root(ui, body.path)
             if not root.is_dir():
                 raise ValueError(f"workspace is not a directory: {root}")
-            save_enabled_roles(root, body.enabled or [])
-            return roles_catalog(root)
+            enforced = _enforced_roles(ui)
+            save_enabled_roles(root, [*(body.enabled or []), *enforced])
+            return _roles_for_workspace(ui, root)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1335,7 +1361,7 @@ def create_app(
             root = _workspace_root(ui, path)
             if not root.is_dir():
                 raise ValueError(f"workspace is not a directory: {root}")
-            return skills_catalog(root)
+            return _skills_for_workspace(ui, root)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1347,6 +1373,8 @@ def create_app(
             if not root.is_dir():
                 raise ValueError(f"workspace is not a directory: {root}")
             skill = get_skill(root, name)
+            if skill is None:
+                skill = _scoped_skill(ui, root, name)
             if skill is None:
                 return JSONResponse({"error": f"unknown skill: {name}"}, status_code=404)
             return skill.public_dict(include_body=True)
@@ -1363,8 +1391,9 @@ def create_app(
             root = _workspace_root(ui, body.path)
             if not root.is_dir():
                 raise ValueError(f"workspace is not a directory: {root}")
-            save_enabled_skills(root, body.enabled or [])
-            return skills_catalog(root)
+            extra = _scoped_skill_names(ui, root)
+            save_enabled_skills(root, body.enabled or [], extra)
+            return _skills_for_workspace(ui, root)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1375,10 +1404,19 @@ def create_app(
             root = _workspace_root(ui, payload.path)
             if not root.is_dir():
                 raise ValueError(f"workspace is not a directory: {root}")
-            source = add_skill_source(root, payload.url, ref=payload.ref)
-            return {**skills_catalog(root), "added": source.public_dict()}
+            added = _mutate_skill_repo(
+                ui,
+                lambda db, account, kiwi, cache: _add_workspace_repo(
+                    db, kiwi, account, root, cache, payload
+                ),
+            )
+            return {**_skills_for_workspace(ui, root), "added": added}
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=403)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
+        except KiwiError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=502)
 
     @app.post("/api/workspaces/skills/sources/sync")
     def sync_workspace_skill_source(request: Request, payload: WorkspaceSkillSync) -> Any:
@@ -1387,10 +1425,16 @@ def create_app(
             root = _workspace_root(ui, payload.path)
             if not root.is_dir():
                 raise ValueError(f"workspace is not a directory: {root}")
-            source = sync_skill_source(root, payload.slug, ref=payload.ref)
-            return {**skills_catalog(root), "synced": source.public_dict()}
+            synced = _sync_workspace_repo(ui, root, payload.slug, payload.ref)
+            return {**_skills_for_workspace(ui, root), "synced": synced}
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=403)
+        except KeyError:
+            return JSONResponse({"error": "not found"}, status_code=404)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
+        except KiwiError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=502)
 
     @app.post("/api/workspaces/archive")
     def archive_workspace_tab(request: Request, payload: WorkspaceSelect) -> Any:
@@ -1500,9 +1544,181 @@ def create_app(
     _bind_schedule_clock(app)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     from agent_lbw.directory_http import register_directory
+    from agent_lbw.github_http import register_github
+    from agent_lbw.org_http import register_org
+    from agent_lbw.rules_http import register_rules
 
     register_directory(app)
+    register_rules(app)
+    register_github(app)
+    register_org(app)
     return app
+
+
+def _roles_for_workspace(ui: UiState, root: Path) -> dict:
+    catalog = roles_catalog(root)
+    enforced = set(_enforced_roles(ui))
+    roles = catalog.get("roles")
+    if isinstance(roles, list):
+        for role in roles:
+            if isinstance(role, dict) and role.get("name") in enforced:
+                role["enabled"] = True
+                role["enforced"] = True
+            elif isinstance(role, dict):
+                role["enforced"] = False
+    enabled = [name for name in catalog.get("enabled") or [] if isinstance(name, str)]
+    for name in sorted(enforced):
+        if name not in enabled:
+            enabled.append(name)
+    catalog["enabled"] = enabled
+    catalog["enforced"] = sorted(enforced)
+    return catalog
+
+
+def _skills_for_workspace(ui: UiState, root: Path) -> dict:
+    from agent_lbw.org_http import assigned_skill_names
+
+    catalog = skills_catalog(root)
+    assigned = set(
+        assigned_skill_names(Path(ui.store_root), root, ui.manager.settings.database_url)
+    )
+    skills = catalog.get("skills")
+    if isinstance(skills, list):
+        for skill in skills:
+            if isinstance(skill, dict):
+                skill["assigned"] = skill.get("name") in assigned
+    catalog["assigned"] = sorted(assigned)
+    repos, scoped, teams = _read_scoped(ui, root)
+    catalog["skill_teams"] = teams
+    if isinstance(skills, list) and scoped:
+        by_name = {
+            item.get("name"): item for item in skills if isinstance(item, dict) and item.get("name")
+        }
+        for skill in scoped:
+            current = by_name.get(skill.name)
+            if current is not None and current.get("origin") not in {"bundled", "source"}:
+                continue
+            payload = skill.public_dict()
+            payload["assigned"] = skill.name in assigned
+            by_name[skill.name] = payload
+        catalog["skills"] = sorted(by_name.values(), key=lambda item: str(item.get("name")))
+    sources = [item for item in catalog.get("sources") or [] if isinstance(item, dict)]
+    known = {str(item.get("slug") or "") for item in sources}
+    for repo in repos:
+        if str(repo.get("slug") or "") in known:
+            continue
+        sources.append(repo)
+    catalog["sources"] = sources
+    return catalog
+
+
+def _read_scoped(ui: UiState, root: Path) -> tuple[list[dict], list, list[dict]]:
+    from agent_lbw.rules_http import open_kiwi
+    from agent_lbw.runtime.account import load_account
+    from agent_lbw.runtime.db import database
+    from agent_lbw.runtime.store.install import require_account
+    from agent_lbw.runtime.store.skill_repos import skills_on_workspace
+    from agent_lbw.tools.kiwi import normalize_kiwifs_url
+
+    url = normalize_kiwifs_url(ui.manager.settings.kiwifs_url)
+    if not url:
+        return [], [], []
+    cache = Path(ui.store_root)
+    try:
+        load_account(cache, database_url=ui.manager.settings.database_url)
+        kiwi = open_kiwi(url, ui.manager.settings.kiwifs_api_key)
+        with database(cache, ui.manager.settings.database_url) as db:
+            account = require_account(db)
+            return skills_on_workspace(db, kiwi, account, root)
+    except (KiwiError, OSError, PermissionError, ValueError):
+        return [], [], []
+
+
+def _scoped_skill(ui: UiState, root: Path, name: str):
+    _repos, skills, _teams = _read_scoped(ui, root)
+    return next((skill for skill in skills if skill.name == name), None)
+
+
+def _scoped_skill_names(ui: UiState, root: Path) -> list[str]:
+    _repos, skills, _teams = _read_scoped(ui, root)
+    return [skill.name for skill in skills]
+
+
+def _mutate_skill_repo(ui: UiState, fn):
+    from agent_lbw.rules_http import open_kiwi
+    from agent_lbw.runtime.db import database
+    from agent_lbw.runtime.store.install import require_account
+    from agent_lbw.tools.kiwi import normalize_kiwifs_url
+
+    url = normalize_kiwifs_url(ui.manager.settings.kiwifs_url)
+    if not url:
+        raise ValueError("KiwiFS is not configured")
+    cache = Path(ui.store_root)
+    load_account(cache, database_url=ui.manager.settings.database_url)
+    kiwi = open_kiwi(url, ui.manager.settings.kiwifs_api_key)
+    with database(cache, ui.manager.settings.database_url) as db:
+        account = require_account(db)
+        return fn(db, account, kiwi, cache)
+
+
+def _add_workspace_repo(
+    db, kiwi, account, workspace: Path, cache: Path, payload: WorkspaceSkillSource
+):
+    from agent_lbw.runtime.store.skill_repos import add_workspace_repo
+
+    return add_workspace_repo(
+        db,
+        kiwi,
+        account,
+        workspace,
+        cache=cache,
+        url=payload.url,
+        team_id=payload.team_id or "",
+        ref=payload.ref or "",
+    )
+
+
+def _sync_workspace_repo(ui: UiState, workspace: Path, slug: str, ref: str | None) -> dict:
+    import re
+
+    from agent_lbw.runtime.store.skill_repos import sync_repo
+
+    wanted = (slug or "").strip()
+    if re.fullmatch(r"src_[a-f0-9]{12}", wanted):
+        return _mutate_skill_repo(
+            ui,
+            lambda db, account, kiwi, cache: sync_repo(
+                db, kiwi, account, repo_id=wanted, cache=cache
+            ),
+        )
+    return sync_skill_source(workspace, wanted, ref=ref).public_dict()
+
+
+def _enforced_roles(ui: UiState) -> list[str]:
+    from agent_lbw.org_http import enforced_roles_for
+
+    return enforced_roles_for(Path(ui.store_root), ui.manager.settings.database_url)
+
+
+def _ui_github_token(ui: UiState) -> str | None:
+    from agent_lbw.runtime.store.github import GitHubAppError, current_token
+
+    try:
+        return current_token(Path(ui.store_root), ui.manager.settings.database_url)
+    except (GitHubAppError, OSError, ValueError):
+        return None
+
+
+def _github_clone_config(ui: UiState, url: str) -> list[str] | None:
+    """Use the installation token for a GitHub URL. A public clone still works without one."""
+    from agent_lbw.tools.git import github_auth_args, parse_github_remote
+
+    if parse_github_remote(url) is None:
+        return None
+    token = _ui_github_token(ui)
+    if not token:
+        return None
+    return github_auth_args(token)
 
 
 _LIVE_EVENT_KEYS = ("kind", "at", "message", "purpose", "name", "command", "phase", "path")

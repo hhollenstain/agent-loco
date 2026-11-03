@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -34,7 +36,7 @@ def with_lbw_coauthor(message: str) -> str:
     return f"{subject}\n\n{CO_AUTHORED_BY}"
 
 
-def pull_request_state(url: str) -> str:
+def pull_request_state(url: str, *, token: str | None = None) -> str:
     """Return open, closed, or merged for a pull-request URL. Empty when unknown."""
     target = extract_pr_url(url)
     if not target:
@@ -46,6 +48,7 @@ def pull_request_state(url: str) -> str:
             capture_output=True,
             text=True,
             timeout=8,
+            env=_gh_env(token),
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return ""
@@ -93,6 +96,16 @@ def parse_github_remote(url: str) -> tuple[str, str] | None:
     return owner, repo
 
 
+def github_https_url(owner: str, repo: str) -> str:
+    return f"https://github.com/{owner}/{repo}.git"
+
+
+def github_auth_args(token: str) -> list[str]:
+    """Ask git to send the installation token without putting it in the remote URL."""
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode("ascii")
+    return ["-c", f"http.extraheader=AUTHORIZATION: basic {basic}"]
+
+
 def github_owner_repo(
     workspace: Workspace,
     remote: str = "origin",
@@ -135,6 +148,8 @@ def git_tools(
     author_email: str | None,
     *,
     allow_publish: bool = False,
+    store_root: Path | None = None,
+    database_url: str = "",
 ) -> list[ToolSpec]:
     env_extras = _git_identity_env(author_name, author_email)
     tools = [
@@ -210,7 +225,10 @@ def git_tools(
                     }
                 ),
                 handler=lambda remote="origin", branch=None: push_changes(
-                    workspace, remote, branch
+                    workspace,
+                    remote,
+                    branch,
+                    token=_publish_token(store_root, database_url),
                 ),
             )
         )
@@ -226,6 +244,38 @@ def _git_identity_env(name: str | None, email: str | None) -> dict[str, str]:
         env["GIT_AUTHOR_EMAIL"] = email
         env["GIT_COMMITTER_EMAIL"] = email
     return env
+
+
+def _publish_token(store_root: Path | None, database_url: str) -> str | None:
+    if store_root is None:
+        return None
+    from agent_lbw.runtime.store.github import current_token
+
+    return current_token(Path(store_root), database_url)
+
+
+def _gh_env(token: str | None) -> dict[str, str] | None:
+    if not token:
+        return None
+    env = os.environ.copy()
+    env["GH_TOKEN"] = token
+    env["GITHUB_TOKEN"] = token
+    return env
+
+
+def _gh(
+    workspace: Workspace,
+    args: list[str],
+    token: str | None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        cwd=workspace.root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_gh_env(token),
+    )
 
 
 def run_git(
@@ -710,6 +760,7 @@ def push_changes(
     workspace: Workspace,
     remote: str = "origin",
     branch: str | None = None,
+    token: str | None = None,
 ) -> ToolResult:
     if not remote:
         remote = "origin"
@@ -718,7 +769,17 @@ def push_changes(
         return ToolResult(False, "no branch to push")
     if is_protected_branch(target):
         return ToolResult(False, f"refusing to push directly to {target}")
-    result = run_git(workspace, ["push", "-u", remote, f"HEAD:{target}"])
+    if token:
+        parsed = github_owner_repo(workspace, remote)
+        if parsed is None:
+            return ToolResult(False, "the GitHub App can push a GitHub remote")
+        url = github_https_url(*parsed)
+        result = run_git(
+            workspace,
+            [*github_auth_args(token), "push", url, f"HEAD:{target}"],
+        )
+    else:
+        result = run_git(workspace, ["push", "-u", remote, f"HEAD:{target}"])
     return ToolResult(result.returncode == 0, _output(result))
 
 
@@ -728,6 +789,7 @@ def create_pull_request(
     body: str,
     *,
     base: str | None = None,
+    token: str | None = None,
 ) -> ToolResult:
     title = " ".join(title.split()).strip() or "lbw changes"
     head = current_branch(workspace)
@@ -739,13 +801,7 @@ def create_pull_request(
     args = ["gh", "pr", "create", "--title", title, "--body", body]
     if base:
         args.extend(["--base", base])
-    result = subprocess.run(
-        args,
-        cwd=workspace.root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    result = _gh(workspace, args, token)
     output = (result.stdout or result.stderr).strip()
     if result.returncode == 0:
         return ToolResult(True, output)
@@ -759,6 +815,7 @@ def merge_pull_request(
     url: str | None = None,
     *,
     squash: bool = True,
+    token: str | None = None,
 ) -> ToolResult:
     """Squash-merge a GitHub pull request after cycle review. Does not push to main."""
     args = ["gh", "pr", "merge"]
@@ -767,13 +824,7 @@ def merge_pull_request(
     args.append("--squash" if squash else "--merge")
     args.append("--delete-branch")
     try:
-        result = subprocess.run(
-            args,
-            cwd=workspace.root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        result = _gh(workspace, args, token)
     except FileNotFoundError:
         return ToolResult(False, "gh not found")
     output = (result.stdout or result.stderr).strip()
@@ -784,13 +835,24 @@ def checkout_base_branch(
     workspace: Workspace,
     base: str,
     remote: str = "origin",
+    *,
+    token: str | None = None,
 ) -> ToolResult:
     """Return HEAD to the default branch after a merge so the next cycle starts clean."""
     target = (base or "").strip() or "main"
     switched = run_git(workspace, ["checkout", target])
     if switched.returncode != 0:
         return ToolResult(False, _output(switched))
-    pulled = run_git(workspace, ["pull", "--ff-only", remote or "origin", target])
+    if token:
+        parsed = github_owner_repo(workspace, remote or "origin")
+        if parsed is None:
+            return ToolResult(True, f"checked out {target}; pull: not a GitHub remote")
+        pulled = run_git(
+            workspace,
+            [*github_auth_args(token), "pull", "--ff-only", github_https_url(*parsed), target],
+        )
+    else:
+        pulled = run_git(workspace, ["pull", "--ff-only", remote or "origin", target])
     if pulled.returncode != 0:
         return ToolResult(True, f"checked out {target}; pull: {_output(pulled)}")
     return ToolResult(True, f"checked out {target}")
@@ -800,6 +862,8 @@ def update_pull_request(
     workspace: Workspace,
     title: str,
     body: str,
+    *,
+    token: str | None = None,
 ) -> ToolResult:
     """Refresh the open pull request on the current branch."""
     title = " ".join(title.split()).strip() or "lbw changes"
@@ -808,29 +872,17 @@ def update_pull_request(
         body = f"{body}\n\n{CO_AUTHORED_BY}"
     args = ["gh", "pr", "edit", "--title", title, "--body", body]
     try:
-        result = subprocess.run(
-            args,
-            cwd=workspace.root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        result = _gh(workspace, args, token)
     except FileNotFoundError:
         return ToolResult(False, "gh not found")
     output = (result.stdout or result.stderr).strip()
     return ToolResult(result.returncode == 0, output or "updated pull request")
 
 
-def existing_pull_request(workspace: Workspace) -> str | None:
+def existing_pull_request(workspace: Workspace, *, token: str | None = None) -> str | None:
     """URL of the open PR for the current branch, if one already exists."""
     try:
-        result = subprocess.run(
-            ["gh", "pr", "view", "--json", "url"],
-            cwd=workspace.root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        result = _gh(workspace, ["gh", "pr", "view", "--json", "url"], token)
     except FileNotFoundError:
         return None
     if result.returncode != 0:

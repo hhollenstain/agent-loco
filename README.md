@@ -82,7 +82,7 @@ Docker is optional. This repo's own tests do not need a model or a GPU.
 ## Local MacBook
 
 ```bash
-cd agent-lbw
+cd lbw
 cp .env.example .env
 uv sync --extra dev
 uv run pytest -q
@@ -150,7 +150,7 @@ The agent image is multi-arch (`linux/arm64` and `linux/amd64`) and does **not**
 
 `docker compose up` starts the web UI on [http://127.0.0.1:8080](http://127.0.0.1:8080). One-off commands replace that with `run`, `clone`, `init`, `watch`, or `doctor`.
 
-With no `LBW_DATABASE_URL`, the organization and its people are stored in SQLite at `.lbw/lbw.db` on the install. `make up-local` rebuilds the `agent-lbw:local` image when the files it copies have changed, then starts Postgres and the web UI on this machine at [http://127.0.0.1:8080](http://127.0.0.1:8080), with the UI pointed at that database. `WORKSPACE` defaults to `examples/demo-project` and `PORT` defaults to `8080`. Stopping the UI stops Postgres.
+With no `LBW_DATABASE_URL`, the organization and its people are stored in SQLite at `.lbw/lbw.db` on the install. `make up-local` rebuilds the `agent-lbw:local` image when the files it copies have changed, then starts Postgres, KiwiFS, and the agent in the background. The UI is at [http://127.0.0.1:8080](http://127.0.0.1:8080). `PORT` defaults to `8080`. Postgres and KiwiFS stay up after the command returns. `make restart-local` rebuilds and recreates only the agent container, so a code change can be tried without restarting those services.
 
 To run the agent container against the same database:
 
@@ -172,7 +172,9 @@ docker compose run --rm agent init /workspaces/repo
 docker compose run --rm agent run -w /workspaces/repo --goal "Add a README.md"
 ```
 
-Private GitHub repos need the SSH mount in `docker-compose.yml` uncommented, or clone on the host:
+Public GitHub repositories can be added by URL with no credentials. To let LBW push commits, open pull requests, and merge them, open Organization and connect a GitHub App. Create the app on GitHub, grant Contents, Issues, Pull requests, and Members read, turn the webhook off, install it on the account that owns the repositories, and paste the app id and private key. The private key is sealed with the install key. An installation token is minted when a push, pull request, or merge needs it, and it is not stored. Put a GitHub login on each person, then sync. That copies their organization role, teams, and repository access. Add a repository the app can see to the organization, a person, or a team.
+
+Private GitHub repos can also use the SSH mount in `docker-compose.yml`, or be cloned on the host:
 
 ```bash
 git clone git@github.com:user/repo.git "$LBW_WORKSPACE/repo"
@@ -230,7 +232,7 @@ uv run lbw doctor
 
 ### One base, one folder per project
 
-Reads search the whole base, including guides that are already there. Writes stay under `projects/<name>/`, so a cycle cannot overwrite `guides/` or `getting-started/`. For a git repo, `<name>` is the origin repository (`agent-lbw` from `github.com/you/agent-lbw.git`), including when LBW is pointed at a subdirectory. A folder that is not a git repo uses that folder's name. A repo with no remote uses the git root folder's name. Set `kiwifs_prefix` in `.lbw/config.yaml` to use a different folder. `LBW_KIWIFS_PREFIX` does the same when the project config does not. An explicit empty `kiwifs_prefix:` removes the fence and lets writes land anywhere in the base.
+Reads search the whole base, including guides that are already there. Writes stay under `projects/<name>/`, so a cycle cannot overwrite `guides/` or `getting-started/`. For a git repo, `<name>` is the origin repository (`lbw` from `github.com/you/lbw.git`), including when LBW is pointed at a subdirectory. A folder that is not a git repo uses that folder's name. A repo with no remote uses the git root folder's name. Set `kiwifs_prefix` in `.lbw/config.yaml` to use a different folder. `LBW_KIWIFS_PREFIX` does the same when the project config does not. An explicit empty `kiwifs_prefix:` removes the fence and lets writes land anywhere in the base.
 
 New projects enable the bundled `kiwi` skill. On a project that already has `.lbw/config.yaml`, add `kiwi` under `skills.enabled`.
 
@@ -254,13 +256,9 @@ Keyword search does not need a second model. Leave vector search off while the c
 
 ### Docker
 
-A container does not see the host's `localhost`. On Docker Desktop, point at the host:
+`docker compose up` starts KiwiFS next to the agent and points the agent at `http://kiwifs:3333`. `make up-local` publishes KiwiFS on `127.0.0.1:3333` and runs the agent in that stack. `make restart-local` leaves KiwiFS running. Rule text for an organization, team, project, or person is stored in its own KiwiFS space. The pages stay in the `lbw-kiwifs` volume.
 
-```bash
-export LBW_KIWIFS_URL=http://host.docker.internal:3333
-```
-
-The Mac compose file uses that address unless `LBW_KIWIFS_URL` is already set.
+Set `LBW_KIWIFS_URL` when KiwiFS is already running somewhere else. Set it empty to turn the tools off.
 
 ## Safety
 

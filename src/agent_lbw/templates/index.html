@@ -96,7 +96,7 @@
       height: 2.05rem;
     }
     main.collapsed .settings-panel,
-    main.collapsed .profile-panel {
+    main.collapsed .account-menu {
       left: calc(100% + 0.4rem);
       bottom: 0;
     }
@@ -405,6 +405,7 @@
       font-size: 0.78rem;
     }
     .hint { margin: 0.4rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+    #github-app-install-row[hidden], #github-repos[hidden] { display: none; }
     .guidelines-actions { display: flex; gap: 0.45rem; margin-top: 0.5rem; }
     #guidelines, #picker-guidelines { min-height: 8rem; font-size: 0.82rem; line-height: 1.4; }
     .workspace-row { display: flex; gap: 0.45rem; align-items: stretch; }
@@ -724,6 +725,17 @@
       min-height: 12rem;
       resize: vertical;
     }
+    .sidebar-overlay-body .rule-card textarea,
+    .section-page .rule-card textarea,
+    .section-page #project-rule-body,
+    .section-page #project-rule-ask,
+    .section-page #org-rule-ask,
+    .section-page #guidelines {
+      min-height: 5.5rem;
+    }
+    #skills-view {
+      position: relative;
+    }
     .sidebar-overlay-actions {
       display: flex;
       flex-wrap: wrap;
@@ -794,7 +806,8 @@
     #open-profile:hover, #open-profile:focus,
     #open-settings:hover, #open-settings:focus,
     #theme-toggle:hover, #theme-toggle:focus,
-    .settings-dock.profile-open #open-profile,
+    .settings-dock.account-open #open-profile,
+    .settings-dock.account-open #open-settings,
     .settings-dock.open #open-settings,
     #theme-toggle[aria-pressed="true"] {
       border-color: var(--accent);
@@ -812,8 +825,7 @@
       stroke: currentColor;
       stroke-width: 1.8;
     }
-    .settings-panel,
-    .profile-panel {
+    .settings-panel {
       width: min(26rem, calc(100vw - 2rem));
       max-height: min(32rem, calc(100vh - 5.5rem));
       overflow: hidden;
@@ -828,11 +840,37 @@
       border-radius: 10px;
       box-shadow: var(--shadow);
     }
+    .account-menu {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 0.45rem);
+      z-index: 8;
+      display: flex;
+      flex-direction: column;
+      min-width: 12rem;
+      padding: 0.35rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+    }
+    .account-menu[hidden] { display: none; }
+    .account-menu button {
+      text-align: left;
+      background: transparent;
+      color: var(--ink);
+      border: 0;
+      box-shadow: none;
+    }
+    .account-menu button:hover,
+    .account-menu button:focus {
+      background: var(--panel-2);
+    }
     .settings-panel { display: none; }
     .settings-dock.open .settings-panel { display: flex; flex-direction: column; }
     @media (max-width: 840px) {
       .settings-panel,
-      .profile-panel {
+      .account-menu {
         position: fixed;
         left: 0.6rem;
         right: 0.6rem;
@@ -1151,7 +1189,8 @@
       gap: 0.4rem;
       align-items: stretch;
     }
-    .settings-skill-source input {
+    .settings-skill-source input,
+    .settings-skill-source select {
       flex: 1 1 auto;
       min-width: 0;
     }
@@ -2548,47 +2587,6 @@
   </style>
 </head>
 <body>
-  <script>
-    function restoreAppMode() {
-      try {
-        if (localStorage.getItem("lbw-app-mode") === "schedules") {
-          document.documentElement.dataset.appMode = "schedules";
-        }
-      } catch (err) {
-        return;
-      }
-    }
-    restoreAppMode();
-  </script>
-  <div class="app-switch" id="app-switch">
-    <button type="button" class="app-switch-tab" id="app-switch-tab" aria-expanded="false" aria-controls="app-switch-rail" aria-label="Switch app" title="Switch app">
-      <svg viewBox="0 0 8 16" aria-hidden="true">
-        <path d="M2 2.5 6 8 2 13.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
-      </svg>
-    </button>
-    <nav class="app-switch-rail" id="app-switch-rail" aria-label="App mode">
-      <div class="app-switch-rail-inner">
-        <button type="button" class="app-mode" id="mode-projects" data-mode="projects" aria-pressed="true" title="Projects">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="6" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
-            <circle cx="6" cy="18" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
-            <circle cx="17" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
-            <path d="M6 8.2v7.6M6 12h5.2A4.8 4.8 0 0 0 16 7.2V6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
-          </svg>
-          <span>Projects</span>
-        </button>
-        <button type="button" class="app-mode" id="mode-schedules" data-mode="schedules" aria-pressed="false" title="Scheduled tasks">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M5 4.5 8.2 7M19 4.5 15.8 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-            <circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
-            <path d="M12 13V9.8M12 13l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-            <path d="M8.2 19.2 6.6 21M15.8 19.2 17.4 21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-          </svg>
-          <span>Schedules</span>
-        </button>
-      </div>
-    </nav>
-  </div>
   {% set ws_kind = 'github' if workspace_git_remote and 'github.com' in (workspace_git_remote|lower) else ('git' if workspace_is_git else 'folder') %}
   {% set ws_kind_label = 'GitHub repository' if ws_kind == 'github' else ('Git repository' if ws_kind == 'git' else 'Local folder') %}
   <main id="main">
@@ -2633,6 +2631,18 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.4 3.6h6.1v6.1L10.2 18a2.1 2.1 0 0 1-3 0l-1.2-1.2a2.1 2.1 0 0 1 0-3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="16.3" cy="7.7" r="1.05" fill="currentColor"/></svg>
           <span>Releases</span>
         </button>
+        <button type="button" class="rail-item" data-rail="rules" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
+          <span>Rules</span>
+        </button>
+        <button type="button" class="rail-item" data-rail="schedules" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5 8.2 7M19 4.5 15.8 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 13V9.8M12 13l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Schedules</span>
+        </button>
+        <button type="button" class="rail-item" data-rail="skills" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="8" width="14" height="11" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 8V6.4A1.9 1.9 0 0 1 8.9 4.5h11.1A1.9 1.9 0 0 1 21.9 6.4V16" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          <span>Skills</span>
+        </button>
       </nav>
       <div class="sidebar-overlay" id="roles-panel" hidden>
         <div class="sidebar-overlay-head">
@@ -2640,50 +2650,9 @@
           <button type="button" class="secondary" id="close-roles">Close</button>
         </div>
         <div class="sidebar-overlay-body">
-          <p class="hint">Each role has one job. Builder and QA stay on. Turn the others on, or add one at .lbw/roles/&lt;name&gt;/ROLE.md with job set to review.</p>
+          <p class="hint">Each role has one job. Builder and QA stay on. Turn the others on for this project, or add one at .lbw/roles/&lt;name&gt;/ROLE.md with job set to review. An organization admin can enforce a role on every project.</p>
           <div class="settings-skills-list" id="workspace-roles"></div>
           <p class="hint" id="roles-status">Loading roles…</p>
-        </div>
-      </div>
-      <div class="sidebar-overlay" id="skills-panel" hidden>
-        <div class="sidebar-overlay-head">
-          <h2>Skills</h2>
-          <button type="button" class="secondary" id="close-skills">Close</button>
-        </div>
-        <div class="skill-info-pop" id="skill-info-pop" hidden>
-          <div class="skill-info-pop-head">
-            <h3 id="skill-info-title">Skill</h3>
-            <button type="button" class="secondary" id="close-skill-info">Close</button>
-          </div>
-          <div class="skill-info-pop-body" id="skill-info-body"></div>
-        </div>
-        <div class="sidebar-overlay-body">
-          <p class="hint">Enable bundled skills or clone a skill repo into this workspace.</p>
-          <div class="settings-skills-search">
-            <input type="search" id="skills-search" aria-label="Search skills" placeholder="Search skills…" autocomplete="off">
-          </div>
-          <div class="settings-skills-list" id="workspace-skills"></div>
-          <p class="hint" id="skills-status">Loading skills…</p>
-          <div class="settings-skill-sources" id="skill-sources"></div>
-          <div class="settings-skill-source">
-            <input id="skill-source-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
-            <button type="button" class="secondary" id="clone-skill-source">Clone</button>
-          </div>
-        </div>
-      </div>
-      <div class="sidebar-overlay" id="guidelines-panel" hidden>
-        <div class="sidebar-overlay-head">
-          <h2>Rules</h2>
-          <button type="button" class="secondary" id="close-guidelines-panel">Close</button>
-        </div>
-        <div class="sidebar-overlay-body">
-          <label for="guidelines">Rules / guidelines</label>
-          <textarea id="guidelines" spellcheck="false">{{ guidelines }}</textarea>
-          <p class="hint" id="guidelines-status">{% if custom_guidelines %}Custom rules for this workspace.{% else %}Using default rules.{% endif %}</p>
-          <div class="sidebar-overlay-actions">
-            <button type="button" id="save-guidelines">Save rules</button>
-            <button type="button" class="secondary" id="reset-guidelines">Use defaults</button>
-          </div>
         </div>
       </div>
       </div>
@@ -2696,17 +2665,6 @@
           <path d="M13.2 19.2c.35-1.7 1.5-2.7 3-2.7 1.4 0 2.5.9 3 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
         </svg>
       </button>
-      <button type="button" class="secondary" id="open-skills" aria-label="Manage skills" aria-expanded="false" aria-controls="skills-panel" title="Manage skills">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="3.5" y="8" width="14" height="11" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/>
-          <path d="M7 8V6.4A1.9 1.9 0 0 1 8.9 4.5h11.1A1.9 1.9 0 0 1 21.9 6.4V16" fill="none" stroke="currentColor" stroke-width="1.8"/>
-        </svg>
-      </button>
-      <button type="button" class="secondary" id="open-guidelines" aria-label="Edit rules" aria-expanded="false" aria-controls="guidelines-panel" title="Edit rules">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
-        </svg>
-      </button>
       <button type="button" class="secondary" id="open-live-console" aria-label="Live console" aria-expanded="false" title="Live console">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
@@ -2715,35 +2673,16 @@
       </button>
     </div>
     <div class="settings-dock" id="settings-dock">
-      <button type="button" class="secondary" id="open-profile" aria-label="Profile" aria-expanded="false" aria-controls="profile-panel" title="Profile">
+      <button type="button" class="secondary" id="open-profile" aria-label="Profile" aria-expanded="false" aria-controls="account-menu" title="Profile">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="8" r="3.2"></circle>
           <path d="M5.5 19.2c.7-3 3-4.5 6.5-4.5s5.8 1.5 6.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
         </svg>
       </button>
-      <div class="profile-panel" id="profile-panel" hidden>
-        <div class="settings-panel-head">
-          <h2>Profile</h2>
-          <button type="button" class="secondary" id="close-profile">Close</button>
-        </div>
-        <div class="settings-panel-content">
-          <label for="org-name">Organization</label>
-          <input id="org-name" type="text" maxlength="80" autocomplete="organization" spellcheck="false">
-          <label for="profile-name">Your name</label>
-          <input id="profile-name" type="text" maxlength="80" autocomplete="name" spellcheck="false">
-          <div class="modal-actions">
-            <button type="button" id="save-profile">Save</button>
-          </div>
-          <label>People</label>
-          <div id="account-users" class="account-users"></div>
-          <label for="new-user-name">Add a person</label>
-          <div class="account-add">
-            <input id="new-user-name" type="text" maxlength="80" placeholder="Name" autocomplete="off" spellcheck="false">
-            <button type="button" class="secondary" id="add-user">Add</button>
-          </div>
-          <p class="hint">This install is local. The people here belong to one organization.</p>
-          <div class="notice-slot" id="account-error"></div>
-        </div>
+      <div class="account-menu" id="account-menu" hidden>
+        <button type="button" id="open-personal-page">Personal</button>
+        <button type="button" id="open-organization-page">Organization</button>
+        <button type="button" id="open-workspace-page">Workspace</button>
       </div>
       <button type="button" class="secondary" id="theme-toggle" aria-label="Switch to dark theme" aria-pressed="false" title="Dark theme">
         <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
@@ -2754,7 +2693,7 @@
           <path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4 18 18M18 6l-1.6 1.6M7.6 16.4 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
         </svg>
       </button>
-      <button type="button" class="secondary" id="open-settings" aria-label="Workspace settings" aria-expanded="false" aria-controls="settings-panel" title="Workspace settings">
+      <button type="button" class="secondary" id="open-settings" aria-label="Settings" aria-expanded="false" aria-controls="account-menu" title="Settings">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -2931,15 +2870,170 @@
           <div id="release-list" class="release-list"></div>
         </div>
       </div>
-    </section>
-  </main>
+      <div class="center-view" id="rules-view" data-section="rules" hidden>
+        <div class="section-page">
+          <p class="ask-kicker">Standards</p>
+          <h1 class="ask-heading">Rules</h1>
+          <p class="hint">Rules assigned to this project. Organization and team rules are managed in organization settings and show up here only when they apply.</p>
+          <h2 class="rule-heading">Rules in force</h2>
+          <p class="hint" id="inherited-rules-hint">Nothing is assigned to this project yet.</p>
+          <div id="inherited-rules" class="inherited-rules"></div>
+          <div id="project-rule-form" hidden>
+            <label for="project-rule-name">New project rule</label>
+            <input id="project-rule-name" type="text" maxlength="80" spellcheck="false">
+            <label for="project-rule-body">Rule text</label>
+            <textarea id="project-rule-body" spellcheck="false"></textarea>
+            <div class="sidebar-overlay-actions">
+              <button type="button" id="save-project-rule">Save project rule</button>
+            </div>
+            <label for="project-rule-ask">Ask LBW to draft a project rule</label>
+            <textarea id="project-rule-ask" spellcheck="false"></textarea>
+            <div class="sidebar-overlay-actions">
+              <button type="button" class="secondary" id="ask-project-rule">Draft with LBW</button>
+            </div>
+          </div>
+          <h2 class="rule-heading">Workspace guidelines</h2>
+          <label for="guidelines">Rules / guidelines</label>
+          <textarea id="guidelines" spellcheck="false">{{ guidelines }}</textarea>
+          <p class="hint" id="guidelines-status">{% if custom_guidelines %}Custom rules for this workspace.{% else %}Using default rules.{% endif %}</p>
+          <div class="sidebar-overlay-actions">
+            <button type="button" id="save-guidelines">Save rules</button>
+            <button type="button" class="secondary" id="reset-guidelines">Use defaults</button>
+          </div>
+        </div>
+      </div>
+      <div class="center-view" id="skills-view" data-section="skills" hidden>
+        <div class="skill-info-pop" id="skill-info-pop" hidden>
+          <div class="skill-info-pop-head">
+            <h3 id="skill-info-title">Skill</h3>
+            <button type="button" class="secondary" id="close-skill-info">Close</button>
+          </div>
+          <div class="skill-info-pop-body" id="skill-info-body"></div>
+        </div>
+        <div class="section-page" id="skills-panel">
+          <p class="ask-kicker">Process</p>
+          <h1 class="ask-heading">Skills</h1>
+          <p class="hint">Skills assigned to this project. A cloned repository is stored for this organization, team, and project. Organization skills are assigned in organization settings.</p>
+          <div class="settings-skills-search">
+            <input type="search" id="skills-search" aria-label="Search skills" placeholder="Search skills…" autocomplete="off">
+          </div>
+          <div class="settings-skills-list" id="workspace-skills"></div>
+          <p class="hint" id="skills-status">Loading skills…</p>
+          <div class="settings-skill-sources" id="skill-sources"></div>
+          <div class="settings-skill-source">
+            <select id="skill-source-team" hidden aria-label="Team"></select>
+            <input id="skill-source-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
+            <button type="button" class="secondary" id="clone-skill-source">Clone</button>
+          </div>
+        </div>
+      </div>
+      <div class="center-view" id="personal-view" data-section="personal" hidden>
+        <div class="section-page" id="personal-settings">
+          <p class="ask-kicker">Account</p>
+          <h1 class="ask-heading">Personal</h1>
+          <label for="profile-name">Your name</label>
+          <input id="profile-name" type="text" maxlength="80" autocomplete="name" spellcheck="false">
+          <div class="modal-actions">
+            <button type="button" id="save-profile">Save</button>
+          </div>
+          <h2 class="rule-heading">Your rules</h2>
+          <p class="hint">These follow you. They are not copied onto a project.</p>
+          <div id="personal-rules-list" class="rule-list"></div>
+        </div>
+      </div>
+      <div class="center-view" id="organization-view" data-section="organization" hidden>
+        <div class="section-page" id="organization-settings">
+          <p class="ask-kicker">Account</p>
+          <h1 class="ask-heading">Organization</h1>
+          <p class="hint">The hierarchy is organization, then teams, then projects. A project shows an organization or team rule, and an organization skill, only when it is assigned there. Roles are chosen on the project. An organization admin can enforce a role on every project.</p>
+          <label for="org-name">Organization</label>
+          <input id="org-name" type="text" maxlength="80" autocomplete="organization" spellcheck="false">
+          <div class="modal-actions">
+            <button type="button" id="save-org">Save organization</button>
+          </div>
+          <label>People</label>
+          <div id="account-users" class="account-users"></div>
+          <div id="account-add-row">
+            <label for="new-user-name">Add a person</label>
+            <div class="account-add">
+              <input id="new-user-name" type="text" maxlength="80" placeholder="Name" autocomplete="off" spellcheck="false">
+              <button type="button" class="secondary" id="add-user">Add</button>
+            </div>
+          </div>
+          <p class="hint">This install is local. The people here belong to one organization.</p>
+          <div class="notice-slot" id="account-error"></div>
+          <h2 class="rule-heading">Rules</h2>
+          <p class="hint">Organization and team rules. Mark an organization rule required on a project for it to show up there. A rules duty can edit these. Other members can read them.</p>
+          <div id="org-rules-list" class="rule-list"></div>
+          <div id="org-rule-draft">
+            <label for="org-rule-scope">Draft a rule for</label>
+            <select id="org-rule-scope"></select>
+            <label for="org-rule-ask">What the rule should say</label>
+            <textarea id="org-rule-ask" spellcheck="false"></textarea>
+            <div class="sidebar-overlay-actions">
+              <button type="button" class="secondary" id="ask-org-rule">Draft with LBW</button>
+            </div>
+          </div>
+          <div class="notice-slot" id="org-rules-error"></div>
+          <h2 class="rule-heading">Skills</h2>
+          <p class="hint" id="org-skills-hint">Assign a bundled skill to the organization, a team, or a project.</p>
+          <div id="org-skills" class="rule-list"></div>
+          <div class="notice-slot" id="org-skills-error"></div>
+          <h2 class="rule-heading">Skill repositories</h2>
+          <p class="hint">A repository is stored in its own space for the organization or a team. Resync pulls the latest commit into that space.</p>
+          <div class="settings-skill-sources" id="org-skill-repos"></div>
+          <div class="settings-skill-source" id="org-skill-repo-form">
+            <select id="org-skill-repo-scope" aria-label="Where to store the repository"></select>
+            <input id="org-skill-repo-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
+            <button type="button" class="secondary" id="add-org-skill-repo">Add</button>
+          </div>
+          <h2 class="rule-heading">Enforced roles</h2>
+          <p class="hint">Checked roles stay on for every project. Project settings can still turn on the others.</p>
+          <div id="org-roles" class="settings-skills-list"></div>
+          <div class="github-app" id="github-app">
+            <label for="github-app-id">GitHub App</label>
+            <p class="hint" id="github-app-status">Not connected.</p>
+            <p class="hint" id="github-app-install-row" hidden><a id="github-app-install" href="https://github.com/apps" target="_blank" rel="noopener noreferrer">Install on GitHub</a></p>
+            <div class="notice-slot" id="github-app-error"></div>
+            <div id="github-app-edit">
+              <p class="hint">Public repositories can be added by URL without this. Connect a GitHub App so LBW can push commits, open pull requests, and merge them. <a href="https://github.com/settings/apps/new" target="_blank" rel="noopener noreferrer">Create the app</a>, allow it on any account, grant Contents, Issues, Pull requests, and Members read, and turn the webhook off. Then install it on the organization that owns the repositories.</p>
+              <input id="github-app-id" type="text" inputmode="numeric" maxlength="20" placeholder="App ID" autocomplete="off" spellcheck="false">
+              <label for="github-app-key">Private key</label>
+              <textarea id="github-app-key" class="github-app-key" spellcheck="false" placeholder="Paste the PEM. It is stored sealed and is not shown again."></textarea>
+              <div class="modal-actions">
+                <button type="button" id="save-github-app">Save GitHub App</button>
+              </div>
+              <label for="github-installation">Installation</label>
+              <select id="github-installation"></select>
+              <div class="modal-actions">
+                <button type="button" class="secondary" id="check-github-installations">Refresh</button>
+                <button type="button" id="use-github-installation">Use installation</button>
+              </div>
+            </div>
+            <div id="github-repos" hidden>
+              <h2 class="rule-heading">Repositories</h2>
+              <p class="hint">Add a repository this app can see to the organization, a person, or a team. Sync copies GitHub roles, teams, and repository access onto people who have a GitHub login.</p>
+              <div class="settings-skill-source">
+                <select id="github-repo" aria-label="Repository"></select>
+                <select id="github-repo-subject" aria-label="Who receives the repository"></select>
+                <button type="button" class="secondary" id="load-github-repos">Load repositories</button>
+                <button type="button" id="add-github-repo">Add workspace</button>
+              </div>
+              <div class="modal-actions">
+                <button type="button" id="sync-github-access">Sync access</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="center-view" id="schedules-view" data-section="schedules" hidden>
   <section class="schedules-app" id="schedules-app" aria-label="Scheduled tasks">
     <aside class="schedules-list">
       <div class="schedules-head">
         <h1>Scheduled tasks</h1>
         <button type="button" class="secondary" id="new-schedule">New</button>
       </div>
-      <p class="hint">Run a goal in a project, or save a CSV and documents on their own.</p>
+      <p class="hint">Save a CSV or other documents on a schedule. A run in a project, such as a security review, is not scheduled here.</p>
       <div id="schedule-list"></div>
     </aside>
     <div class="schedules-detail">
@@ -2956,21 +3050,10 @@
         <label for="schedule-name">Name</label>
         <input id="schedule-name" type="text" maxlength="80" placeholder="Weekday job search" autocomplete="off">
         <label for="schedule-goal">What should it do?</label>
-        <textarea id="schedule-goal" rows="6" placeholder="Look up new jobs that match this project and write a short report of what you found."></textarea>
-        <label>Where it runs</label>
-        <div class="cadence-choices">
-          <button type="button" class="secondary schedule-target" id="target-project" data-target="project" aria-pressed="true">Project</button>
-          <button type="button" class="secondary schedule-target" id="target-files" data-target="files" aria-pressed="false">Files</button>
-        </div>
-        <div id="schedule-project-fields">
-          <label for="schedule-workspace">Project</label>
-          <select id="schedule-workspace" aria-label="Project"></select>
-        </div>
-        <div id="schedule-files-fields" hidden>
-          <label for="schedule-output">Save files in</label>
-          <input id="schedule-output" type="text" spellcheck="false" placeholder="Leave blank to keep them with this schedule">
-          <p class="hint">A job search, CSV, or other documents. This does not need a git project.</p>
-        </div>
+        <textarea id="schedule-goal" rows="6" placeholder="Search for new jobs and save them as jobs.csv."></textarea>
+        <label for="schedule-output">Save files in</label>
+        <input id="schedule-output" type="text" spellcheck="false" placeholder="Leave blank to keep them with this schedule">
+        <p class="hint">A job search, CSV, or other documents. This does not need a git project.</p>
         <label>How often</label>
         <div class="cadence-choices">
           <button type="button" class="secondary cadence-choice" id="cadence-hourly" data-kind="hourly" aria-pressed="false">Hourly</button>
@@ -3003,14 +3086,6 @@
           <label>
             <input id="schedule-enabled" type="checkbox" checked> enabled
           </label>
-          <span id="schedule-project-options">
-            <label>
-              <input id="schedule-commit" type="checkbox"> commit if tests pass
-            </label>
-            <label>
-              <input id="schedule-pr" type="checkbox"> create pull request
-            </label>
-          </span>
         </div>
         <div class="schedule-actions">
           <button type="submit" id="save-schedule">Save schedule</button>
@@ -3026,6 +3101,9 @@
       </div>
     </div>
   </section>
+      </div>
+    </section>
+  </main>
   <div class="modal-backdrop" id="workspace-picker" role="dialog" aria-modal="true" aria-labelledby="workspace-picker-title" hidden>
     <div class="modal">
       <h2 id="workspace-picker-title">Choose a workspace</h2>
@@ -3175,12 +3253,6 @@
     const closeRolesBtn = document.getElementById("close-roles");
     const workspaceRolesEl = document.getElementById("workspace-roles");
     const rolesStatusEl = document.getElementById("roles-status");
-    const skillsPanelEl = document.getElementById("skills-panel");
-    const openSkillsBtn = document.getElementById("open-skills");
-    const closeSkillsBtn = document.getElementById("close-skills");
-    const guidelinesPanelEl = document.getElementById("guidelines-panel");
-    const openGuidelinesBtn = document.getElementById("open-guidelines");
-    const closeGuidelinesPanelBtn = document.getElementById("close-guidelines-panel");
     const enabledSkillsHint = document.getElementById("enabled-skills-hint");
     let browsePath = workspaceEl.value;
     let browseParent = "";
@@ -3398,23 +3470,38 @@
       return settingsDockEl.classList.contains("open");
     }
 
-    const profilePanelEl = document.getElementById("profile-panel");
+    const accountMenuEl = document.getElementById("account-menu");
     const profileToggleEl = document.getElementById("open-profile");
     const accountErrorEl = document.getElementById("account-error");
+    let githubAccount = null;
+    let githubTeams = [];
 
-    function profileOpen() {
-      return settingsDockEl.classList.contains("profile-open");
+    function accountMenuOpen() {
+      return Boolean(accountMenuEl && !accountMenuEl.hidden);
     }
 
-    function setProfileOpen(open) {
-      settingsDockEl.classList.toggle("profile-open", open);
-      if (profilePanelEl) profilePanelEl.hidden = !open;
+    function setAccountMenuOpen(open) {
+      if (accountMenuEl) accountMenuEl.hidden = !open;
+      settingsDockEl.classList.toggle("account-open", open);
       if (profileToggleEl) profileToggleEl.setAttribute("aria-expanded", open ? "true" : "false");
+      if (settingsToggleEl && (open || !settingsOpen())) {
+        settingsToggleEl.setAttribute("aria-expanded", open ? "true" : "false");
+      }
       if (!open) return;
-      setSettingsOpen(false);
+      settingsDockEl.classList.remove("open");
+      if (settingsPanelEl) settingsPanelEl.hidden = true;
       setNotifyPanel(false);
       closeSidebarOverlays();
-      loadAccount().catch(showAccountError);
+    }
+
+    function loadAccountPages() {
+      loadAccount()
+        .then(() => Promise.all([
+          loadGitHubApp().catch(showGitHubError),
+          loadOrgRules().catch(showOrgRulesError),
+          loadOrgSettings().catch(showOrgSettingsError),
+        ]))
+        .catch(showAccountError);
     }
 
     function showAccountError(err) {
@@ -3422,13 +3509,38 @@
       showNotice(accountErrorEl, "error", err && (err.message || String(err)));
     }
 
+    function canManageOrg(account) {
+      const current = (account.users || []).find((user) => user.id === account.current_user_id);
+      return Boolean(current && (current.role === "owner" || current.role === "admin"));
+    }
+
+    function roleLabel(role) {
+      if (role === "owner") return "Owner";
+      if (role === "admin") return "Admin";
+      return "Member";
+    }
+
     function renderAccount(account) {
       const orgEl = document.getElementById("org-name");
       const nameEl = document.getElementById("profile-name");
       const peopleEl = document.getElementById("account-users");
-      if (orgEl) orgEl.value = account.org ? account.org.name : "";
+      const manage = canManageOrg(account);
+      const addRow = document.getElementById("account-add-row");
+      const githubForm = document.getElementById("github-app");
+      if (orgEl) {
+        orgEl.value = account.org ? account.org.name : "";
+        orgEl.disabled = !manage;
+      }
       const current = (account.users || []).find((user) => user.id === account.current_user_id);
       if (nameEl) nameEl.value = current ? current.name : "";
+      if (addRow) addRow.hidden = !manage;
+      const githubEdit = document.getElementById("github-app-edit");
+      if (githubEdit) githubEdit.hidden = !manage;
+      if (githubForm) githubForm.hidden = false;
+      const saveOrg = document.getElementById("save-org");
+      if (saveOrg) saveOrg.hidden = !manage;
+      githubAccount = account;
+      fillGitHubSubjects();
       if (!peopleEl) return;
       peopleEl.replaceChildren();
       for (const user of account.users || []) {
@@ -3439,9 +3551,28 @@
         name.textContent = user.name;
         const role = document.createElement("span");
         role.className = "role";
-        role.textContent = user.role === "owner" ? "Owner" : "Member";
+        role.textContent = roleLabel(user.role);
         row.append(name, role);
-        if (user.id !== account.current_user_id) {
+        if (manage || user.id === account.current_user_id) {
+          const login = document.createElement("input");
+          login.className = "github-login";
+          login.type = "text";
+          login.maxLength = 39;
+          login.spellcheck = false;
+          login.autocomplete = "off";
+          login.placeholder = "GitHub login";
+          login.setAttribute("aria-label", "GitHub login for " + user.name);
+          login.value = user.github_login || "";
+          const connect = document.createElement("button");
+          connect.type = "button";
+          connect.className = "secondary";
+          connect.textContent = "Connect";
+          connect.addEventListener("click", () => {
+            saveGitHubLogin(user.id, login.value).catch(showGitHubError);
+          });
+          row.append(login, connect);
+        }
+        if (manage && user.id !== account.current_user_id) {
           const remove = document.createElement("button");
           remove.type = "button";
           remove.className = "secondary";
@@ -3453,6 +3584,128 @@
         }
         peopleEl.append(row);
       }
+    }
+
+    function showGitHubError(err) {
+      const message = err && (err.message || String(err));
+      const slot = document.getElementById("github-app-error");
+      if (slot) showNotice(slot, "error", message);
+      notify("error", message, { title: "GitHub App" });
+    }
+
+    function renderGitHubApp(app) {
+      const idEl = document.getElementById("github-app-id");
+      const statusEl = document.getElementById("github-app-status");
+      const installEl = document.getElementById("github-app-install");
+      const installRow = document.getElementById("github-app-install-row");
+      if (idEl && document.activeElement !== idEl) idEl.value = app.app_id || "";
+      const showInstall = Boolean(app.install_url) && !app.account_login;
+      if (installRow) installRow.hidden = !showInstall;
+      if (installEl && showInstall) installEl.href = app.install_url;
+      if (!statusEl) return;
+      const reposEl = document.getElementById("github-repos");
+      const manage = githubAccount ? canManageOrg(githubAccount) : false;
+      if (reposEl) reposEl.hidden = !app.account_login || !manage;
+      if (app.account_login) {
+        statusEl.textContent = "Connected to " + app.account_login + ". Add a repository below, or sync access for people with a GitHub login.";
+      } else if (app.configured) {
+        statusEl.textContent = "Saved. Install the app on the GitHub account or organization that owns the repositories, then refresh.";
+      } else {
+        statusEl.textContent = "Not connected. Public repositories can still be added by URL.";
+      }
+    }
+
+    async function loadGitHubApp() {
+      const res = await fetch("/api/github/app");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to load the GitHub App");
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      renderGitHubApp(body);
+      renderGitHubInstallations(body.installations, body.installation_id);
+      return body;
+    }
+
+    async function saveGitHubApp() {
+      const idEl = document.getElementById("github-app-id");
+      const keyEl = document.getElementById("github-app-key");
+      const res = await fetch("/api/github/app", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          app_id: idEl ? idEl.value : "",
+          private_key: keyEl ? keyEl.value : "",
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to save the GitHub App");
+      if (keyEl) keyEl.value = "";
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      renderGitHubApp(body);
+      if (body.installations) {
+        renderGitHubInstallations(body.installations, body.installation_id);
+      }
+      if (body.warning) {
+        showGitHubError(new Error(body.warning));
+        return;
+      }
+      if (body.account_login) {
+        notify("success", "Connected to " + body.account_login + ".", { title: "GitHub App" });
+      } else {
+        notify("success", "Saved. Install the app on the GitHub account or organization, then refresh.", { title: "GitHub App" });
+      }
+    }
+
+    function renderGitHubInstallations(installations, selected) {
+      const select = document.getElementById("github-installation");
+      if (!select) return;
+      select.replaceChildren();
+      for (const item of installations || []) {
+        const option = document.createElement("option");
+        option.value = item.id;
+        const kind = item.account_type ? " (" + item.account_type + ")" : "";
+        option.textContent = (item.account_login || item.id) + kind;
+        if (item.id === selected) option.selected = true;
+        select.append(option);
+      }
+    }
+
+    async function loadGitHubInstallations() {
+      const res = await fetch("/api/github/installations");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to list installations");
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      const app = await loadGitHubApp();
+      if (body.install_url) app.install_url = body.install_url;
+      renderGitHubApp(app);
+      renderGitHubInstallations(body.installations, app.installation_id);
+      const found = body.installations || [];
+      if (!found.length) {
+        throw new Error("No installations yet. Install the app on the GitHub account or organization, then refresh.");
+      }
+      if (found.length === 1 && !app.installation_id) {
+        await useGitHubInstallation();
+      }
+    }
+
+    async function useGitHubInstallation() {
+      const select = document.getElementById("github-installation");
+      const installationId = select ? select.value : "";
+      if (!installationId) throw new Error("Choose an installation.");
+      const res = await fetch("/api/github/installation", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ installation_id: installationId }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to use that installation");
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      renderGitHubApp(body);
+      renderGitHubInstallations(body.installations, body.installation_id);
+      notify("success", "Connected to " + (body.account_login || "that account") + ".", { title: "GitHub App" });
     }
 
     async function loadAccount() {
@@ -3511,7 +3764,7 @@
       settingsToggleEl.setAttribute("aria-expanded", open ? "true" : "false");
       if (!open) return;
       closeSidebarOverlays();
-      setProfileOpen(false);
+      setAccountMenuOpen(false);
     }
 
     const WORKSPACE_KIND_LABELS = {
@@ -3570,6 +3823,9 @@
       setGuidelinesEditor(body.guidelines, body.custom_guidelines);
       loadWorkspaceSkills();
       loadWorkspaceRoles();
+      if (state.section === "rules") {
+        loadAppliedRules().catch((err) => notify("error", err.message, { title: "Could not load rules" }));
+      }
     }
 
     function renderProjectSelect(workspaces, current) {
@@ -3685,7 +3941,7 @@
 
     async function openPicker() {
       setSettingsOpen(false);
-      setProfileOpen(false);
+      setAccountMenuOpen(false);
       pickerEl.hidden = false;
       pickerEl.classList.add("open");
       pickerErrorEl.replaceChildren();
@@ -3829,12 +4085,9 @@
       if (!panel || !btn) return;
       panel.hidden = !open;
       btn.setAttribute("aria-expanded", open ? "true" : "false");
-      if (panel === skillsPanelEl && !open) closeSkillInfo();
     }
     function closeSidebarOverlays() {
       setOverlayOpen(rolesPanelEl, openRolesBtn, false);
-      setOverlayOpen(skillsPanelEl, openSkillsBtn, false);
-      setOverlayOpen(guidelinesPanelEl, openGuidelinesBtn, false);
     }
     function toggleOverlay(panel, btn) {
       const shouldOpen = panel && panel.hidden;
@@ -3854,18 +4107,6 @@
     }
     if (closeRolesBtn) {
       closeRolesBtn.addEventListener("click", () => setOverlayOpen(rolesPanelEl, openRolesBtn, false));
-    }
-    if (openSkillsBtn) {
-      openSkillsBtn.addEventListener("click", () => toggleOverlay(skillsPanelEl, openSkillsBtn));
-    }
-    if (closeSkillsBtn) {
-      closeSkillsBtn.addEventListener("click", () => setOverlayOpen(skillsPanelEl, openSkillsBtn, false));
-    }
-    if (openGuidelinesBtn) {
-      openGuidelinesBtn.addEventListener("click", () => toggleOverlay(guidelinesPanelEl, openGuidelinesBtn));
-    }
-    if (closeGuidelinesPanelBtn) {
-      closeGuidelinesPanelBtn.addEventListener("click", () => setOverlayOpen(guidelinesPanelEl, openGuidelinesBtn, false));
     }
 
     document.getElementById("save-guidelines").addEventListener("click", async () => {
@@ -3902,6 +4143,663 @@
         notify("error", err.message, { title: "Could not reset guidelines" });
       }
     });
+
+    function showOrgRulesError(err) {
+      const slot = document.getElementById("org-rules-error");
+      if (!slot) return;
+      showNotice(slot, "error", err && (err.message || String(err)));
+    }
+
+    function appliedSource(rule) {
+      if (rule.source === "organization") {
+        return rule.required ? "Organization, required" : "Organization";
+      }
+      if (rule.source === "team") return "Team " + (rule.scope_name || "");
+      return "This project";
+    }
+
+    function appliedRuleCard(rule) {
+      const card = document.createElement("article");
+      card.className = "rule-card";
+      const title = document.createElement("h3");
+      title.textContent = rule.name;
+      const source = document.createElement("p");
+      source.className = "rule-source";
+      source.textContent = appliedSource(rule);
+      card.append(title, source);
+      if (rule.can_write && rule.source === "project") {
+        const text = document.createElement("textarea");
+        text.value = rule.body || "";
+        text.setAttribute("aria-label", "Rule text");
+        const actions = document.createElement("div");
+        actions.className = "sidebar-overlay-actions";
+        const save = document.createElement("button");
+        save.type = "button";
+        save.textContent = "Save";
+        save.addEventListener("click", () => {
+          saveExistingRule(rule.id, rule.name, text.value)
+            .then(() => loadAppliedRules())
+            .catch((err) => notify("error", err.message, { title: "Could not save the rule" }));
+        });
+        actions.append(save);
+        card.append(text, actions);
+      } else {
+        const body = document.createElement("p");
+        body.className = "rule-body";
+        body.textContent = rule.body || "(not in KiwiFS yet)";
+        card.append(body);
+      }
+      return card;
+    }
+
+    function renderAppliedRules(payload) {
+      const list = document.getElementById("inherited-rules");
+      const hint = document.getElementById("inherited-rules-hint");
+      const form = document.getElementById("project-rule-form");
+      if (hint) {
+        hint.textContent = payload.note || "Organization, team, and project rules that apply here.";
+      }
+      if (form) form.hidden = !payload.can_write;
+      if (!list) return;
+      list.replaceChildren();
+      for (const rule of payload.rules || []) {
+        list.append(appliedRuleCard(rule));
+      }
+    }
+
+    async function loadAppliedRules() {
+      const path = workspaceEl.value;
+      const res = await fetch("/api/rules/applied?workspace=" + encodeURIComponent(path));
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to load rules");
+      renderAppliedRules(body);
+    }
+
+    function editorRuleCard(rule, scope, projects) {
+      const card = document.createElement("article");
+      card.className = "rule-card";
+      const title = document.createElement("h3");
+      title.textContent = rule.name;
+      card.append(title);
+      if (!rule.can_write) {
+        const body = document.createElement("p");
+        body.className = "rule-body";
+        body.textContent = rule.body || "(not in KiwiFS yet)";
+        card.append(body);
+      } else {
+        const name = document.createElement("input");
+        name.type = "text";
+        name.maxLength = 80;
+        name.value = rule.name;
+        name.setAttribute("aria-label", "Rule name");
+        const text = document.createElement("textarea");
+        text.value = rule.body || "";
+        text.setAttribute("aria-label", "Rule text");
+        const actions = document.createElement("div");
+        actions.className = "sidebar-overlay-actions";
+        const save = document.createElement("button");
+        save.type = "button";
+        save.textContent = "Save";
+        save.addEventListener("click", () => {
+          saveExistingRule(rule.id, name.value, text.value).catch(showOrgRulesError);
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary";
+        remove.textContent = "Delete";
+        remove.addEventListener("click", () => {
+          if (!window.confirm("Delete this rule?")) return;
+          deleteRule(rule.id).catch(showOrgRulesError);
+        });
+        actions.append(save, remove);
+        card.append(name, text, actions);
+      }
+      if (scope.scope_type === "tenant" && (projects || []).length) {
+        const box = document.createElement("div");
+        box.className = "rule-projects";
+        const label = document.createElement("p");
+        label.className = "rule-source";
+        label.textContent = "Required on";
+        box.append(label);
+        const required = new Set(rule.required_project_ids || []);
+        for (const project of projects) {
+          const row = document.createElement("label");
+          row.className = "rule-check";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = required.has(project.id);
+          input.disabled = !scope.can_write;
+          input.addEventListener("change", () => {
+            setRequired(rule.id, project.id, input.checked).catch(showOrgRulesError);
+          });
+          const projectName = document.createElement("span");
+          projectName.textContent = project.name;
+          row.append(input, projectName);
+          box.append(row);
+        }
+        card.append(box);
+      }
+      return card;
+    }
+
+    function newRuleForm(scope) {
+      const form = document.createElement("div");
+      form.className = "rule-card";
+      const name = document.createElement("input");
+      name.type = "text";
+      name.maxLength = 80;
+      name.placeholder = "New rule name";
+      name.setAttribute("aria-label", "New rule name");
+      const text = document.createElement("textarea");
+      text.placeholder = "Rule text";
+      text.setAttribute("aria-label", "New rule text");
+      const actions = document.createElement("div");
+      actions.className = "sidebar-overlay-actions";
+      const save = document.createElement("button");
+      save.type = "button";
+      save.textContent = "Add rule";
+      save.addEventListener("click", () => {
+        createRule(scope, name.value, text.value).catch(showOrgRulesError);
+      });
+      actions.append(save);
+      form.append(name, text, actions);
+      return form;
+    }
+
+    function renderOrgRules(payload) {
+      const list = document.getElementById("org-rules-list");
+      const personal = document.getElementById("personal-rules-list");
+      const scopeSelect = document.getElementById("org-rule-scope");
+      const draft = document.getElementById("org-rule-draft");
+      if (list) list.replaceChildren();
+      if (personal) personal.replaceChildren();
+      if (scopeSelect) scopeSelect.replaceChildren();
+      let writable = 0;
+      for (const scope of payload.scopes || []) {
+        if (scope.scope_type === "project") continue;
+        const target = scope.scope_type === "identity" ? personal : list;
+        if (!target) continue;
+        const section = document.createElement("section");
+        section.className = "rule-scope";
+        if (scope.scope_type !== "identity") {
+          const heading = document.createElement("h3");
+          heading.className = "rule-heading";
+          heading.textContent = scope.name;
+          section.append(heading);
+        }
+        for (const rule of scope.rules || []) {
+          section.append(editorRuleCard(rule, scope, payload.projects || []));
+        }
+        if (scope.can_write) {
+          section.append(newRuleForm(scope));
+          if (scope.scope_type !== "identity") {
+            writable += 1;
+            if (scopeSelect) {
+              const option = document.createElement("option");
+              option.value = scope.scope_type + "\n" + scope.scope_id;
+              option.textContent = scope.name;
+              scopeSelect.append(option);
+            }
+          }
+        }
+        target.append(section);
+      }
+      if (draft) draft.hidden = writable === 0;
+    }
+
+    async function loadOrgRules() {
+      const slot = document.getElementById("org-rules-error");
+      if (slot) slot.replaceChildren();
+      const res = await fetch("/api/rules/editor");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to load rules");
+      renderOrgRules(body);
+    }
+
+    function showOrgSettingsError(err) {
+      const slot = document.getElementById("org-skills-error");
+      if (!slot) return;
+      slot.replaceChildren();
+      const notice = document.createElement("div");
+      notice.className = "notice error";
+      notice.textContent = err.message || "Could not load organization settings";
+      slot.append(notice);
+    }
+
+    function fillGitHubSubjects() {
+      const select = document.getElementById("github-repo-subject");
+      if (!select || !githubAccount) return;
+      const previous = select.value;
+      const manage = canManageOrg(githubAccount);
+      const org = githubAccount.org || {};
+      select.replaceChildren();
+      if (manage) {
+        const option = document.createElement("option");
+        option.value = "tenant\n" + (org.id || "");
+        option.textContent = "Organization";
+        select.append(option);
+      }
+      for (const user of githubAccount.users || []) {
+        if (!manage && user.id !== githubAccount.current_user_id) continue;
+        const option = document.createElement("option");
+        option.value = "identity\n" + user.id;
+        option.textContent = user.name;
+        select.append(option);
+      }
+      if (manage) {
+        for (const team of githubTeams) {
+          const option = document.createElement("option");
+          option.value = "team\n" + team.id;
+          option.textContent = "Team " + team.name;
+          select.append(option);
+        }
+      }
+      if (previous) select.value = previous;
+    }
+
+    async function saveGitHubLogin(userId, githubLogin) {
+      const res = await fetch("/api/github/login", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, github_login: githubLogin }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to connect that GitHub login");
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      renderAccount(body);
+      notify("success", githubLogin.trim() ? "Connected " + githubLogin.trim() + "." : "Cleared the GitHub login.", { title: "GitHub" });
+    }
+
+    async function loadGitHubRepos() {
+      const res = await fetch("/api/github/repos");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to load repositories");
+      const select = document.getElementById("github-repo");
+      if (!select) return;
+      const previous = select.value;
+      select.replaceChildren();
+      for (const repo of body.repos || []) {
+        const option = document.createElement("option");
+        option.value = repo.full_name;
+        option.textContent = repo.full_name + (repo.private ? " (private)" : "");
+        select.append(option);
+      }
+      if (previous) select.value = previous;
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      if (!(body.repos || []).length) throw new Error("This installation has no repositories.");
+      notify("success", "Loaded " + body.repos.length + " repositories.", { title: "GitHub" });
+    }
+
+    async function addGitHubWorkspace() {
+      const repoEl = document.getElementById("github-repo");
+      const subjectEl = document.getElementById("github-repo-subject");
+      const fullName = repoEl ? repoEl.value : "";
+      const subject = (subjectEl ? subjectEl.value : "").split("\n");
+      if (!fullName) throw new Error("Load repositories and choose one.");
+      const res = await fetch("/api/github/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: fullName,
+          subject_type: subject[0] || "",
+          subject_id: subject[1] || "",
+          parent: cloneParentEl && cloneParentEl.value ? cloneParentEl.value.trim() : "",
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to add that repository");
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      notify("success", "Added " + body.full_name + " for " + body.placed + ".", { title: "GitHub" });
+    }
+
+    async function syncGitHubAccess() {
+      const res = await fetch("/api/github/sync", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to sync GitHub access");
+      const slot = document.getElementById("github-app-error");
+      if (slot) slot.replaceChildren();
+      if (body.account) renderAccount(body.account);
+      await loadOrgSettings();
+      notify("success", body.summary || "Synced GitHub access.", { title: "GitHub" });
+    }
+
+    function renderOrgSettings(body) {
+      githubTeams = body.teams || [];
+      fillGitHubSubjects();
+      const skillsEl = document.getElementById("org-skills");
+      const rolesEl = document.getElementById("org-roles");
+      const hint = document.getElementById("org-skills-hint");
+      if (hint) {
+        hint.textContent = body.can_manage
+          ? "Assign a bundled skill to the organization, a team, or a project."
+          : "An owner or admin assigns skills and enforces roles.";
+      }
+      if (skillsEl) {
+        skillsEl.replaceChildren();
+        const scopes = [{ scope_type: "tenant", scope_id: body.org_id || "", label: "Every project" }];
+        for (const team of body.teams || []) {
+          scopes.push({ scope_type: "team", scope_id: team.id, label: "Team " + team.name });
+        }
+        for (const project of body.projects || []) {
+          scopes.push({ scope_type: "project", scope_id: project.id, label: "Project " + project.name });
+        }
+        for (const skill of body.skills || []) {
+          const block = document.createElement("section");
+          block.className = "rule-scope";
+          const title = document.createElement("h3");
+          title.className = "rule-heading";
+          title.textContent = skill.name;
+          block.append(title);
+          const grants = (body.grants || []).filter((grant) => grant.skill_name === skill.name);
+          if (!grants.length) {
+            const empty = document.createElement("p");
+            empty.className = "hint";
+            empty.textContent = "Not assigned.";
+            block.append(empty);
+          }
+          for (const grant of grants) {
+            const row = document.createElement("div");
+            row.className = "account-user";
+            const label = document.createElement("span");
+            label.textContent = grant.label || grant.scope_type;
+            row.append(label);
+            if (body.can_manage) {
+              const remove = document.createElement("button");
+              remove.type = "button";
+              remove.className = "secondary";
+              remove.textContent = "Remove";
+              remove.addEventListener("click", () => {
+                saveOrgSkill(skill.name, grant.scope_type, grant.scope_id, false).catch(showOrgSettingsError);
+              });
+              row.append(remove);
+            }
+            block.append(row);
+          }
+          if (body.can_manage) {
+            const form = document.createElement("div");
+            form.className = "account-add";
+            const select = document.createElement("select");
+            for (const scope of scopes) {
+              const option = document.createElement("option");
+              option.value = scope.scope_type + "\n" + scope.scope_id;
+              option.textContent = scope.label;
+              select.append(option);
+            }
+            const assign = document.createElement("button");
+            assign.type = "button";
+            assign.className = "secondary";
+            assign.textContent = "Assign";
+            assign.addEventListener("click", () => {
+              const parts = select.value.split("\n");
+              saveOrgSkill(skill.name, parts[0], parts[1] || "", true).catch(showOrgSettingsError);
+            });
+            form.append(select, assign);
+            block.append(form);
+          }
+          skillsEl.append(block);
+        }
+      }
+      if (rolesEl) {
+        rolesEl.replaceChildren();
+        const enforced = new Set(body.enforced || []);
+        for (const role of body.roles || []) {
+          const row = document.createElement("label");
+          row.className = "skill-row";
+          const box = document.createElement("input");
+          box.type = "checkbox";
+          box.checked = enforced.has(role.name);
+          box.disabled = !body.can_manage;
+          box.addEventListener("change", () => {
+            saveOrgRole(role.name, box.checked).catch(showOrgSettingsError);
+          });
+          const copy = document.createElement("span");
+          copy.textContent = role.name;
+          row.append(box, copy);
+          rolesEl.append(row);
+        }
+      }
+      renderOrgSkillRepos(body);
+    }
+
+    async function loadOrgSettings() {
+      const slot = document.getElementById("org-skills-error");
+      if (slot) slot.replaceChildren();
+      const res = await fetch("/api/org/settings");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to load organization settings");
+      renderOrgSettings(body);
+    }
+
+    function renderOrgSkillRepos(body) {
+      const list = document.getElementById("org-skill-repos");
+      const form = document.getElementById("org-skill-repo-form");
+      const scope = document.getElementById("org-skill-repo-scope");
+      if (form) form.hidden = !body.can_manage;
+      if (scope) {
+        scope.replaceChildren();
+        const org = document.createElement("option");
+        org.value = "tenant\n" + (body.org_id || "");
+        org.textContent = "Organization";
+        scope.append(org);
+        for (const team of body.teams || []) {
+          const option = document.createElement("option");
+          option.value = "team\n" + team.id;
+          option.textContent = team.name;
+          scope.append(option);
+        }
+      }
+      if (!list) return;
+      list.replaceChildren();
+      const repos = body.skill_repos || [];
+      if (!repos.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No skill repositories yet.";
+        list.append(empty);
+        return;
+      }
+      for (const repo of repos) {
+        const row = document.createElement("div");
+        row.className = "skill-source-row";
+        const label = document.createElement("span");
+        const short = repo.sha ? repo.sha.slice(0, 7) : "";
+        label.textContent = short ? `${repo.url} · ${short}` : repo.url;
+        label.title = repo.sha || repo.url;
+        row.append(label);
+        if (body.can_manage) {
+          const sync = document.createElement("button");
+          sync.type = "button";
+          sync.className = "secondary";
+          sync.dataset.repo = repo.id;
+          sync.textContent = "Resync";
+          sync.addEventListener("click", () => {
+            resyncOrgSkillRepo(repo.id).catch(showOrgSettingsError);
+          });
+          row.append(sync);
+        }
+        list.append(row);
+      }
+    }
+
+    async function addOrgSkillRepo() {
+      const scope = document.getElementById("org-skill-repo-scope");
+      const url = document.getElementById("org-skill-repo-url");
+      const value = (scope && scope.value) || "";
+      const parts = value.split("\n");
+      const res = await fetch("/api/org/skill-repos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope_type: parts[0] || "",
+          scope_id: parts[1] || "",
+          url: (url && url.value) || "",
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "could not add the skill repository");
+      if (url) url.value = "";
+      renderOrgSettings(body);
+    }
+
+    async function resyncOrgSkillRepo(repoId) {
+      const res = await fetch(`/api/org/skill-repos/${encodeURIComponent(repoId)}/sync`, {
+        method: "POST",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "could not resync the skill repository");
+      renderOrgSettings(body);
+    }
+
+    const addOrgSkillRepoButton = document.getElementById("add-org-skill-repo");
+    if (addOrgSkillRepoButton) {
+      addOrgSkillRepoButton.addEventListener("click", () => {
+        addOrgSkillRepo().catch(showOrgSettingsError);
+      });
+    }
+
+    async function saveOrgSkill(name, scopeType, scopeId, assigned) {
+      const res = await fetch("/api/org/skills", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skill_name: name,
+          scope_type: scopeType,
+          scope_id: scopeId,
+          assigned: assigned,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "could not update the skill");
+      renderOrgSettings(body);
+      if (state.section === "skills") loadWorkspaceSkills();
+    }
+
+    async function saveOrgRole(name, enforced) {
+      const res = await fetch("/api/org/roles", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role_name: name, enforced: enforced }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "could not update the role");
+      renderOrgSettings(body);
+    }
+
+    async function createRule(scope, name, text) {
+      const res = await fetch("/api/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope_type: scope.scope_type,
+          scope_id: scope.scope_id,
+          name: name,
+          body: text,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "failed to save the rule");
+      notify("success", payload.name, { title: "Rule saved" });
+      await loadOrgRules();
+    }
+
+    async function saveExistingRule(ruleId, name, text) {
+      const res = await fetch("/api/rules/" + encodeURIComponent(ruleId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, body: text }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "failed to save the rule");
+      notify("success", payload.name, { title: "Rule saved" });
+      await loadOrgRules();
+      return payload;
+    }
+
+    async function deleteRule(ruleId) {
+      const res = await fetch("/api/rules/" + encodeURIComponent(ruleId), { method: "DELETE" });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "failed to delete the rule");
+      notify("success", "Rule deleted", { title: "Rule deleted" });
+      await loadOrgRules();
+    }
+
+    async function setRequired(ruleId, projectId, required) {
+      const res = await fetch("/api/rules/" + encodeURIComponent(ruleId) + "/required", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId, required: required }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "failed to update the requirement");
+      await loadOrgRules();
+    }
+
+    async function draftRule(scopeType, scopeId, requestText) {
+      const ask = requestText.trim();
+      if (!ask) throw new Error("describe the rule first");
+      const goal = [
+        "Write a rule and save it with the write_rule tool.",
+        "Scope type: " + scopeType,
+        "Scope id: " + scopeId,
+        "The person asked: " + ask,
+        "Call list_rules for that scope first.",
+        "Call write_rule once with the finished markdown as body and a short name.",
+        "Do not edit repository files.",
+      ].join("\n");
+      await queueTask({
+        workspace: workspaceEl.value,
+        goal: goal,
+        auto_commit: false,
+      }, "Rule draft queued");
+    }
+
+    const saveProjectRuleBtn = document.getElementById("save-project-rule");
+    if (saveProjectRuleBtn) {
+      saveProjectRuleBtn.addEventListener("click", async () => {
+        try {
+          const applied = await fetch("/api/rules/applied?workspace=" + encodeURIComponent(workspaceEl.value));
+          const view = await applied.json();
+          if (!applied.ok) throw new Error(view.error || "failed to load rules");
+          if (!view.project) throw new Error(view.note || "this workspace is not a project yet");
+          await createRule({
+            scope_type: "project",
+            scope_id: view.project.id,
+          }, document.getElementById("project-rule-name").value, document.getElementById("project-rule-body").value);
+          document.getElementById("project-rule-name").value = "";
+          document.getElementById("project-rule-body").value = "";
+          await loadAppliedRules();
+        } catch (err) {
+          notify("error", err.message, { title: "Could not save the rule" });
+        }
+      });
+    }
+    const askOrgRuleBtn = document.getElementById("ask-org-rule");
+    if (askOrgRuleBtn) {
+      askOrgRuleBtn.addEventListener("click", () => {
+        const selected = document.getElementById("org-rule-scope");
+        const parts = (selected && selected.value ? selected.value : "").split("\n");
+        draftRule(parts[0] || "", parts[1] || "", document.getElementById("org-rule-ask").value)
+          .catch(showOrgRulesError);
+      });
+    }
+    const askProjectRuleBtn = document.getElementById("ask-project-rule");
+    if (askProjectRuleBtn) {
+      askProjectRuleBtn.addEventListener("click", async () => {
+        try {
+          const applied = await fetch("/api/rules/applied?workspace=" + encodeURIComponent(workspaceEl.value));
+          const view = await applied.json();
+          if (!applied.ok) throw new Error(view.error || "failed to load rules");
+          if (!view.project) throw new Error(view.note || "this workspace is not a project yet");
+          await draftRule("project", view.project.id, document.getElementById("project-rule-ask").value);
+        } catch (err) {
+          notify("error", err.message, { title: "Could not draft the rule" });
+        }
+      });
+    }
+
     async function loadWorkspaceRoles() {
       if (!workspaceRolesEl) return;
       const path = workspaceEl.value;
@@ -3925,8 +4823,8 @@
         const box = document.createElement("input");
         box.type = "checkbox";
         box.id = `role-enable-${role.name}`;
-        box.checked = Boolean(role.enabled);
-        box.disabled = Boolean(role.required);
+        box.checked = Boolean(role.enabled || role.enforced);
+        box.disabled = Boolean(role.required || role.enforced);
         box.dataset.role = role.name;
         const copy = document.createElement("label");
         copy.className = "skill-row-copy";
@@ -3934,7 +4832,9 @@
         const title = document.createElement("strong");
         title.textContent = `${role.title || role.name} · ${role.job || "role"}`;
         const desc = document.createElement("p");
-        desc.textContent = role.summary || role.description || "No description.";
+        desc.textContent = role.enforced
+          ? "Enforced by the organization."
+          : (role.summary || role.description || "No description.");
         copy.append(title, desc);
         row.append(box, copy);
         workspaceRolesEl.append(row);
@@ -4074,17 +4974,18 @@
       }
     }
     function renderWorkspaceSkills(body) {
-      const skills = body.skills || [];
+      const skills = (body.skills || []).filter((skill) => {
+        return skill.assigned || skill.origin !== "bundled";
+      });
       const sources = body.sources || [];
+      state.assignedSkills = body.assigned || [];
       closeSkillInfo();
       workspaceSkillsEl.replaceChildren();
       if (!skills.length) {
-        skillsIdleStatus = "No skills available yet.";
+        skillsIdleStatus = "No skills are assigned to this project.";
       } else {
-        const on = skills.filter((skill) => skill.enabled).map((skill) => skill.name);
-        skillsIdleStatus = on.length
-          ? `Enabled: ${on.join(", ")}`
-          : "No skills enabled for this workspace.";
+        const names = skills.map((skill) => skill.name);
+        skillsIdleStatus = names.join(", ");
       }
       if (skillsStatusEl && !(skillsSearchEl?.value || "").trim()) {
         skillsStatusEl.textContent = skillsIdleStatus;
@@ -4092,18 +4993,24 @@
       for (const skill of skills) {
         const row = document.createElement("div");
         row.className = "skill-row";
-        const box = document.createElement("input");
-        box.type = "checkbox";
-        box.id = `skill-enable-${skill.name}`;
-        box.checked = Boolean(skill.enabled);
-        box.dataset.skill = skill.name;
-        const copy = document.createElement("label");
+        const locked = skill.origin === "bundled";
+        let box = null;
+        if (!locked) {
+          box = document.createElement("input");
+          box.type = "checkbox";
+          box.id = `skill-enable-${skill.name}`;
+          box.checked = Boolean(skill.enabled);
+          box.dataset.skill = skill.name;
+        }
+        const copy = document.createElement(locked ? "div" : "label");
         copy.className = "skill-row-copy";
-        copy.htmlFor = box.id;
+        if (box) copy.htmlFor = box.id;
         const title = document.createElement("strong");
         title.textContent = skill.name;
         const desc = document.createElement("p");
-        desc.textContent = skill.summary || skill.description || "No description.";
+        desc.textContent = locked
+          ? "Assigned from the organization."
+          : (skill.summary || skill.description || "No description.");
         desc.title = skill.description || skill.summary || "";
         copy.append(title, desc);
         const info = document.createElement("button");
@@ -4114,7 +5021,8 @@
         info.setAttribute("aria-expanded", "false");
         info.setAttribute("aria-controls", "skill-info-pop");
         info.innerHTML = SKILL_INFO_ICON;
-        row.append(box, copy, info);
+        if (box) row.append(box);
+        row.append(copy, info);
         workspaceSkillsEl.append(row);
       }
       filterSkills(skillsSearchEl?.value);
@@ -4123,21 +5031,40 @@
         const row = document.createElement("div");
         row.className = "skill-source-row";
         const label = document.createElement("span");
-        label.textContent = source.url;
-        label.title = source.path || source.url;
-        const sync = document.createElement("button");
-        sync.type = "button";
-        sync.className = "secondary skill-sync";
-        sync.dataset.slug = source.slug;
-        sync.textContent = "Pull";
-        row.append(label, sync);
+        const short = source.sha ? source.sha.slice(0, 7) : "";
+        label.textContent = short ? `${source.url} · ${short}` : source.url;
+        label.title = source.sha || source.url;
+        row.append(label);
+        if (source.can_sync !== false) {
+          const sync = document.createElement("button");
+          sync.type = "button";
+          sync.className = "secondary skill-sync";
+          sync.dataset.slug = source.id || source.slug;
+          sync.textContent = "Resync";
+          row.append(sync);
+        }
         skillSourcesEl.append(row);
+      }
+      const teamSelect = document.getElementById("skill-source-team");
+      if (teamSelect) {
+        const teams = body.skill_teams || [];
+        teamSelect.replaceChildren();
+        teamSelect.hidden = teams.length < 2;
+        for (const team of teams) {
+          const option = document.createElement("option");
+          option.value = team.id;
+          option.textContent = team.name;
+          teamSelect.append(option);
+        }
       }
     }
     async function saveEnabledSkills() {
       const enabled = [...workspaceSkillsEl.querySelectorAll("input[data-skill]:checked")]
         .map((input) => input.dataset.skill)
         .filter(Boolean);
+      for (const name of state.assignedSkills || []) {
+        if (!enabled.includes(name)) enabled.push(name);
+      }
       const res = await fetch("/api/workspaces/skills", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -4163,16 +5090,18 @@
       const url = (skillSourceUrlEl.value || "").trim();
       if (!url) return;
       try {
+        const teamSelect = document.getElementById("skill-source-team");
+        const teamId = teamSelect && !teamSelect.hidden ? teamSelect.value : "";
         const res = await fetch("/api/workspaces/skills/sources", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: workspaceEl.value, url }),
+          body: JSON.stringify({ path: workspaceEl.value, url, team_id: teamId }),
         });
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to clone skills");
         skillSourceUrlEl.value = "";
         renderWorkspaceSkills(body);
-        notify("success", "Cloned skill repository into this workspace.", { title: "Skills cloned" });
+        notify("success", "Stored the skill repository.", { title: "Skills cloned" });
       } catch (err) {
         notify("error", err.message, { title: "Could not clone skills" });
       }
@@ -4189,7 +5118,7 @@
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to pull skills");
         renderWorkspaceSkills(body);
-        notify("success", "Pulled the latest skills.", { title: "Skills updated" });
+        notify("success", "Pulled the latest commit into the skill space.", { title: "Skills updated" });
       } catch (err) {
         notify("error", err.message, { title: "Could not pull skills" });
       }
@@ -4245,24 +5174,50 @@
       }
     });
     document.getElementById("close-settings").addEventListener("click", () => setSettingsOpen(false));
-    document.getElementById("close-profile").addEventListener("click", () => setProfileOpen(false));
     document.getElementById("save-profile").addEventListener("click", () => {
+      saveAccount().catch(showAccountError);
+    });
+    document.getElementById("save-org").addEventListener("click", () => {
       saveAccount().catch(showAccountError);
     });
     document.getElementById("add-user").addEventListener("click", () => {
       addAccountUser().catch(showAccountError);
     });
-    if (profileToggleEl) {
-      profileToggleEl.addEventListener("click", (event) => {
-        event.stopPropagation();
-        setProfileOpen(!profileOpen());
-      });
-    }
-    settingsToggleEl.addEventListener("click", (event) => {
+    document.getElementById("save-github-app").addEventListener("click", () => {
+      saveGitHubApp().catch(showGitHubError);
+    });
+    document.getElementById("check-github-installations").addEventListener("click", () => {
+      loadGitHubInstallations().catch(showGitHubError);
+    });
+    document.getElementById("use-github-installation").addEventListener("click", () => {
+      useGitHubInstallation().catch(showGitHubError);
+    });
+    document.getElementById("load-github-repos").addEventListener("click", () => {
+      loadGitHubRepos().catch(showGitHubError);
+    });
+    document.getElementById("add-github-repo").addEventListener("click", () => {
+      addGitHubWorkspace().catch(showGitHubError);
+    });
+    document.getElementById("sync-github-access").addEventListener("click", () => {
+      syncGitHubAccess().catch(showGitHubError);
+    });
+    function toggleAccountMenu(event) {
       event.stopPropagation();
-      const open = !settingsOpen();
-      if (open) setNotifyPanel(false);
-      setSettingsOpen(open);
+      setAccountMenuOpen(!accountMenuOpen());
+    }
+    if (profileToggleEl) profileToggleEl.addEventListener("click", toggleAccountMenu);
+    settingsToggleEl.addEventListener("click", toggleAccountMenu);
+    document.getElementById("open-personal-page").addEventListener("click", () => {
+      setAccountMenuOpen(false);
+      showSection("personal");
+    });
+    document.getElementById("open-organization-page").addEventListener("click", () => {
+      setAccountMenuOpen(false);
+      showSection("organization");
+    });
+    document.getElementById("open-workspace-page").addEventListener("click", () => {
+      setAccountMenuOpen(false);
+      setSettingsOpen(true);
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
@@ -4274,12 +5229,16 @@
         setLiveConsoleOpen(false);
         return;
       }
-      if (overlayOpen(rolesPanelEl) || overlayOpen(skillsPanelEl) || overlayOpen(guidelinesPanelEl)) {
+      if (overlayOpen(rolesPanelEl)) {
         closeSidebarOverlays();
         return;
       }
-      if (profileOpen()) {
-        setProfileOpen(false);
+      if (state.section === "skills" && skillInfoPopEl && !skillInfoPopEl.hidden) {
+        closeSkillInfo();
+        return;
+      }
+      if (accountMenuOpen()) {
+        setAccountMenuOpen(false);
         return;
       }
       if (settingsOpen()) {
@@ -4293,7 +5252,7 @@
     notifyToggleEl.addEventListener("click", (event) => {
       event.stopPropagation();
       setSettingsOpen(false);
-      setProfileOpen(false);
+      setAccountMenuOpen(false);
       setNotifyPanel(!notifyPanelOpen());
     });
     document.getElementById("notify-clear").addEventListener("click", () => {
@@ -4442,7 +5401,7 @@
     });
 
     document.addEventListener("click", (event) => {
-      if (profileOpen() && !settingsDockEl.contains(event.target)) setProfileOpen(false);
+      if (accountMenuOpen() && !settingsDockEl.contains(event.target)) setAccountMenuOpen(false);
       if (settingsOpen() && !settingsDockEl.contains(event.target)) setSettingsOpen(false);
       if (
         overlayOpen(rolesPanelEl)
@@ -4450,21 +5409,6 @@
         && !(openRolesBtn && openRolesBtn.contains(event.target))
       ) {
         setOverlayOpen(rolesPanelEl, openRolesBtn, false);
-      }
-      if (
-        overlayOpen(skillsPanelEl)
-        && !skillsPanelEl.contains(event.target)
-        && !(openSkillsBtn && openSkillsBtn.contains(event.target))
-      ) {
-        setOverlayOpen(skillsPanelEl, openSkillsBtn, false);
-      }
-      const sidebarEl = document.getElementById("sidebar");
-      if (
-        overlayOpen(guidelinesPanelEl)
-        && sidebarEl
-        && !sidebarEl.contains(event.target)
-      ) {
-        setOverlayOpen(guidelinesPanelEl, openGuidelinesBtn, false);
       }
       if (!notifyPanelOpen()) return;
       if (notifyDockEl.contains(event.target)) return;
@@ -7032,13 +7976,28 @@
     if (themeToggleEl) themeToggleEl.addEventListener("click", toggleTheme);
     applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
 
+    let githubIssuesReady = false;
+
     function showSection(name) {
-      const allowed = ["proposals", "changes", "releases"];
+      const allowed = ["proposals", "changes", "releases", "rules", "skills", "schedules", "personal", "organization"];
       const next = allowed.includes(name) ? name : "proposals";
       state.section = next;
+      if (next !== "skills") closeSkillInfo();
       document.querySelectorAll("[data-section]").forEach((el) => {
         el.hidden = el.dataset.section !== next;
       });
+      if (next === "rules") {
+        loadAppliedRules().catch((err) => notify("error", err.message, { title: "Could not load rules" }));
+      }
+      if (next === "skills") loadWorkspaceSkills();
+      if (next === "schedules") {
+        refreshSchedules().catch((err) => showNotice(scheduleErrorEl, "error", err.message));
+      }
+      if (next === "proposals" && githubIssuesReady && !githubGoalsSection.hidden) {
+        githubIssuesKey = "";
+        loadGitHubIssues(workspaceEl.value);
+      }
+      if (next === "personal" || next === "organization") loadAccountPages();
       document.querySelectorAll("[data-rail]").forEach((button) => {
         button.setAttribute("aria-pressed", button.dataset.rail === next ? "true" : "false");
       });
@@ -7535,7 +8494,7 @@
       githubIssuesEl.disabled = true;
     }
 
-    function renderGitHubIssues(issues, repoLabel) {
+    function renderGitHubIssues(issues, repoLabel, pullRequests) {
       githubIssuesEl.replaceChildren();
       const blank = document.createElement("option");
       blank.value = "";
@@ -7548,9 +8507,18 @@
         githubIssuesEl.append(option);
       }
       githubIssuesEl.disabled = !issues.length;
-      githubIssuesStatusEl.textContent = repoLabel
-        ? (issues.length ? `${issues.length} from ${repoLabel}` : `No issues in ${repoLabel}`)
-        : "";
+      if (!repoLabel) {
+        githubIssuesStatusEl.textContent = "";
+        return;
+      }
+      if (issues.length) {
+        githubIssuesStatusEl.textContent = `${issues.length} from ${repoLabel}`;
+        return;
+      }
+      const pulls = Number(pullRequests) || 0;
+      githubIssuesStatusEl.textContent = pulls
+        ? `No issues in ${repoLabel}. GitHub returned ${pulls} pull request${pulls === 1 ? "" : "s"}.`
+        : `No issues in ${repoLabel}`;
     }
 
     async function loadGitHubIssues(workspacePath) {
@@ -7575,7 +8543,7 @@
         }
         githubGoals = data.issues || [];
         const repoLabel = data.owner && data.repo ? `${data.owner}/${data.repo}` : "";
-        renderGitHubIssues(githubGoals, repoLabel);
+        renderGitHubIssues(githubGoals, repoLabel, data.pull_requests);
       } catch (err) {
         if (key !== githubIssuesKey) return;
         setGitHubIssuesPlaceholder("Could not load issues");
@@ -7620,18 +8588,15 @@
       githubIssuesKey = "";
       loadGitHubIssues(workspaceEl.value);
     });
+    githubIssuesReady = true;
 
-    const APP_MODE_KEY = "lbw-app-mode";
     const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     const scheduleListEl = document.getElementById("schedule-list");
     const scheduleFormEl = document.getElementById("schedule-form");
     const scheduleNameEl = document.getElementById("schedule-name");
     const scheduleGoalEl = document.getElementById("schedule-goal");
-    const scheduleWorkspaceEl = document.getElementById("schedule-workspace");
     const scheduleOutputEl = document.getElementById("schedule-output");
     const scheduleEnabledEl = document.getElementById("schedule-enabled");
-    const scheduleCommitEl = document.getElementById("schedule-commit");
-    const schedulePrEl = document.getElementById("schedule-pr");
     const cadenceMinuteEl = document.getElementById("cadence-minute");
     const cadenceTimeEl = document.getElementById("cadence-time");
     const cadenceLabelEl = document.getElementById("cadence-label");
@@ -7645,7 +8610,6 @@
     const scheduleEditorEl = document.getElementById("schedule-editor");
     const runScheduleBtn = document.getElementById("run-schedule");
     const deleteScheduleBtn = document.getElementById("delete-schedule");
-    const appSwitchEl = document.getElementById("app-switch");
     let scheduleState = {
       items: [],
       agenda: { next_up: [], days: [] },
@@ -7659,67 +8623,7 @@
     let scheduleDraft = blankCadence();
 
     function blankCadence() {
-      return { id: "", kind: "daily", hour: 9, minute: 0, weekdays: [0, 1, 2, 3, 4], target: "project" };
-    }
-
-    function currentAppMode() {
-      return document.documentElement.dataset.appMode === "schedules" ? "schedules" : "projects";
-    }
-
-    function setAppSwitchOpen(open) {
-      appSwitchEl.classList.toggle("open", open);
-      document.querySelector(".app-switch-tab").setAttribute("aria-expanded", open ? "true" : "false");
-    }
-
-    function setAppMode(mode) {
-      const next = mode === "schedules" ? "schedules" : "projects";
-      if (next === "schedules") {
-        document.documentElement.dataset.appMode = "schedules";
-      } else {
-        delete document.documentElement.dataset.appMode;
-      }
-      try {
-        localStorage.setItem(APP_MODE_KEY, next);
-      } catch (err) {
-        /* keep the mode for this page even if storage is blocked */
-      }
-      document.title = next === "schedules" ? "LBW — scheduled tasks" : "LBW — Look both ways";
-      for (const button of document.querySelectorAll(".app-mode")) {
-        button.setAttribute("aria-pressed", button.dataset.mode === next ? "true" : "false");
-      }
-      setAppSwitchOpen(false);
-      if (appSwitchEl.contains(document.activeElement)) {
-        document.activeElement.blur();
-      }
-      if (next === "schedules") {
-        loadScheduleWorkspaces()
-          .then(() => refreshSchedules())
-          .catch((err) => showNotice(scheduleErrorEl, "error", err.message));
-      }
-    }
-
-    function initAppMode() {
-      const saved = currentAppMode();
-      document.title = saved === "schedules" ? "LBW — scheduled tasks" : "LBW — Look both ways";
-      for (const button of document.querySelectorAll(".app-mode")) {
-        button.setAttribute("aria-pressed", button.dataset.mode === saved ? "true" : "false");
-        button.addEventListener("click", () => setAppMode(button.dataset.mode));
-      }
-      document.querySelector(".app-switch-tab").addEventListener("click", () => {
-        const open = !appSwitchEl.classList.contains("open");
-        setAppSwitchOpen(open);
-        if (open) {
-          const current = document.querySelector('.app-mode[aria-pressed="true"]');
-          if (current) current.focus();
-        }
-      });
-      appSwitchEl.addEventListener("mouseleave", () => setAppSwitchOpen(false));
-      document.addEventListener("click", (event) => {
-        if (!appSwitchEl.contains(event.target)) setAppSwitchOpen(false);
-      });
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") setAppSwitchOpen(false);
-      });
+      return { id: "", kind: "daily", hour: 9, minute: 0, weekdays: [0, 1, 2, 3, 4] };
     }
 
     function clockLabel(hour, minute) {
@@ -7796,20 +8700,6 @@
       const cadence = readCadenceFromForm();
       cadenceLabelEl.textContent = describeCadence(cadence);
       cadenceCronEl.textContent = cronText(cadence);
-      syncTargetControls();
-    }
-
-    function syncTargetControls() {
-      const files = scheduleDraft.target === "files";
-      for (const button of document.querySelectorAll(".schedule-target")) {
-        button.setAttribute("aria-pressed", button.dataset.target === scheduleDraft.target ? "true" : "false");
-      }
-      document.getElementById("schedule-project-fields").hidden = files;
-      document.getElementById("schedule-files-fields").hidden = !files;
-      document.getElementById("schedule-project-options").hidden = files;
-      scheduleGoalEl.placeholder = files
-        ? "Search for new jobs and save them as jobs.csv."
-        : "Look up new jobs that match this project and write a short report of what you found.";
     }
 
     function formatClock(iso) {
@@ -7830,41 +8720,6 @@
         hour: "numeric",
         minute: "2-digit",
       });
-    }
-
-    function folderName(path) {
-      const parts = String(path || "").split(/[/\\]/).filter(Boolean);
-      return parts.length ? parts[parts.length - 1] : path;
-    }
-
-    function ensureWorkspaceOption(path) {
-      if (!path) return;
-      const existing = Array.from(scheduleWorkspaceEl.options).some((option) => option.value === path);
-      if (existing) return;
-      const option = document.createElement("option");
-      option.value = path;
-      option.textContent = folderName(path);
-      scheduleWorkspaceEl.append(option);
-    }
-
-    async function loadScheduleWorkspaces() {
-      const res = await fetch("/api/workspaces");
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "Could not load projects");
-      const selected = scheduleWorkspaceEl.value;
-      scheduleWorkspaceEl.replaceChildren();
-      for (const item of body.workspaces || []) {
-        const option = document.createElement("option");
-        option.value = item.path;
-        option.textContent = item.name || folderName(item.path);
-        scheduleWorkspaceEl.append(option);
-      }
-      if (selected) ensureWorkspaceOption(selected);
-      if (selected) scheduleWorkspaceEl.value = selected;
-      else if (workspaceEl.value) {
-        ensureWorkspaceOption(workspaceEl.value);
-        scheduleWorkspaceEl.value = workspaceEl.value;
-      }
     }
 
     function runStatusLabel(status) {
@@ -7968,8 +8823,7 @@
         const meta = document.createElement("span");
         meta.className = "schedule-row-meta";
         const when = item.enabled ? `Next ${formatWhen(item.next_run_at)}` : "Paused";
-        const where = item.kind === "files" ? "Files" : folderName(item.workspace);
-        meta.textContent = `${where} · ${item.label} · ${when}`;
+        meta.textContent = `${item.label} · ${when}`;
         button.append(name, meta);
         button.addEventListener("click", () => selectSchedule(item.id));
         scheduleListEl.append(button);
@@ -7983,20 +8837,11 @@
         hour: item.cadence.hour,
         minute: item.cadence.minute,
         weekdays: (item.cadence.weekdays || []).map(Number),
-        target: item.kind === "files" ? "files" : "project",
       };
       scheduleNameEl.value = item.name;
       scheduleGoalEl.value = item.goal;
       scheduleEnabledEl.checked = !!item.enabled;
-      scheduleCommitEl.checked = !!item.auto_commit;
-      schedulePrEl.checked = !!item.create_pr;
-      if (item.kind === "files") {
-        scheduleOutputEl.value = item.workspace || "";
-      } else {
-        scheduleOutputEl.value = "";
-        ensureWorkspaceOption(item.workspace);
-        scheduleWorkspaceEl.value = item.workspace;
-      }
+      scheduleOutputEl.value = item.kind === "files" ? (item.workspace || "") : "";
       cadenceTimeEl.value = `${String(item.cadence.hour).padStart(2, "0")}:${String(item.cadence.minute).padStart(2, "0")}`;
       cadenceMinuteEl.value = String(item.cadence.minute);
       scheduleHeadingEl.textContent = item.name;
@@ -8015,8 +8860,6 @@
       scheduleNameEl.value = "";
       scheduleGoalEl.value = "";
       scheduleEnabledEl.checked = true;
-      scheduleCommitEl.checked = false;
-      schedulePrEl.checked = false;
       scheduleOutputEl.value = "";
       cadenceTimeEl.value = "09:00";
       cadenceMinuteEl.value = "0";
@@ -8024,10 +8867,6 @@
       scheduleNextEl.textContent = "Choose when it runs. You can change it later and read each result here.";
       runScheduleBtn.disabled = true;
       deleteScheduleBtn.disabled = true;
-      if (workspaceEl.value) {
-        ensureWorkspaceOption(workspaceEl.value);
-        scheduleWorkspaceEl.value = workspaceEl.value;
-      }
       syncCadenceControls();
       renderScheduleResults(null, true);
       renderScheduleList();
@@ -8171,15 +9010,14 @@
     }
 
     function schedulePayload() {
-      const files = scheduleDraft.target === "files";
       return {
         name: scheduleNameEl.value.trim(),
         goal: scheduleGoalEl.value.trim(),
-        kind: files ? "files" : "project",
-        workspace: files ? scheduleOutputEl.value.trim() : scheduleWorkspaceEl.value,
+        kind: "files",
+        workspace: scheduleOutputEl.value.trim(),
         enabled: scheduleEnabledEl.checked,
-        auto_commit: files ? false : scheduleCommitEl.checked,
-        create_pr: files ? false : schedulePrEl.checked,
+        auto_commit: false,
+        create_pr: false,
         cadence: readCadenceFromForm(),
       };
     }
@@ -8262,12 +9100,6 @@
           syncCadenceControls();
         });
       }
-      for (const button of document.querySelectorAll(".schedule-target")) {
-        button.addEventListener("click", () => {
-          scheduleDraft.target = button.dataset.target;
-          syncTargetControls();
-        });
-      }
       for (const button of document.querySelectorAll(".weekday")) {
         button.addEventListener("click", () => {
           const day = Number(button.dataset.weekday);
@@ -8290,20 +9122,14 @@
         deleteSchedule().catch((err) => showNotice(scheduleErrorEl, "error", err.message));
       });
       blankScheduleForm();
-      if (currentAppMode() === "schedules") {
-        loadScheduleWorkspaces()
-          .then(() => refreshSchedules())
-          .catch((err) => showNotice(scheduleErrorEl, "error", err.message));
-      }
       setInterval(() => {
-        if (currentAppMode() !== "schedules") return;
+        if (state.section !== "schedules") return;
         refreshSchedules().catch(() => {});
       }, 1500);
       renderScheduleAgenda();
       setScheduleView("agenda");
     }
 
-    initAppMode();
     initSchedules();
     renderNotificationHistory();
     syncKeepImproving();
