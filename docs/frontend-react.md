@@ -144,16 +144,12 @@ rendered result, including the bundle, at `/`.
 server. The built bundle has to be present for that, because a Jinja shell
 with a missing `/static/app/` script is a broken page.
 
-## Agent contract, when the toolchain lands
+## Where this stands
 
-The change that adds `web/` updates `AGENTS.md` and the `ui` skill in the
-same commit:
-
-- Name `web/src/sections/` as the place a moved section is edited.
-- Say `make web` is required before pytest and before `review_ui` when
-  `web/src` changed.
-- Keep the `index.html` rules for sections that have not moved.
-- Keep the `style` skill as the visual source.
-
-Until that change, the page stays the template, and this document is the
-plan.
+The toolchain, organization Models, organization Skills, organization Roles,
+project Skills, and project Roles are in the client. Organization tabs stay
+in the template and call `showOrgTab`. Settings JSON is passed with
+`lbw-org-settings`. Project skills and roles are passed with
+`lbw-project-skills` and `lbw-project-roles`. The next move is project
+Rules, then Releases. Changes and the proposal form stay last. Until a
+section moves, edit it in `index.html`.

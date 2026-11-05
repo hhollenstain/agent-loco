@@ -231,6 +231,16 @@ def file_task_goal(goal: str) -> str:
     )
 
 
+def project_task_goal(goal: str, base_branch: str) -> str:
+    """A project schedule starts from a branch and either opens a pull request or stops."""
+    branch = (base_branch or "main").strip() or "main"
+    return (
+        f"Start from the {branch} branch. "
+        "If this project already meets the goal, change nothing and report what you checked. "
+        "If you find a fix, make that change so it can open a pull request.\n\n" + goal.strip()
+    )
+
+
 def output_files(folder: Path, *, limit: int = MAX_OUTPUT_FILES) -> list[dict]:
     """Files a document schedule has saved, skipping hidden and tool directories."""
     root = Path(folder)
@@ -287,8 +297,10 @@ def upsert_schedule(
     goal = _clean_goal(fields.get("goal"))
     kind = _target_kind(fields.get("kind"))
     enabled = bool(fields.get("enabled", True))
-    auto_commit = False if kind == "files" else bool(fields.get("auto_commit", False))
-    create_pr = False if kind == "files" else bool(fields.get("create_pr", False))
+    auto_commit = kind == "project"
+    create_pr = kind == "project"
+    base_branch = "" if kind == "files" else _clean_base_branch(fields.get("base_branch"))
+    model_id = "" if kind == "files" else _clean_model_id(fields.get("model_id"))
     now = datetime.now().astimezone()
     with _LOCK:
         payload = _read(root)
@@ -315,6 +327,12 @@ def upsert_schedule(
         item["enabled"] = enabled
         item["auto_commit"] = auto_commit
         item["create_pr"] = create_pr
+        item["base_branch"] = base_branch
+        item["model_id"] = model_id
+        if not item.get("created_by"):
+            from agent_lbw.runtime.store.auth import current_actor
+
+            item["created_by"] = current_actor() or ""
         item["cadence"] = cadence
         item["updated_at"] = utcnow_iso()
         nxt = _parse_time(item.get("next_run_at"))
@@ -426,16 +444,22 @@ def sync_runs(
                 status = str(info.get("status") or run.get("status") or "queued")
                 summary = str(info.get("summary") or "")
                 error = str(info.get("error") or "")
+                pr_url = str(info.get("pr_url") or "")
+                outcome = _run_outcome(status, pr_url, str(info.get("reason") or ""))
                 finished = info.get("finished_at")
                 if (
                     run.get("status") == status
                     and run.get("summary") == summary
                     and run.get("error") == error
+                    and str(run.get("pr_url") or "") == pr_url
+                    and str(run.get("outcome") or "") == outcome
                 ):
                     continue
                 run["status"] = status
                 run["summary"] = summary
                 run["error"] = error
+                run["pr_url"] = pr_url
+                run["outcome"] = outcome
                 if status not in _OPEN:
                     run["finished_at"] = str(finished or utcnow_iso())
                 changed = True
@@ -518,6 +542,34 @@ def _clean_name(value: object) -> str:
     if len(name) > MAX_NAME:
         raise ValueError("Keep the schedule name under 80 characters.")
     return name
+
+
+def _clean_model_id(value: object) -> str:
+    text = str(value or "").strip()
+    if len(text) > 80:
+        raise ValueError("Choose a model granted to this project.")
+    return text
+
+
+def _clean_base_branch(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    from agent_lbw.tools.git import valid_branch_name
+
+    if not valid_branch_name(text):
+        raise ValueError(f"invalid branch name: {text}")
+    return text
+
+
+def _run_outcome(status: str, pr_url: str, reason: str) -> str:
+    if status in _OPEN:
+        return ""
+    if pr_url:
+        return "pull_request"
+    if status == "success" and reason.startswith("no changes needed"):
+        return "clear"
+    return ""
 
 
 def _clean_goal(value: object) -> str:
@@ -653,6 +705,9 @@ def _public(item: dict) -> dict:
         "enabled": bool(item.get("enabled")),
         "auto_commit": bool(item.get("auto_commit")),
         "create_pr": bool(item.get("create_pr")),
+        "base_branch": str(item.get("base_branch") or ""),
+        "model_id": str(item.get("model_id") or ""),
+        "created_by": str(item.get("created_by") or ""),
         "cadence": {
             "kind": cadence.get("kind"),
             "minute": int(cadence.get("minute") or 0),

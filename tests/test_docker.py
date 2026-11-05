@@ -99,6 +99,9 @@ def test_certs_uses_certutil_and_reloads_ingress() -> None:
     assert "server_name crossing-local.lookbothways.dev" in nginx
     assert "set $lbw_agent http://agent:8080" in nginx
     assert "set $lbw_crossing http://crossing:8080" in nginx
+    crossing = nginx.split("server_name crossing-local.lookbothways.dev;", 1)[1]
+    assert "location /api/events/stream" in crossing
+    assert "proxy_buffering off" in crossing
 
 
 def test_readme_documents_lbw_clone_not_docker_clone() -> None:

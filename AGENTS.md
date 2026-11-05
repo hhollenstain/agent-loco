@@ -19,6 +19,8 @@ itself is also in `skills/agent-lbw/SKILL.md`.
 
 - Python 3.12+. Start modules that use annotations with
   `from __future__ import annotations`.
+- A new or changed HTTP body starts in `openapi/lbw.yaml`. Run `make openapi`
+  and use the generated model. The plan is `docs/openapi.md`.
 - Line length is 100. Before finishing, run `uv run ruff format src tests`
   then `uv run ruff check src tests`. Ruff selects `E`, `F`, `I`, `UP`, and `B`.
 - Use `pathlib.Path` for filesystem paths.
@@ -33,14 +35,18 @@ itself is also in `skills/agent-lbw/SKILL.md`.
 
 ## Web UI
 
-- The organization page stays `templates/index.html` until a section is moved.
-  `docs/frontend-react.md` is the plan for a React client. Do not start that
-  move inside an unrelated change.
+- React sections live in `web/src/sections/`: organization Models, Skills,
+  and Roles, and project Skills and Roles. Other sections stay in
+  `index.html` until they move. A change under `web/src` needs `make web`
+  before pytest and before `review_ui`. The plan is `docs/frontend-react.md`.
 - JavaScript in `index.html` uses double quotes and `function` declarations for
-  named behavior. Iterate with `for...of`.
+  named behavior. Iterate with `for...of`. Sections that have not moved keep
+  those rules.
 - Rules, Skills, Schedules, and Roles are rail sections beside Proposals,
-  Changes, and Releases. Schedules save documents. A project run is not a
-  schedule. The main pane shows the selected section. Builder and QA stay on.
+  Changes, and Releases. A schedule runs in the current project from a base
+  branch, which defaults to main. A fix opens a pull request. When the tree
+  already meets the goal, the run reports that it found nothing. The main
+  pane shows the selected section. Builder and QA stay on.
   An organization admin can enforce a role on every project.
 - UI layout is the bundled `ui` skill. Visual style is the bundled `style`
   skill. New workspaces enable both with `tdd`.
@@ -72,7 +78,7 @@ Shared rows live in `runtime/store/`. Each file owns one concern: `schema` creat
 the tables, `crypto` seals secrets, `install` is the local account, `teams`,
 `duties`, and `projects` are access, `tasks` stores a request, `schedules`
 indexes when one should run, and `recording` is what the task queue and the
-file scheduler call.
+scheduler call.
 
 - Every shared row carries a tenant id. A tenant is `personal` or `organization`.
   A personal tenant has its owner and no teams. Promote it before adding a team.
@@ -114,15 +120,24 @@ file scheduler call.
   `goal_ciphertext`, and `result_ciphertext`. The result seals the plan, the
   steps, the outcome, and the final diff so history can show the file changes
   after the checkout is gone. Logs are not part of it.
+- An audit row notes who changed the organization or a job: the person, the
+  time, the action, the API path, and a short summary of what changed. Do not
+  put a secret, a prompt, or a log line in it. A job records who started it.
+  A gate records who accepted it, and who sent it back with a note.
 - A schedule row is an index. The instruction stays in the schedule file.
-  `change` indexes a file schedule. `scan` indexes a scan. Do not copy the
-  instruction into the database.
+  `scan` indexes a project schedule. `change` indexes a file schedule. Do not
+  copy the instruction into the database. A project schedule stores its base
+  branch and the granted model with that instruction. The default branch is
+  main. An empty model does not fall back to a server that is not running.
 - A rule's text lives in its own KiwiFS space: one for the tenant, one for a
   team, one for a project, and one for a person. The `rules` table indexes it.
   `rule_requirements` says which organization rules a project must follow. Do
   not store the rule body in the database. Derive the space from the scope id.
   Do not take a space name from the client. The `rules` duty lets a member edit
-  rules for that tenant or team. Project rules follow `manage`.
+  rules for that tenant or team. Project rules follow `manage`. A repository
+  instruction file such as AGENTS.md stays in git. LBW reads it from the
+  primary branch. Turning one off is recorded in the workspace and does not
+  copy the file into the database.
 - A cloned skill repository is indexed in `skill_repos`. The files and the git
   commit stay in KiwiFS. The space is `sk-org-<id>`, `sk-org-<id>-team-<id>`,
   or `sk-org-<id>-team-<id>-proj-<id>`. Derive it from those ids. Do not put an

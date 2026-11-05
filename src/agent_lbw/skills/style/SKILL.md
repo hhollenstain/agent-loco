@@ -44,6 +44,18 @@ to the list below.
 Status color uses those names. A new status reuses one of them unless the
 engineer adds a token to both themes and to this table.
 
+A release count sits at the right of its heading. It is a pill: `1px`
+border, full radius, and a light fill in that pull-request color. Open uses
+`--pr-open`, merged uses `--pr-merged`, and closed uses `--pr-closed`. The
+heading words stay `--muted`.
+
+A change lists its steps in a horizontal rail. Each step is a button with
+the step name and its state. The selected step uses an `--accent` border
+and a light `--accent` fill. That step's detail is the one pane under the
+rail. Log, Changes, and Screenshots stay as tabs under that pane. The
+log tab is labeled Log. A second strip of Init, tests, lint, review, and
+publish squares is not shown.
+
 ## Type
 
 Body text is `15px/1.5` system UI. The logo wordmark is Avenir Next, weight

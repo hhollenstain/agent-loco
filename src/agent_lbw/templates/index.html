@@ -300,12 +300,44 @@
       gap: 1rem;
       margin-top: 0.9rem;
     }
-    .release-open h3,
-    .release-open .inbox-count { color: var(--pr-open); }
-    .release-merged h3,
-    .release-merged .inbox-count { color: var(--pr-merged); }
-    .release-closed h3,
-    .release-closed .inbox-count { color: var(--pr-closed); }
+    .release-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .release-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.65rem;
+      margin-left: auto;
+      padding: 0.05rem 0.5rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0;
+      text-transform: none;
+      line-height: 1.4;
+    }
+    .release-open .release-count {
+      color: var(--pr-open);
+      border-color: var(--pr-open);
+      background: color-mix(in srgb, var(--pr-open) 16%, transparent);
+    }
+    .release-merged .release-count {
+      color: var(--pr-merged);
+      border-color: var(--pr-merged);
+      background: color-mix(in srgb, var(--pr-merged) 16%, transparent);
+    }
+    .release-closed .release-count {
+      color: var(--pr-closed);
+      border-color: var(--pr-closed);
+      background: color-mix(in srgb, var(--pr-closed) 16%, transparent);
+    }
     .release-open .inbox-item { box-shadow: inset 3px 0 0 var(--pr-open); }
     .release-merged .inbox-item { box-shadow: inset 3px 0 0 var(--pr-merged); }
     .release-closed .inbox-item { box-shadow: inset 3px 0 0 var(--pr-closed); }
@@ -599,96 +631,6 @@
       background: var(--panel);
     }
     .sidebar-overlay[hidden] { display: none; }
-    #live-console { z-index: 60; }
-    #live-console .modal {
-      display: flex;
-      flex-direction: column;
-      width: min(48rem, 100%);
-      max-height: min(32rem, 92vh);
-      overflow: hidden;
-      padding: 0.65rem;
-      box-sizing: border-box;
-      gap: 0;
-    }
-    #live-console .live-console-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-    }
-    #live-console .live-console-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-    }
-    .live-console-head .connection-status {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      font-size: 0.75rem;
-      color: var(--muted);
-    }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--bad);
-      display: inline-block;
-    }
-    .status-dot.connected { background: var(--ok); }
-    .live-console-output {
-      flex: 1 1 auto;
-      min-height: 0;
-      height: min(22rem, calc(92vh - 7.5rem));
-      overflow: auto;
-      margin-top: 0.7rem;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      font-size: 0.75rem;
-      line-height: 1.45;
-      background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: 4px;
-      padding: 0.6rem;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .live-console-output .log-entry { margin: 0.15rem 0; }
-    .live-console-output .log-timestamp { color: var(--muted); font-size: 0.7em; }
-    .live-console-output .log-status { font-weight: 700; margin-right: 0.35rem; }
-    .live-console-output .log-ok { color: var(--ok); }
-    .live-console-output .log-fail { color: var(--bad); }
-    .live-console-output .log-purpose { color: var(--accent); font-weight: 600; }
-    .live-console-output .log-action { color: var(--queued); }
-    .live-console-output .log-path { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); }
-    .live-console-output .log-diff { color: var(--muted); }
-    .live-console-output .log-phase { color: var(--accent); }
-    .live-console-output .log-command { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
-    .live-console-output .log-message { color: var(--ink); }
-    .live-console-output .log-url a { color: var(--accent); text-decoration: underline; }
-    .live-console-output .log-time { color: var(--muted); }
-    .live-console-output .log-chat {
-      margin: 0.2rem 0 0.25rem 0.15rem;
-      padding: 0.25rem 0.45rem;
-      border-left: 2px solid transparent;
-      border-radius: 0 3px 3px 0;
-    }
-    .live-console-output .log-agent {
-      color: var(--queued);
-      border-left-color: var(--queued);
-      background: color-mix(in srgb, var(--queued) 12%, transparent);
-    }
-    .live-console-output .log-model {
-      color: var(--accent);
-      border-left-color: var(--accent);
-      background: color-mix(in srgb, var(--accent) 12%, transparent);
-    }
-    .live-console-output .log-speaker {
-      font-weight: 700;
-      text-transform: uppercase;
-      font-size: 0.68em;
-      letter-spacing: 0.04em;
-      margin-right: 0.45rem;
-    }
     #skills-panel .sidebar-overlay-body {
       display: flex;
       flex-direction: column;
@@ -2695,14 +2637,6 @@
         </button>
       </nav>
       </div>
-    <div class="sidebar-tools">
-      <button type="button" class="secondary" id="open-live-console" aria-label="Live console" aria-expanded="false" title="Live console">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
-          <circle cx="12" cy="12" r="2" fill="currentColor"/>
-        </svg>
-      </button>
-    </div>
     <div class="settings-dock" id="settings-dock">
       <button type="button" class="secondary" id="open-profile" aria-label="Profile" aria-expanded="false" aria-controls="account-menu" title="Profile">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2891,7 +2825,12 @@
         <div class="section-page">
           <p class="ask-kicker">Standards</p>
           <h1 class="ask-heading">Rules</h1>
-          <p class="hint">Rules assigned to this project. Organization and team rules are managed in organization settings and show up here only when they apply.</p>
+          <p class="hint">LBW rules are the standards stored for this project. Repository files such as AGENTS.md are read from the primary branch.</p>
+          <div class="rules-tabs" role="tablist" aria-label="Rules">
+            <button type="button" class="secondary rules-tab" id="rules-tab-lbw" data-rules-tab="lbw" aria-pressed="true">LBW rules</button>
+            <button type="button" class="secondary rules-tab" id="rules-tab-repo" data-rules-tab="repo" aria-pressed="false">Repository</button>
+          </div>
+          <div id="rules-panel-lbw" class="rules-panel" data-rules-panel="lbw">
           <h2 class="rule-heading">Rules in force</h2>
           <p class="hint" id="inherited-rules-hint">Nothing is assigned to this project yet.</p>
           <div id="inherited-rules" class="inherited-rules"></div>
@@ -2917,40 +2856,33 @@
             <button type="button" id="save-guidelines">Save rules</button>
             <button type="button" class="secondary" id="reset-guidelines">Use defaults</button>
           </div>
+          </div>
+          <div id="rules-panel-repo" class="rules-panel" data-rules-panel="repo" hidden>
+            <p class="hint">These files load into project work. A switch turns one off. Update reads the primary branch again.</p>
+            <div class="sidebar-overlay-actions">
+              <button type="button" class="secondary" id="refresh-repo-rules">Update from branch</button>
+            </div>
+            <p class="hint" id="repo-rules-branch"></p>
+            <div id="repo-rules-error" class="notice-slot"></div>
+            <div id="repo-rules-list" class="repo-rules"></div>
+          </div>
         </div>
       </div>
       <div class="center-view" id="roles-view" data-section="roles" hidden>
         <div class="section-page">
           <p class="ask-kicker">Project</p>
           <h1 class="ask-heading">Roles</h1>
-          <p class="hint">Each role has one job. Builder and QA stay on. Turn the others on for this project, or add one at .lbw/roles/&lt;name&gt;/ROLE.md with job set to review. An organization admin can enforce a role on every project.</p>
+          <p class="hint">Each role has one job. A switch turns it on for this project. Builder and QA stay on. Hover a name for its summary. An organization admin can enforce a role on every project.</p>
           <div class="settings-skills-list" id="workspace-roles"></div>
           <p class="hint" id="roles-status">Loading roles…</p>
         </div>
       </div>
       <div class="center-view" id="skills-view" data-section="skills" hidden>
-        <div class="skill-info-pop" id="skill-info-pop" hidden>
-          <div class="skill-info-pop-head">
-            <h3 id="skill-info-title">Skill</h3>
-            <button type="button" class="secondary" id="close-skill-info">Close</button>
-          </div>
-          <div class="skill-info-pop-body" id="skill-info-body"></div>
-        </div>
         <div class="section-page" id="skills-panel">
           <p class="ask-kicker">Process</p>
           <h1 class="ask-heading">Skills</h1>
-          <p class="hint">Skills for this project. A cloned repository starts folded under its name. Search to open the skills inside it. Organization settings is where a repository is added and resynced.</p>
-          <div class="settings-skills-search">
-            <input type="search" id="skills-search" aria-label="Search skills" placeholder="Search skills…" autocomplete="off">
-          </div>
-          <div class="settings-skills-list" id="workspace-skills"></div>
-          <p class="hint" id="skills-status">Loading skills…</p>
-          <div class="settings-skill-sources" id="skill-sources"></div>
-          <div class="settings-skill-source">
-            <select id="skill-source-team" hidden aria-label="Team"></select>
-            <input id="skill-source-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
-            <button type="button" class="secondary" id="clone-skill-source">Clone</button>
-          </div>
+          <p class="hint">Skills for this project. A repository starts folded, with a count and a switch. Open it to turn one skill on. Hover a name for its summary, or use the info control to read it.</p>
+          <div id="project-skills-root"></div>
         </div>
       </div>
       <div class="center-view" id="personal-view" data-section="personal" hidden>
@@ -3054,38 +2986,17 @@
             <div class="org-section-head">
               <h2 class="rule-heading">Skills</h2>
             </div>
-            <p class="hint" id="org-skills-hint">Add a repository for the whole organization. Resync it here. A project turns a loaded skill on.</p>
-            <div class="settings-skill-sources" id="org-skill-repos"></div>
-            <div class="settings-skill-source" id="org-skill-repo-form">
-              <input id="org-skill-repo-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
-              <button type="button" class="secondary" id="add-org-skill-repo">Add</button>
-            </div>
+            <p class="hint" id="org-skills-hint">Add a repository for the whole organization. Open it to turn the repository or one skill on, read a skill, or remove it. A project turns an available skill on.</p>
+            <div id="org-skills-root"></div>
             <div class="notice-slot" id="org-skills-error"></div>
           </div>
           <div class="org-panel" id="org-panel-roles" data-org-panel="roles" hidden>
             <h2 class="rule-heading">Enforced roles</h2>
-            <p class="hint">Checked roles stay on for every project. Project settings can still turn on the others.</p>
+            <p class="hint">A switch keeps that role on for every project. A project can still turn the others on.</p>
             <div id="org-roles" class="settings-skills-list"></div>
           </div>
           <div class="org-panel" id="org-panel-models" data-org-panel="models" hidden>
-            <div class="org-section-head">
-              <h2 class="rule-heading">Endpoints</h2>
-              <button type="button" class="secondary icon-button" id="open-org-endpoint" aria-label="Add an endpoint">+</button>
-            </div>
-            <p class="hint" id="org-models-hint">Bring your own endpoint. Resync stores the model names it returns. The key is sealed and is not shown again.</p>
-            <div id="org-endpoints"></div>
-            <div class="org-section-head">
-              <h2 class="rule-heading">Models</h2>
-              <button type="button" class="secondary icon-button" id="open-org-model" aria-label="Add a model">+</button>
-            </div>
-            <p class="hint">Turn a model on to use it in this organization. Plus adds one the endpoint returned.</p>
-            <div id="org-models"></div>
-            <div class="org-section-head">
-              <h2 class="rule-heading">Agents</h2>
-              <button type="button" class="secondary icon-button" id="open-org-agent" aria-label="Add an agent">+</button>
-            </div>
-            <p class="hint">LBW stays the orchestrator. Turn an agent on for the organization, or remove it. A person must accept its work.</p>
-            <div id="org-agents"></div>
+            <div id="org-models-root"></div>
           </div>
           <div class="org-panel" id="org-panel-github" data-org-panel="github" hidden>
           <div class="github-app" id="github-app">
@@ -3125,7 +3036,7 @@
         <h1>Scheduled tasks</h1>
         <button type="button" class="secondary" id="new-schedule">New</button>
       </div>
-      <p class="hint">Save a CSV or other documents on a schedule. A run in a project, such as a security review, is not scheduled here.</p>
+      <p class="hint">Schedules for this project. A run starts from the base branch. A fix opens a pull request. If nothing needs changing, the result says so.</p>
       <div id="schedule-list"></div>
     </aside>
     <div class="schedules-detail">
@@ -3140,12 +3051,19 @@
       <p class="hint" id="schedule-next">Choose when it runs. You can change it later and read each result here.</p>
       <form id="schedule-form">
         <label for="schedule-name">Name</label>
-        <input id="schedule-name" type="text" maxlength="80" placeholder="Weekday job search" autocomplete="off">
+        <input id="schedule-name" type="text" maxlength="80" placeholder="Security review" autocomplete="off">
         <label for="schedule-goal">What should it do?</label>
-        <textarea id="schedule-goal" rows="6" placeholder="Search for new jobs and save them as jobs.csv."></textarea>
-        <label for="schedule-output">Save files in</label>
-        <input id="schedule-output" type="text" spellcheck="false" placeholder="Leave blank to keep them with this schedule">
-        <p class="hint">A job search, CSV, or other documents. This does not need a git project.</p>
+        <textarea id="schedule-goal" rows="6" placeholder="Review this project for security issues and fix what you find."></textarea>
+        <label for="schedule-base">Base branch</label>
+        <select id="schedule-base" aria-label="Base branch">
+          <option value="main">main</option>
+        </select>
+        <p class="hint">The run starts from this branch. main is the default.</p>
+        <label for="schedule-model">Model</label>
+        <select id="schedule-model" aria-label="Granted model">
+          <option value="">No models granted</option>
+        </select>
+        <p class="hint">Models turned on for the organization and granted to this project. The run uses this server.</p>
         <label>How often</label>
         <div class="cadence-choices">
           <button type="button" class="secondary cadence-choice" id="cadence-hourly" data-kind="hourly" aria-pressed="false">Hourly</button>
@@ -3196,79 +3114,6 @@
       </div>
     </section>
   </main>
-  <div class="modal-backdrop" id="endpoint-remove-dialog" role="dialog" aria-modal="true" aria-labelledby="endpoint-remove-title" hidden>
-    <div class="modal">
-      <h2 id="endpoint-remove-title">Remove this endpoint?</h2>
-      <p class="hint" id="endpoint-remove-copy"></p>
-      <div class="modal-actions">
-        <button type="button" class="secondary" id="cancel-endpoint-remove">Cancel</button>
-        <button type="button" id="confirm-endpoint-remove">Remove endpoint</button>
-      </div>
-    </div>
-  </div>
-  <div class="modal-backdrop" id="org-endpoint-dialog" role="dialog" aria-modal="true" aria-labelledby="org-endpoint-title" hidden>
-    <div class="modal">
-      <h2 id="org-endpoint-title">Add an endpoint</h2>
-      <form class="org-form" id="org-endpoint-form">
-        <label>Name
-          <input id="org-endpoint-name" type="text" maxlength="80" placeholder="Desk" autocomplete="off">
-        </label>
-        <label>Provider
-          <select id="org-endpoint-provider" aria-label="Model provider"></select>
-        </label>
-        <label>Base URL
-          <input id="org-endpoint-url" type="url" maxlength="200" placeholder="Base URL" autocomplete="off">
-        </label>
-        <label>API key
-          <input id="org-endpoint-key" type="password" placeholder="API key" autocomplete="off">
-        </label>
-        <div class="modal-actions">
-          <button type="button" class="secondary" id="cancel-org-endpoint">Cancel</button>
-          <button type="button" id="add-org-endpoint">Check</button>
-        </div>
-      </form>
-    </div>
-  </div>
-  <div class="modal-backdrop" id="org-model-dialog" role="dialog" aria-modal="true" aria-labelledby="org-model-title" hidden>
-    <div class="modal">
-      <h2 id="org-model-title">Add a model</h2>
-      <form class="org-form" id="org-model-form">
-        <label>Endpoint
-          <select id="org-model-endpoint" aria-label="Endpoint"></select>
-        </label>
-        <label>Model
-          <select id="org-model-model" aria-label="Model name"></select>
-        </label>
-        <label>Shown name
-          <input id="org-model-name" type="text" maxlength="80" placeholder="Shown name" autocomplete="off">
-        </label>
-        <div class="modal-actions">
-          <button type="button" class="secondary" id="cancel-org-model">Cancel</button>
-          <button type="button" id="add-org-model">Add</button>
-        </div>
-      </form>
-    </div>
-  </div>
-  <div class="modal-backdrop" id="org-agent-dialog" role="dialog" aria-modal="true" aria-labelledby="org-agent-title" hidden>
-    <div class="modal">
-      <h2 id="org-agent-title">Add an agent</h2>
-      <form class="org-form" id="org-agent-form">
-        <label>Name
-          <input id="org-agent-name" type="text" maxlength="80" placeholder="Name" autocomplete="off">
-        </label>
-        <label>Agent
-          <select id="org-agent-kind" aria-label="Agent"></select>
-        </label>
-        <label>Model
-          <select id="org-agent-model" aria-label="Model this agent spends"></select>
-        </label>
-        <div class="modal-actions">
-          <button type="button" class="secondary" id="cancel-org-agent">Cancel</button>
-          <button type="button" id="add-org-agent">Add</button>
-        </div>
-      </form>
-    </div>
-  </div>
   <div class="modal-backdrop" id="personal-rule-dialog" role="dialog" aria-modal="true" aria-labelledby="personal-rule-title" hidden>
     <div class="modal">
       <h2 id="personal-rule-title">New rule</h2>
@@ -3356,19 +3201,6 @@
       <div class="notice-slot" id="workspace-picker-error"></div>
     </div>
   </div>
-  <div class="modal-backdrop" id="live-console" role="dialog" aria-modal="true" aria-labelledby="live-console-title" hidden>
-    <div class="modal">
-      <div class="live-console-head">
-        <h2 id="live-console-title">Live console</h2>
-        <div class="live-console-actions">
-          <button type="button" class="secondary" id="close-live-console">Close</button>
-          <button type="button" class="secondary" id="clear-console">Clear</button>
-        </div>
-      </div>
-      <div class="live-console-output" id="live-console-output"></div>
-      <p class="hint">Agent and LLM server traffic for the current task.</p>
-    </div>
-  </div>
   <div class="modal-backdrop" id="rerun-goal-picker" role="dialog" aria-modal="true" aria-labelledby="rerun-goal-picker-title" hidden>
     <div class="modal">
       <h2 id="rerun-goal-picker-title">Update this run</h2>
@@ -3400,8 +3232,9 @@
     </div>
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
+  <script src="/static/app/app.js"></script>
   <script>
-    const state = { tasks: [], allTasks: [], inbox: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, runRailCollapsed: false, openDiffs: new Set(), selectedChange: "", closedChangeDirs: new Set(), changeJump: false, expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, openSteps: new Set(), closedSteps: new Set(), stepItem: "", stepFocus: "", inboxFold: {}, skillRepoOpen: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], allTasks: [], inbox: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, runRailCollapsed: false, openDiffs: new Set(), selectedChange: "", closedChangeDirs: new Set(), changeJump: false, expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, openSteps: new Set(), closedSteps: new Set(), stepItem: "", stepFocus: "", stepPinned: false, inboxFold: {}, skillRepoOpen: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("run-list");
     const runDetailEl = document.getElementById("run-detail");
     function activeDetailEl() {
@@ -4483,9 +4316,7 @@
       setGuidelinesEditor(body.guidelines, body.custom_guidelines);
       loadWorkspaceSkills();
       loadWorkspaceRoles();
-      if (state.section === "rules") {
-        loadAppliedRules().catch((err) => notify("error", err.message, { title: "Could not load rules" }));
-      }
+      if (state.section === "rules") loadRulesSection();
     }
 
     function renderProjectSelect(workspaces, current) {
@@ -4696,6 +4527,8 @@
       } catch (_err) {
         select.disabled = true;
       }
+      loadScheduleBranches();
+      loadScheduleModels();
     }
 
     function selectedBaseBranch() {
@@ -4844,6 +4677,103 @@
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "failed to load rules");
       renderAppliedRules(body);
+    }
+
+    function loadRulesSection() {
+      loadAppliedRules().catch((err) => notify("error", err.message, { title: "Could not load rules" }));
+      const repo = document.getElementById("rules-panel-repo");
+      if (repo && !repo.hidden) {
+        loadRepoRules().catch((err) => showRepoRulesError(err.message));
+      }
+    }
+
+    function showRulesTab(name) {
+      const next = name === "repo" ? "repo" : "lbw";
+      for (const button of document.querySelectorAll(".rules-tab")) {
+        button.setAttribute("aria-pressed", button.dataset.rulesTab === next ? "true" : "false");
+      }
+      for (const panel of document.querySelectorAll(".rules-panel")) {
+        panel.hidden = panel.dataset.rulesPanel !== next;
+      }
+      if (next === "repo") {
+        loadRepoRules().catch((err) => showRepoRulesError(err.message));
+      }
+    }
+
+    function showRepoRulesError(message) {
+      const slot = document.getElementById("repo-rules-error");
+      if (!slot) return;
+      slot.textContent = message || "";
+    }
+
+    function renderRepoRules(body) {
+      const list = document.getElementById("repo-rules-list");
+      const branch = document.getElementById("repo-rules-branch");
+      if (!list) return;
+      if (branch) {
+        branch.textContent = body.branch
+          ? "From the " + body.branch + " branch."
+          : "No git branch yet. Files are read from the project folder.";
+      }
+      list.replaceChildren();
+      const files = body.files || [];
+      if (!files.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No AGENTS.md, CLAUDE.md, or CURSOR.md on this branch.";
+        list.append(empty);
+        return;
+      }
+      for (const file of files) {
+        const row = document.createElement("article");
+        row.className = "repo-rule";
+        const head = document.createElement("div");
+        head.className = "repo-rule-head";
+        const title = document.createElement("h3");
+        title.textContent = file.path;
+        const toggle = document.createElement("input");
+        toggle.type = "checkbox";
+        toggle.className = "org-switch";
+        toggle.checked = Boolean(file.enabled);
+        toggle.setAttribute("aria-label", "Use " + file.path);
+        toggle.addEventListener("change", () => {
+          saveRepoRule(file.path, toggle.checked).catch((err) => {
+            toggle.checked = !toggle.checked;
+            showRepoRulesError(err.message);
+          });
+        });
+        head.append(title, toggle);
+        const text = document.createElement("pre");
+        text.className = "repo-rule-body";
+        text.textContent = file.body || "";
+        row.append(head, text);
+        list.append(row);
+      }
+    }
+
+    async function loadRepoRules() {
+      showRepoRulesError("");
+      const path = workspaceEl.value || "";
+      const res = await fetch("/api/repo-rules?workspace=" + encodeURIComponent(path));
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Could not load repository files");
+      renderRepoRules(body);
+    }
+
+    async function saveRepoRule(path, enabled) {
+      showRepoRulesError("");
+      const res = await fetch("/api/repo-rules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace: workspaceEl.value || "",
+          path: path,
+          enabled: enabled,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Could not update that file");
+      renderRepoRules(body);
     }
 
     function editorRuleCard(rule, scope, projects) {
@@ -5247,32 +5177,11 @@
     function renderOrgSettings(body) {
       githubTeams = body.teams || [];
       fillGitHubSubjects();
-      const rolesEl = document.getElementById("org-roles");
       const hint = document.getElementById("org-skills-hint");
       orgSettingsId = body.org_id || "";
       if (hint && !body.can_manage) {
         hint.textContent = "An owner or admin adds skill repositories and turns models on.";
       }
-      if (rolesEl) {
-        rolesEl.replaceChildren();
-        const enforced = new Set(body.enforced || []);
-        for (const role of body.roles || []) {
-          const row = document.createElement("label");
-          row.className = "skill-row";
-          const box = document.createElement("input");
-          box.type = "checkbox";
-          box.checked = enforced.has(role.name);
-          box.disabled = !body.can_manage;
-          box.addEventListener("change", () => {
-            saveOrgRole(role.name, box.checked).catch(showOrgSettingsError);
-          });
-          const copy = document.createElement("span");
-          copy.textContent = role.name;
-          row.append(box, copy);
-          rolesEl.append(row);
-        }
-      }
-      renderOrgSkillRepos(body);
       renderOrgCatalog(body);
       showOrgTab(orgTab);
     }
@@ -5289,352 +5198,16 @@
       }
     }
 
+    for (const button of document.querySelectorAll(".org-tab")) {
+      button.addEventListener("click", () => {
+        showOrgTab(button.dataset.orgTab);
+      });
+    }
+
     let orgSettingsId = "";
-    let orgCatalog = {};
-    let endpointRemoveId = "";
-    const TRASH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z" fill="currentColor"></path></svg>`;
-
-    function fillCatalogSelect(select, options, blank) {
-      if (!select) return;
-      const previous = select.value;
-      select.replaceChildren();
-      if (blank) {
-        const empty = document.createElement("option");
-        empty.value = "";
-        empty.textContent = blank;
-        select.append(empty);
-      }
-      for (const item of options) {
-        const option = document.createElement("option");
-        option.value = item.id;
-        option.textContent = item.label || item.name || item.id;
-        if (item.base_url) option.dataset.baseUrl = item.base_url;
-        select.append(option);
-      }
-      if ([...select.options].some((option) => option.value === previous)) {
-        select.value = previous;
-      }
-    }
-
-    function orgCell(text, className) {
-      const cell = document.createElement("td");
-      if (className) cell.className = className;
-      cell.textContent = text == null ? "" : String(text);
-      return cell;
-    }
-
-    function orgActionsCell(nodes) {
-      const cell = document.createElement("td");
-      cell.className = "org-table-actions";
-      const row = document.createElement("div");
-      row.className = "org-row-actions";
-      for (const node of nodes) if (node) row.append(node);
-      cell.append(row);
-      return cell;
-    }
-
-    function orgTrashButton(attr, id, label) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "secondary icon-button";
-      button.setAttribute(attr, id);
-      button.setAttribute("aria-label", label);
-      button.innerHTML = TRASH_ICON;
-      return button;
-    }
-
-    function orgSwitch(attr, id, on, label, manage) {
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.className = "org-switch";
-      box.checked = Boolean(on);
-      box.disabled = !manage;
-      box.setAttribute(attr, id);
-      box.setAttribute("aria-label", label);
-      return box;
-    }
-
-    function orgTable(host, headers, rows, empty) {
-      host.replaceChildren();
-      const table = document.createElement("table");
-      table.className = "org-table";
-      const headRow = document.createElement("tr");
-      for (const label of headers) {
-        const cell = document.createElement("th");
-        cell.textContent = label;
-        if (!label) cell.className = "org-table-actions";
-        headRow.append(cell);
-      }
-      const thead = document.createElement("thead");
-      thead.append(headRow);
-      const tbody = document.createElement("tbody");
-      if (!rows.length) {
-        const row = document.createElement("tr");
-        const cell = document.createElement("td");
-        cell.colSpan = headers.length;
-        cell.className = "muted";
-        cell.textContent = empty;
-        row.append(cell);
-        tbody.append(row);
-      }
-      for (const cells of rows) {
-        const row = document.createElement("tr");
-        for (const cell of cells) row.append(cell);
-        tbody.append(row);
-      }
-      table.append(thead, tbody);
-      host.append(table);
-    }
-
-    function kindLabel(body, kind) {
-      const found = (body.agent_kinds || []).find((item) => item.id === kind);
-      return found ? found.label : kind;
-    }
-
     function renderOrgCatalog(body) {
-      orgCatalog = body || {};
-      for (const id of ["open-org-endpoint", "open-org-model", "open-org-agent"]) {
-        const button = document.getElementById(id);
-        if (button) button.hidden = !body.can_manage;
-      }
-      fillCatalogSelect(document.getElementById("org-endpoint-provider"), body.providers || [], "");
-      applyEndpointDefault();
-      fillCatalogSelect(document.getElementById("org-agent-kind"), body.agent_kinds || [], "");
-      const modelChoices = (body.models || []).map((model) => ({ id: model.id, label: model.name }));
-      fillCatalogSelect(document.getElementById("org-agent-model"), modelChoices, "No model");
-      renderEndpoints(body);
-      fillEndpointModels(body);
-      renderModelTable(body);
-      renderAgentTable(body);
-    }
-
-    function renderEndpoints(body) {
-      const list = document.getElementById("org-endpoints");
-      if (!list) return;
-      const rows = (body.endpoints || []).map((endpoint) => {
-        const count = (endpoint.model_names || []).length;
-        const actions = [];
-        if (body.can_manage) {
-          const refresh = document.createElement("button");
-          refresh.type = "button";
-          refresh.className = "secondary";
-          refresh.setAttribute("data-endpoint-sync", endpoint.id);
-          refresh.textContent = "Resync";
-          actions.push(refresh);
-          actions.push(orgTrashButton("data-endpoint-remove", endpoint.id, `Remove ${endpoint.name}`));
-        }
-        return [
-          orgCell(endpoint.name),
-          orgCell(endpoint.base_url || "—", "url"),
-          orgCell(String(count)),
-          orgActionsCell(actions),
-        ];
-      });
-      orgTable(list, ["Name", "Endpoint", "Models", ""], rows, "No endpoints yet.");
-    }
-
-    function renderModelTable(body) {
-      const list = document.getElementById("org-models");
-      if (!list) return;
-      const rows = (body.models || []).map((model) => {
-        const actions = body.can_manage
-          ? [orgTrashButton("data-model-remove", model.id, `Remove ${model.model_name}`)]
-          : [];
-        const enabled = document.createElement("td");
-        enabled.append(orgSwitch(
-          "data-model-enable",
-          model.id,
-          model.enabled,
-          `Use ${model.model_name}`,
-          body.can_manage
-        ));
-        return [
-          orgCell(model.endpoint_name || model.provider),
-          orgCell(model.model_name),
-          enabled,
-          orgActionsCell(actions),
-        ];
-      });
-      orgTable(list, ["Endpoint", "Model", "On", ""], rows, "No models yet.");
-    }
-
-    function renderAgentTable(body) {
-      const list = document.getElementById("org-agents");
-      if (!list) return;
-      const rows = (body.agents || []).map((agent) => {
-        const model = (body.models || []).find((item) => item.id === agent.model_id);
-        const actions = body.can_manage
-          ? [orgTrashButton("data-agent-remove", agent.id, `Remove ${agent.name}`)]
-          : [];
-        const enabled = document.createElement("td");
-        enabled.append(orgSwitch(
-          "data-agent-enable",
-          agent.id,
-          agent.enabled,
-          `Use ${agent.name}`,
-          body.can_manage
-        ));
-        return [
-          orgCell(agent.name),
-          orgCell(kindLabel(body, agent.kind)),
-          orgCell(model ? model.model_name : "—", "muted"),
-          enabled,
-          orgActionsCell(actions),
-        ];
-      });
-      orgTable(list, ["Name", "Agent", "Model", "On", ""], rows, "No agents yet.");
-    }
-
-    function fillEndpointModels(body) {
-      const endpointSelect = document.getElementById("org-model-endpoint");
-      const nameSelect = document.getElementById("org-model-model");
-      const endpoints = body.endpoints || [];
-      fillCatalogSelect(
-        endpointSelect,
-        endpoints.map((endpoint) => ({ id: endpoint.id, label: endpoint.name })),
-        "Choose an endpoint"
-      );
-      if (endpointSelect && !endpointSelect.value && endpoints.length) {
-        endpointSelect.value = endpoints[0].id;
-      }
-      function refill() {
-        const chosen = endpoints.find((endpoint) => endpoint.id === (endpointSelect ? endpointSelect.value : ""));
-        const names = chosen && chosen.model_names ? chosen.model_names : [];
-        fillCatalogSelect(
-          nameSelect,
-          names.map((name) => ({ id: name, label: name })),
-          names.length ? "" : "No models yet"
-        );
-      }
-      if (endpointSelect) endpointSelect.onchange = refill;
-      refill();
-    }
-
-    function openOrgDialog(id) {
-      const dialog = document.getElementById(id);
-      if (!dialog) return;
-      dialog.hidden = false;
-      dialog.classList.add("open");
-    }
-
-    function closeOrgDialog(id) {
-      const dialog = document.getElementById(id);
-      if (!dialog) return;
-      dialog.classList.remove("open");
-      dialog.hidden = true;
-    }
-
-    function askRemoveEndpoint(endpointId) {
-      const endpoint = (orgCatalog.endpoints || []).find((item) => item.id === endpointId);
-      endpointRemoveId = endpointId;
-      const copy = document.getElementById("endpoint-remove-copy");
-      const name = endpoint ? endpoint.name : "this endpoint";
-      if (copy) {
-        copy.textContent = `Remove ${name}? This takes it off the organization. A model that still uses it has to be removed first.`;
-      }
-      openOrgDialog("endpoint-remove-dialog");
-    }
-
-    async function setOrgEnabled(kind, id, enabled) {
-      const root = kind === "model" ? "models" : "agents";
-      const res = await fetch(`/api/org/${root}/${encodeURIComponent(id)}/enabled`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: Boolean(enabled) }),
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "could not update that switch");
-      renderOrgSettings(payload);
-    }
-
-    async function deleteOrgRow(kind, id) {
-      const root = kind === "model" ? "models" : "agents";
-      const res = await fetch(`/api/org/${root}/${encodeURIComponent(id)}`, { method: "DELETE" });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "could not remove that row");
-      renderOrgSettings(payload);
-    }
-
-    async function addOrgEndpoint() {
-      const provider = document.getElementById("org-endpoint-provider");
-      const res = await fetch("/api/org/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: (document.getElementById("org-endpoint-name") || {}).value || "",
-          provider: provider ? provider.value : "",
-          base_url: (document.getElementById("org-endpoint-url") || {}).value || "",
-          api_key: (document.getElementById("org-endpoint-key") || {}).value || "",
-        }),
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "could not check that endpoint");
-      const name = document.getElementById("org-endpoint-name");
-      const key = document.getElementById("org-endpoint-key");
-      if (name) name.value = "";
-      if (key) key.value = "";
-      closeOrgDialog("org-endpoint-dialog");
-      showOrgTab("models");
-      renderOrgSettings(payload);
-      if (payload.endpoint_warning) throw new Error(payload.endpoint_warning);
-    }
-
-    async function syncOrgEndpoint(endpointId) {
-      const res = await fetch(`/api/org/endpoints/${encodeURIComponent(endpointId)}/sync`, {
-        method: "POST",
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "could not refresh that endpoint");
-      showOrgTab("models");
-      renderOrgSettings(payload);
-      if (payload.endpoint_warning) throw new Error(payload.endpoint_warning);
-    }
-
-    async function deleteOrgEndpoint(endpointId) {
-      const res = await fetch(`/api/org/endpoints/${encodeURIComponent(endpointId)}`, {
-        method: "DELETE",
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "could not remove that endpoint");
-      showOrgTab("models");
-      renderOrgSettings(payload);
-    }
-
-    async function addOrgModel() {
-      const res = await fetch("/api/org/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: (document.getElementById("org-model-name") || {}).value || "",
-          endpoint_id: (document.getElementById("org-model-endpoint") || {}).value || "",
-          model_name: (document.getElementById("org-model-model") || {}).value || "",
-        }),
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "could not add the model");
-      const name = document.getElementById("org-model-name");
-      if (name) name.value = "";
-      closeOrgDialog("org-model-dialog");
-      showOrgTab("models");
-      renderOrgSettings(payload);
-    }
-
-    async function addOrgAgent() {
-      const res = await fetch("/api/org/agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: (document.getElementById("org-agent-name") || {}).value || "",
-          kind: (document.getElementById("org-agent-kind") || {}).value || "",
-          model_id: (document.getElementById("org-agent-model") || {}).value || "",
-        }),
-      });
-      const payload = await res.json();
-      if (!res.ok) throw new Error(payload.error || "could not add the agent");
-      const name = document.getElementById("org-agent-name");
-      if (name) name.value = "";
-      closeOrgDialog("org-agent-dialog");
-      renderOrgSettings(payload);
+      window.__lbwOrgSettings = body || {};
+      document.dispatchEvent(new CustomEvent("lbw-org-settings", { detail: window.__lbwOrgSettings }));
     }
 
     async function loadOrgSettings() {
@@ -5643,228 +5216,6 @@
       const res = await fetch("/api/org/settings");
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "failed to load organization settings");
-      renderOrgSettings(body);
-    }
-
-    function renderOrgSkillRepos(body) {
-      const list = document.getElementById("org-skill-repos");
-      const form = document.getElementById("org-skill-repo-form");
-      orgSettingsId = body.org_id || orgSettingsId;
-      if (form) form.hidden = !body.can_manage;
-      if (!list) return;
-      list.replaceChildren();
-      const repos = body.skill_repos || [];
-      if (!repos.length) {
-        const empty = document.createElement("p");
-        empty.className = "hint";
-        empty.textContent = "No skill repositories yet.";
-        list.append(empty);
-        return;
-      }
-      for (const repo of repos) {
-        const card = document.createElement("section");
-        card.className = "org-skill-repo";
-        const head = document.createElement("div");
-        head.className = "org-skill-head";
-        const title = document.createElement("strong");
-        const short = repo.sha ? repo.sha.slice(0, 7) : "";
-        title.textContent = repoLabel(repo.url, repo.url);
-        title.title = short ? `${repo.url} · ${short}` : repo.url;
-        head.append(title);
-        if (body.can_manage && repo.can_sync !== false) {
-          const sync = document.createElement("button");
-          sync.type = "button";
-          sync.className = "secondary";
-          sync.setAttribute("data-skill-repo-sync", repo.id);
-          sync.textContent = "Resync";
-          head.append(sync);
-        }
-        card.append(head);
-        const loaded = repo.skills || [];
-        if (!loaded.length) {
-          const none = document.createElement("p");
-          none.className = "hint";
-          none.textContent = "No skills loaded yet.";
-          card.append(none);
-        } else {
-          const names = document.createElement("div");
-          names.className = "org-skill-names";
-          for (const name of loaded) {
-            const chip = document.createElement("span");
-            chip.className = "org-skill-chip";
-            chip.textContent = name;
-            names.append(chip);
-          }
-          card.append(names);
-        }
-        list.append(card);
-      }
-    }
-
-    async function addOrgSkillRepo() {
-      const url = document.getElementById("org-skill-repo-url");
-      const res = await fetch("/api/org/skill-repos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scope_type: "tenant",
-          scope_id: orgSettingsId,
-          url: (url && url.value) || "",
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "could not add the skill repository");
-      if (url) url.value = "";
-      renderOrgSettings(body);
-    }
-
-    async function resyncOrgSkillRepo(repoId) {
-      const res = await fetch(`/api/org/skill-repos/${encodeURIComponent(repoId)}/sync`, {
-        method: "POST",
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "could not resync the skill repository");
-      renderOrgSettings(body);
-    }
-
-    function applyEndpointDefault() {
-      const provider = document.getElementById("org-endpoint-provider");
-      const url = document.getElementById("org-endpoint-url");
-      if (!provider || !url) return;
-      const selected = provider.options[provider.selectedIndex];
-      const defaults = [...provider.options].map((option) => option.dataset.baseUrl || "");
-      if (!url.value || defaults.includes(url.value)) {
-        url.value = selected && selected.dataset.baseUrl ? selected.dataset.baseUrl : "";
-      }
-    }
-
-    const endpointProviderEl = document.getElementById("org-endpoint-provider");
-    if (endpointProviderEl) {
-      endpointProviderEl.addEventListener("change", applyEndpointDefault);
-    }
-    for (const button of document.querySelectorAll(".org-tab")) {
-      button.addEventListener("click", () => {
-        showOrgTab(button.dataset.orgTab);
-      });
-    }
-    const addOrgEndpointButton = document.getElementById("add-org-endpoint");
-    if (addOrgEndpointButton) {
-      addOrgEndpointButton.addEventListener("click", () => {
-        addOrgEndpoint().catch(showOrgSettingsError);
-      });
-    }
-    const addOrgModelButton = document.getElementById("add-org-model");
-    if (addOrgModelButton) {
-      addOrgModelButton.addEventListener("click", () => {
-        addOrgModel().catch(showOrgSettingsError);
-      });
-    }
-    const addOrgAgentButton = document.getElementById("add-org-agent");
-    if (addOrgAgentButton) {
-      addOrgAgentButton.addEventListener("click", () => {
-        addOrgAgent().catch(showOrgSettingsError);
-      });
-    }
-    const openOrgEndpointButton = document.getElementById("open-org-endpoint");
-    if (openOrgEndpointButton) {
-      openOrgEndpointButton.addEventListener("click", () => openOrgDialog("org-endpoint-dialog"));
-    }
-    const openOrgModelButton = document.getElementById("open-org-model");
-    if (openOrgModelButton) {
-      openOrgModelButton.addEventListener("click", () => {
-        fillEndpointModels(orgCatalog);
-        openOrgDialog("org-model-dialog");
-      });
-    }
-    const openOrgAgentButton = document.getElementById("open-org-agent");
-    if (openOrgAgentButton) {
-      openOrgAgentButton.addEventListener("click", () => openOrgDialog("org-agent-dialog"));
-    }
-    for (const id of ["cancel-org-endpoint", "cancel-org-model", "cancel-org-agent", "cancel-endpoint-remove"]) {
-      const button = document.getElementById(id);
-      if (!button) continue;
-      button.addEventListener("click", () => {
-        closeOrgDialog(button.closest(".modal-backdrop").id);
-      });
-    }
-    const confirmEndpointRemove = document.getElementById("confirm-endpoint-remove");
-    if (confirmEndpointRemove) {
-      confirmEndpointRemove.addEventListener("click", () => {
-        const endpointId = endpointRemoveId;
-        endpointRemoveId = "";
-        closeOrgDialog("endpoint-remove-dialog");
-        if (!endpointId) return;
-        deleteOrgEndpoint(endpointId).catch(showOrgSettingsError);
-      });
-    }
-    for (const id of ["org-endpoint-dialog", "org-model-dialog", "org-agent-dialog", "endpoint-remove-dialog"]) {
-      const dialog = document.getElementById(id);
-      if (!dialog) continue;
-      dialog.addEventListener("click", (event) => {
-        if (event.target === dialog) closeOrgDialog(id);
-      });
-    }
-    const modelsPanel = document.getElementById("org-panel-models");
-    if (modelsPanel) {
-      modelsPanel.addEventListener("click", (event) => {
-        const sync = event.target.closest("[data-endpoint-sync]");
-        if (sync) {
-          syncOrgEndpoint(sync.getAttribute("data-endpoint-sync")).catch(showOrgSettingsError);
-          return;
-        }
-        const removeEndpoint = event.target.closest("[data-endpoint-remove]");
-        if (removeEndpoint) {
-          askRemoveEndpoint(removeEndpoint.getAttribute("data-endpoint-remove"));
-          return;
-        }
-        const removeModel = event.target.closest("[data-model-remove]");
-        if (removeModel) {
-          deleteOrgRow("model", removeModel.getAttribute("data-model-remove")).catch(showOrgSettingsError);
-          return;
-        }
-        const removeAgent = event.target.closest("[data-agent-remove]");
-        if (removeAgent) {
-          deleteOrgRow("agent", removeAgent.getAttribute("data-agent-remove")).catch(showOrgSettingsError);
-        }
-      });
-      modelsPanel.addEventListener("change", (event) => {
-        const model = event.target.closest("[data-model-enable]");
-        if (model) {
-          setOrgEnabled("model", model.getAttribute("data-model-enable"), model.checked)
-            .catch(showOrgSettingsError);
-          return;
-        }
-        const agent = event.target.closest("[data-agent-enable]");
-        if (agent) {
-          setOrgEnabled("agent", agent.getAttribute("data-agent-enable"), agent.checked)
-            .catch(showOrgSettingsError);
-        }
-      });
-    }
-    const orgSkillRepos = document.getElementById("org-skill-repos");
-    if (orgSkillRepos) {
-      orgSkillRepos.addEventListener("click", (event) => {
-        const sync = event.target.closest("[data-skill-repo-sync]");
-        if (!sync) return;
-        resyncOrgSkillRepo(sync.getAttribute("data-skill-repo-sync")).catch(showOrgSettingsError);
-      });
-    }
-
-    const addOrgSkillRepoButton = document.getElementById("add-org-skill-repo");
-    if (addOrgSkillRepoButton) {
-      addOrgSkillRepoButton.addEventListener("click", () => {
-        addOrgSkillRepo().catch(showOrgSettingsError);
-      });
-    }
-
-    async function saveOrgRole(name, enforced) {
-      const res = await fetch("/api/org/roles", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role_name: name, enforced: enforced }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "could not update the role");
       renderOrgSettings(body);
     }
 
@@ -5981,435 +5332,30 @@
     }
 
     async function loadWorkspaceRoles() {
-      if (!workspaceRolesEl) return;
       const path = workspaceEl.value;
       const res = await fetch(`/api/workspaces/roles?path=${encodeURIComponent(path)}`);
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "failed to load roles");
-      renderWorkspaceRoles(body);
-    }
-    function renderWorkspaceRoles(body) {
-      const roles = body.roles || [];
-      workspaceRolesEl.replaceChildren();
-      const on = roles.filter((role) => role.enabled).map((role) => role.name);
-      if (rolesStatusEl) {
-        rolesStatusEl.textContent = on.length
-          ? `Enabled: ${on.join(", ")}`
-          : "No roles enabled for this workspace.";
-      }
-      for (const role of roles) {
-        const row = document.createElement("div");
-        row.className = "skill-row";
-        const box = document.createElement("input");
-        box.type = "checkbox";
-        box.id = `role-enable-${role.name}`;
-        box.checked = Boolean(role.enabled || role.enforced);
-        box.disabled = Boolean(role.required || role.enforced);
-        box.dataset.role = role.name;
-        const copy = document.createElement("label");
-        copy.className = "skill-row-copy";
-        copy.htmlFor = box.id;
-        const title = document.createElement("strong");
-        title.textContent = `${role.title || role.name} · ${role.job || "role"}`;
-        const desc = document.createElement("p");
-        desc.textContent = role.enforced
-          ? "Enforced by the organization."
-          : (role.summary || role.description || "No description.");
-        copy.append(title, desc);
-        row.append(box, copy);
-        workspaceRolesEl.append(row);
-      }
-    }
-    async function saveEnabledRoles() {
-      const enabled = [...workspaceRolesEl.querySelectorAll("input[data-role]:checked")]
-        .map((input) => input.dataset.role)
-        .filter(Boolean);
-      const res = await fetch("/api/workspaces/roles", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: workspaceEl.value, enabled }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "failed to update roles");
-      renderWorkspaceRoles(body);
-    }
-    if (workspaceRolesEl) {
-      workspaceRolesEl.addEventListener("change", (event) => {
-        if (!event.target.closest("input[data-role]")) return;
-        saveEnabledRoles().catch((err) => notify("error", err.message, { title: "Could not update roles" }));
-      });
+      window.__lbwProjectRoles = body;
+      document.dispatchEvent(new CustomEvent("lbw-project-roles", { detail: body }));
     }
     async function loadWorkspaceSkills() {
-      if (!workspaceSkillsEl) return;
       const path = workspaceEl.value;
       try {
         const res = await fetch(`/api/workspaces/skills?path=${encodeURIComponent(path)}`);
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "failed to load skills");
-        renderWorkspaceSkills(body);
-        // Update the enabled skills hint below the goal textarea
+        window.__lbwProjectSkills = body;
+        document.dispatchEvent(new CustomEvent("lbw-project-skills", { detail: body }));
         if (enabledSkillsHint) {
           const enabled = body.enabled || [];
-          if (enabled.length === 0) {
-            enabledSkillsHint.textContent = "";
-          } else {
-            enabledSkillsHint.textContent = `Skills: ${enabled.join(", ")}`;
-          }
+          enabledSkillsHint.textContent = enabled.length ? `Skills: ${enabled.join(", ")}` : "";
         }
       } catch (err) {
-        if (skillsStatusEl) skillsStatusEl.textContent = err.message;
+        const status = document.getElementById("skills-status");
+        if (status) status.textContent = err.message;
       }
     }
-    let skillsSearchTimeout = null;
-    let skillsIdleStatus = "";
-    function skillRowMatches(row, term) {
-      const title = row.querySelector("strong");
-      const desc = row.querySelector("p");
-      const text = [title ? title.textContent : "", desc ? desc.textContent : ""].join(" ").toLowerCase();
-      return !term || text.includes(term);
-    }
-    function filterSkills(query) {
-      const term = (query || "").toLowerCase().trim();
-      let visibleCount = 0;
-      for (const group of workspaceSkillsEl.querySelectorAll(":scope > .skill-repo")) {
-        const repoText = String(group.dataset.repo || "").toLowerCase();
-        const repoMatches = Boolean(term) && repoText.includes(term);
-        const opened = group.dataset.open === "true";
-        let matches = 0;
-        for (const row of group.querySelectorAll(".skill-row")) {
-          const match = repoMatches || skillRowMatches(row, term);
-          row.classList.toggle("hidden", Boolean(term) && !match);
-          if (match) matches += 1;
-          if (match && (term || opened)) visibleCount += 1;
-        }
-        const folded = !term && !opened;
-        group.classList.toggle("hidden", Boolean(term) && matches === 0);
-        group.classList.toggle("folded", folded);
-        const fold = group.querySelector(".skill-repo-fold");
-        if (fold) fold.setAttribute("aria-expanded", folded ? "false" : "true");
-        const mark = group.querySelector(".skill-repo-mark");
-        if (mark) mark.textContent = folded ? "▸" : "▾";
-      }
-      for (const row of workspaceSkillsEl.querySelectorAll(":scope > .skill-row")) {
-        const match = skillRowMatches(row, term);
-        row.classList.toggle("hidden", !match);
-        if (match) visibleCount += 1;
-      }
-      if (!skillsStatusEl) return;
-      skillsStatusEl.textContent = term
-        ? (visibleCount
-          ? `Showing ${visibleCount} skill${visibleCount === 1 ? "" : "s"}`
-          : "No skills match.")
-        : skillsIdleStatus;
-    }
-    const skillsSearchEl = document.getElementById("skills-search");
-    if (skillsSearchEl) {
-      skillsSearchEl.addEventListener("input", (event) => {
-        clearTimeout(skillsSearchTimeout);
-        const value = event.target.value;
-        skillsSearchTimeout = setTimeout(() => filterSkills(value), 200);
-      });
-    }
-    function closeSkillInfo() {
-      if (!skillInfoPopEl) return;
-      skillInfoPopEl.hidden = true;
-      workspaceSkillsEl.querySelectorAll(".skill-info").forEach((button) => {
-        button.setAttribute("aria-expanded", "false");
-      });
-    }
-    function skillOriginLabel(skill) {
-      if (skill.origin === "bundled") return "Bundled with LBW";
-      if (skill.origin === "local") return "Local workspace skill";
-      if (skill.origin === "repo") return "From repository";
-      if (skill.origin === "source") return "From " + skill.source_url;
-      return "Cloned skill repo";
-    }
-    async function openSkillInfo(name) {
-      if (!skillInfoPopEl) return;
-      workspaceSkillsEl.querySelectorAll(".skill-info").forEach((button) => {
-        button.setAttribute("aria-expanded", button.dataset.skill === name ? "true" : "false");
-      });
-      skillInfoTitleEl.textContent = name;
-      skillInfoBodyEl.replaceChildren();
-      const loading = document.createElement("p");
-      loading.className = "hint";
-      loading.textContent = "Loading skill…";
-      skillInfoBodyEl.append(loading);
-      skillInfoPopEl.hidden = false;
-      try {
-        const res = await fetch(
-          `/api/workspaces/skills/detail?path=${encodeURIComponent(workspaceEl.value)}&name=${encodeURIComponent(name)}`
-        );
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "failed to load skill");
-        skillInfoBodyEl.replaceChildren();
-        const origin = document.createElement("p");
-        origin.className = "hint";
-        origin.textContent = skillOriginLabel(body);
-        skillInfoBodyEl.append(origin);
-        if (body.description) {
-          const desc = document.createElement("p");
-          desc.className = "skill-info-lead";
-          desc.textContent = body.description;
-          skillInfoBodyEl.append(desc);
-        }
-        if (body.html) {
-          const article = document.createElement("article");
-          article.className = "skill-markdown";
-          article.innerHTML = body.html;
-          skillInfoBodyEl.append(article);
-        } else if (body.body) {
-          const details = document.createElement("pre");
-          details.textContent = body.body;
-          skillInfoBodyEl.append(details);
-        }
-      } catch (err) {
-        skillInfoBodyEl.replaceChildren();
-        const fail = document.createElement("p");
-        fail.className = "hint";
-        fail.textContent = err.message;
-        skillInfoBodyEl.append(fail);
-      }
-    }
-    function appendSkillRow(parent, skill) {
-      const row = document.createElement("div");
-      row.className = "skill-row";
-      const locked = skill.origin === "bundled";
-      let box = null;
-      if (!locked) {
-        box = document.createElement("input");
-        box.type = "checkbox";
-        box.id = `skill-enable-${skill.name}`;
-        box.checked = Boolean(skill.enabled);
-        box.dataset.skill = skill.name;
-      }
-      const copy = document.createElement(locked ? "div" : "label");
-      copy.className = "skill-row-copy";
-      if (box) copy.htmlFor = box.id;
-      const title = document.createElement("strong");
-      title.textContent = skill.name;
-      const desc = document.createElement("p");
-      desc.textContent = locked
-        ? "Assigned from the organization."
-        : (skill.summary || skill.description || "No description.");
-      desc.title = skill.description || skill.summary || "";
-      copy.append(title, desc);
-      const info = document.createElement("button");
-      info.type = "button";
-      info.className = "skill-info";
-      info.dataset.skill = skill.name;
-      info.setAttribute("aria-label", `About ${skill.name}`);
-      info.setAttribute("aria-expanded", "false");
-      info.setAttribute("aria-controls", "skill-info-pop");
-      info.innerHTML = SKILL_INFO_ICON;
-      if (box) row.append(box);
-      row.append(copy, info);
-      parent.append(row);
-    }
-    function renderWorkspaceSkills(body) {
-      const skills = (body.skills || []).filter((skill) => {
-        return skill.assigned || skill.origin !== "bundled";
-      });
-      const sources = body.sources || [];
-      const loose = [];
-      const grouped = new Map();
-      for (const skill of skills) {
-        const url = String(skill.source_url || "").trim();
-        if (!url) {
-          loose.push(skill);
-          continue;
-        }
-        if (!grouped.has(url)) grouped.set(url, []);
-        grouped.get(url).push(skill);
-      }
-      const repos = [...grouped.keys()].sort((left, right) => {
-        return repoLabel(left, left).localeCompare(repoLabel(right, right));
-      });
-      state.assignedSkills = body.assigned || [];
-      closeSkillInfo();
-      workspaceSkillsEl.replaceChildren();
-      if (!skills.length) {
-        skillsIdleStatus = "No skills are assigned to this project.";
-      } else {
-        const bits = loose.map((skill) => skill.name);
-        for (const url of repos) {
-          bits.push(`${repoLabel(url, url)} (${grouped.get(url).length})`);
-        }
-        skillsIdleStatus = bits.join(", ");
-      }
-      if (skillsStatusEl && !(skillsSearchEl?.value || "").trim()) {
-        skillsStatusEl.textContent = skillsIdleStatus;
-      }
-      for (const skill of loose) appendSkillRow(workspaceSkillsEl, skill);
-      for (const url of repos) {
-        const items = grouped.get(url);
-        const label = repoLabel(url, url);
-        const opened = Boolean(state.skillRepoOpen[url]);
-        const group = document.createElement("div");
-        group.className = opened ? "skill-repo" : "skill-repo folded";
-        group.dataset.url = url;
-        group.dataset.repo = label;
-        group.dataset.open = opened ? "true" : "false";
-        const fold = document.createElement("button");
-        fold.type = "button";
-        fold.className = "skill-repo-fold";
-        fold.setAttribute("data-skill-repo", url);
-        fold.setAttribute("aria-expanded", opened ? "true" : "false");
-        const heading = document.createElement("span");
-        heading.className = "skill-repo-title";
-        const mark = document.createElement("span");
-        mark.className = "skill-repo-mark";
-        mark.setAttribute("aria-hidden", "true");
-        mark.textContent = opened ? "▾" : "▸";
-        const name = document.createElement("span");
-        name.textContent = label;
-        heading.append(mark, name);
-        const count = document.createElement("span");
-        count.className = "skill-repo-count";
-        count.textContent = String(items.length);
-        fold.append(heading, count);
-        const list = document.createElement("div");
-        list.className = "skill-repo-body";
-        for (const skill of items) appendSkillRow(list, skill);
-        group.append(fold, list);
-        workspaceSkillsEl.append(group);
-      }
-      filterSkills(skillsSearchEl?.value);
-      skillSourcesEl.replaceChildren();
-      for (const source of sources) {
-        const row = document.createElement("div");
-        row.className = "skill-source-row";
-        const label = document.createElement("span");
-        const short = source.sha ? source.sha.slice(0, 7) : "";
-        label.textContent = short ? `${source.url} · ${short}` : source.url;
-        label.title = source.sha || source.url;
-        row.append(label);
-        if (source.can_sync !== false) {
-          const sync = document.createElement("button");
-          sync.type = "button";
-          sync.className = "secondary skill-sync";
-          sync.dataset.slug = source.id || source.slug;
-          sync.textContent = "Resync";
-          row.append(sync);
-        }
-        if (source.scope_type === "project" && source.can_sync !== false) {
-          const remove = document.createElement("button");
-          remove.type = "button";
-          remove.className = "secondary";
-          remove.setAttribute("data-skill-source-remove", source.id || source.slug);
-          remove.textContent = "Remove";
-          row.append(remove);
-        }
-        skillSourcesEl.append(row);
-      }
-      const teamSelect = document.getElementById("skill-source-team");
-      if (teamSelect) {
-        const teams = body.skill_teams || [];
-        teamSelect.replaceChildren();
-        teamSelect.hidden = teams.length < 2;
-        for (const team of teams) {
-          const option = document.createElement("option");
-          option.value = team.id;
-          option.textContent = team.name;
-          teamSelect.append(option);
-        }
-      }
-    }
-    async function saveEnabledSkills() {
-      const enabled = [...workspaceSkillsEl.querySelectorAll("input[data-skill]:checked")]
-        .map((input) => input.dataset.skill)
-        .filter(Boolean);
-      for (const name of state.assignedSkills || []) {
-        if (!enabled.includes(name)) enabled.push(name);
-      }
-      const res = await fetch("/api/workspaces/skills", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: workspaceEl.value, enabled }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "failed to update skills");
-      renderWorkspaceSkills(body);
-      return body;
-    }
-    workspaceSkillsEl.addEventListener("change", (event) => {
-      if (!event.target.closest("input[data-skill]")) return;
-      saveEnabledSkills().catch((err) => notify("error", err.message, { title: "Could not update skills" }));
-    });
-    workspaceSkillsEl.addEventListener("click", (event) => {
-      const fold = event.target.closest("[data-skill-repo]");
-      if (fold) {
-        if ((skillsSearchEl?.value || "").trim()) return;
-        const url = fold.getAttribute("data-skill-repo");
-        state.skillRepoOpen[url] = !state.skillRepoOpen[url];
-        const group = fold.closest(".skill-repo");
-        if (group) group.dataset.open = state.skillRepoOpen[url] ? "true" : "false";
-        filterSkills("");
-        return;
-      }
-      const info = event.target.closest(".skill-info");
-      if (!info) return;
-      event.preventDefault();
-      openSkillInfo(info.dataset.skill).catch((err) => notify("error", err.message, { title: "Could not load skill" }));
-    });
-    document.getElementById("close-skill-info").addEventListener("click", closeSkillInfo);
-    document.getElementById("clone-skill-source").addEventListener("click", async () => {
-      const url = (skillSourceUrlEl.value || "").trim();
-      if (!url) return;
-      try {
-        const teamSelect = document.getElementById("skill-source-team");
-        const teamId = teamSelect && !teamSelect.hidden ? teamSelect.value : "";
-        const res = await fetch("/api/workspaces/skills/sources", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: workspaceEl.value, url, team_id: teamId }),
-        });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "failed to clone skills");
-        skillSourceUrlEl.value = "";
-        renderWorkspaceSkills(body);
-        notify("success", "Stored the skill repository.", { title: "Skills cloned" });
-      } catch (err) {
-        notify("error", err.message, { title: "Could not clone skills" });
-      }
-    });
-    skillSourcesEl.addEventListener("click", async (event) => {
-      const remove = event.target.closest("[data-skill-source-remove]");
-      if (remove) {
-        try {
-          const res = await fetch("/api/workspaces/skills/sources/remove", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              path: workspaceEl.value,
-              slug: remove.getAttribute("data-skill-source-remove"),
-            }),
-          });
-          const body = await res.json();
-          if (!res.ok) throw new Error(body.error || "failed to remove the skill repository");
-          renderWorkspaceSkills(body);
-          notify("success", "Removed the skill repository from this project.", { title: "Skills" });
-        } catch (err) {
-          notify("error", err.message, { title: "Could not remove the skill repository" });
-        }
-        return;
-      }
-      const sync = event.target.closest(".skill-sync");
-      if (!sync) return;
-      try {
-        const res = await fetch("/api/workspaces/skills/sources/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: workspaceEl.value, slug: sync.dataset.slug }),
-        });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "failed to pull skills");
-        renderWorkspaceSkills(body);
-        notify("success", "Pulled the latest commit into the skill space.", { title: "Skills updated" });
-      } catch (err) {
-        notify("error", err.message, { title: "Could not pull skills" });
-      }
-    });
 
     document.getElementById("create-workspace").addEventListener("click", async () => {
       try {
@@ -6488,6 +5434,12 @@
     for (const button of document.querySelectorAll(".personal-tab")) {
       button.addEventListener("click", () => showPersonalTab(button.dataset.personalTab));
     }
+    for (const button of document.querySelectorAll(".rules-tab")) {
+      button.addEventListener("click", () => showRulesTab(button.dataset.rulesTab));
+    }
+    document.getElementById("refresh-repo-rules").addEventListener("click", () => {
+      loadRepoRules().catch((err) => showRepoRulesError(err.message));
+    });
     document.getElementById("add-personal-rule").addEventListener("click", () => {
       if (!personalRuleScope || !personalRuleScope.can_write) return;
       openPersonalRule("create");
@@ -6563,14 +5515,6 @@
         closePicker();
         return;
       }
-      if (liveConsoleEl && liveConsoleEl.classList.contains("open")) {
-        setLiveConsoleOpen(false);
-        return;
-      }
-      if (state.section === "skills" && skillInfoPopEl && !skillInfoPopEl.hidden) {
-        closeSkillInfo();
-        return;
-      }
       if (accountMenuOpen()) {
         setAccountMenuOpen(false);
         return;
@@ -6592,146 +5536,6 @@
     document.getElementById("notify-clear").addEventListener("click", () => {
       state.notifications = [];
       renderNotificationHistory();
-    });
-    const liveConsoleEl = document.getElementById("live-console");
-    const openConsoleBtn = document.getElementById("open-live-console");
-    let consoleEventSource = null;
-
-    function setLiveConsoleOpen(open) {
-      if (!liveConsoleEl) return;
-      liveConsoleEl.classList.toggle("open", open);
-      liveConsoleEl.hidden = !open;
-      if (openConsoleBtn) openConsoleBtn.setAttribute("aria-expanded", open ? "true" : "false");
-      if (open) connectConsoleStream();
-      else disconnectConsoleStream();
-    }
-
-    function disconnectConsoleStream() {
-      if (consoleEventSource) {
-        consoleEventSource.close();
-        consoleEventSource = null;
-      }
-      const statusText = document.getElementById("console-status-text");
-      const statusDot = document.getElementById("console-status-dot");
-      if (statusText) statusText.textContent = "Disconnected";
-      if (statusDot) statusDot.className = "status-dot disconnected";
-    }
-
-    function connectConsoleStream() {
-      disconnectConsoleStream();
-      const outputEl = document.getElementById("live-console-output");
-      const statusText = document.getElementById("console-status-text");
-      const statusDot = document.getElementById("console-status-dot");
-      consoleEventSource = new EventSource("/api/events/stream");
-      consoleEventSource.onerror = () => {
-        if (statusText) statusText.textContent = "Reconnecting";
-        if (statusDot) statusDot.className = "status-dot disconnected";
-      };
-      consoleEventSource.onopen = () => {
-        if (statusText) statusText.textContent = "Connected";
-        if (statusDot) statusDot.className = "status-dot connected";
-      };
-      consoleEventSource.onmessage = (event) => {
-        let data;
-        try {
-          data = JSON.parse(event.data);
-        } catch (exc) {
-          return;
-        }
-        appendConsoleEntry(data);
-      };
-    }
-
-    function appendConsoleEntry(data) {
-      const outputEl = document.getElementById("live-console-output");
-      if (!data || !outputEl) return;
-      const entry = document.createElement("div");
-      entry.className = "log-entry";
-      if (data.kind) {
-        const kind = data.kind;
-        const at = data.at || "";
-        const purpose = data.purpose || "";
-        const elapsed = data.elapsed_ms;
-        const ok = data.ok;
-        const path = data.path || "";
-        const action = data.action || "";
-        const diff = data.net_diff || data.diff || "";
-        const command = data.command || "";
-        const phase = data.phase || "";
-        const message = data.message || "";
-        const url = data.url || "";
-        let html = `<span class="log-timestamp">[${escapeHtml(at)}]</span>`;
-        if (kind === "llm") {
-          const status = ok ? "✓" : "✗";
-          const elapsedStr = elapsed ? formatElapsed(elapsed / 1000) : "";
-          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> LLM (<span class="log-purpose">${escapeHtml(purpose)}</span>)`;
-          if (elapsedStr) html += ` <span class="log-time">${elapsedStr}</span>`;
-          if (data.agent) {
-            html += `<div class="log-chat log-agent"><span class="log-speaker">agent</span> ${escapeHtml(data.agent)}</div>`;
-          }
-          if (data.model) {
-            html += `<div class="log-chat log-model"><span class="log-speaker">model</span> ${escapeHtml(data.model)}</div>`;
-          }
-        } else if (kind === "file") {
-          const diffPreview = diff
-            ? escapeHtml(String(diff).replace("\n", " ").trim().slice(0, 80)) + (String(diff).length > 80 ? "…" : "")
-            : "";
-          html += ` <span class="log-action">${escapeHtml(action)}</span> <span class="log-path">${escapeHtml(path)}</span>`;
-          if (diffPreview) html += ` [<span class="log-diff">${diffPreview}</span>]`;
-        } else if (kind === "test") {
-          const status = ok ? "✓" : "✗";
-          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span>`;
-          if (command) {
-            const cmdDisplay = escapeHtml(String(command).slice(0, 50)) + (String(command).length > 50 ? "…" : "");
-            html += ` test (<span class="log-command">${cmdDisplay}</span>)`;
-          } else if (phase) {
-            html += ` <span class="log-phase">${escapeHtml(phase)}</span> tests`;
-          } else {
-            html += " test run";
-          }
-        } else if (kind === "step") {
-          if (message) {
-            html += `<div class="log-chat log-agent"><span class="log-speaker">agent</span> ${escapeHtml(message)}</div>`;
-          } else {
-            html += ` step at <span class="log-time">${escapeHtml(at)}</span>`;
-          }
-        } else if (kind === "pr") {
-          const status = ok ? "✓" : "✗";
-          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> PR:`;
-          if (url) {
-            html += ` <span class="log-url"><a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a></span>`;
-          } else if (message) {
-            html += ` <span class="log-message">${escapeHtml(message)}</span>`;
-          } else {
-            html += " PR created";
-          }
-        } else if (message) {
-          html += ` ${escapeHtml(message)}`;
-        }
-        entry.innerHTML = html;
-      } else if (data.line) {
-        entry.textContent = String(data.line);
-      } else {
-        return;
-      }
-      outputEl.insertBefore(entry, outputEl.firstChild);
-      outputEl.scrollTop = 0;
-    }
-
-    function formatElapsed(seconds) {
-      if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
-      if (seconds < 60) return `${seconds.toFixed(1)}s`;
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.round(seconds % 60);
-      return `${mins}m ${secs}s`;
-    }
-
-    document.getElementById("close-live-console").addEventListener("click", () => {
-      setLiveConsoleOpen(false);
-    });
-    openConsoleBtn.addEventListener("click", () => setLiveConsoleOpen(true));
-    liveConsoleEl.addEventListener("click", (event) => {
-      if (event.target === liveConsoleEl) setLiveConsoleOpen(false);
     });
 
     document.addEventListener("click", (event) => {
@@ -7959,7 +6763,7 @@
         : "";
       return `
         <div class="task-pane-tabs" role="tablist" aria-label="Task views">
-          <button type="button" class="task-pane-tab" role="tab" data-task-pane="progress" aria-selected="${pane === "progress" ? "true" : "false"}">Progress</button>
+          <button type="button" class="task-pane-tab" role="tab" data-task-pane="progress" aria-selected="${pane === "progress" ? "true" : "false"}">Log</button>
           <button type="button" class="task-pane-tab" role="tab" data-task-pane="changes" aria-selected="${pane === "changes" ? "true" : "false"}">Changes${count ? " " + count : ""}${lines ? " " + lines : ""}</button>
           <button type="button" class="task-pane-tab" role="tab" data-task-pane="screenshots" aria-selected="${pane === "screenshots" ? "true" : "false"}">Screenshots${shots ? " " + shots : ""}</button>
         </div>
@@ -8337,14 +7141,12 @@
       if (state.stepItem !== key) {
         state.stepItem = key;
         state.stepFocus = focus;
+        state.stepPinned = false;
         state.openSteps = new Set();
         state.closedSteps = new Set();
         return;
       }
-      if (state.stepFocus !== focus) {
-        state.closedSteps.delete(focus);
-        state.stepFocus = focus;
-      }
+      if (!state.stepPinned) state.stepFocus = focus;
     }
 
     function stepIsOpen(id, focus) {
@@ -8538,13 +7340,15 @@
       ];
 
       function card(step) {
-        const open = stepIsOpen(step.id, focus) ? " open" : "";
-        const usage = stepUsageHtml(metrics, step.id, step.pill);
-        return `<li><details class="step-card" data-step="${escapeHtml(step.id)}"${open}><summary><span class="step-chevron" aria-hidden="true"></span>${stepIcon(step.kind)}<span class="step-name"><strong>${escapeHtml(step.title)}</strong><span class="step-id">${escapeHtml(step.sub)}</span></span>${stepPill(step.pill[0], step.pill[1])}${usage}</summary><div class="step-body">${step.body}</div></details></li>`;
+        const selected = step.id === (state.stepFocus || focus);
+        const tone = step.pill[1] || "muted";
+        const pressed = selected ? "true" : "false";
+        return `<button type="button" class="step-node ${tone}${selected ? " selected" : ""}" data-step-pick="${escapeHtml(step.id)}" role="tab" aria-selected="${pressed}"><span class="step-node-title">${escapeHtml(step.title)}</span><span class="step-node-state">${escapeHtml(step.pill[0])}</span></button>`;
       }
 
-      const hint = `${steps.length} steps. Open one for its verdict, what it recorded, and its evidence.`;
-      return `<section class="change-board" aria-label="Change"><header class="step-head"><h2>Steps</h2><p>${escapeHtml(hint)}</p></header><ol class="step-list">${steps.map(card).join("")}</ol></section>`;
+      const chosen = steps.find((step) => step.id === (state.stepFocus || focus)) || steps[0];
+      const usage = stepUsageHtml(metrics, chosen.id, chosen.pill);
+      return `<section class="change-board" aria-label="Change"><header class="step-head"><h2>Steps</h2>${jobPeopleHtml(item)}</header><div class="step-rail" role="tablist" aria-label="Change steps">${steps.map(card).join("")}</div><div class="step-pane" role="tabpanel"><div class="step-pane-head">${stepIcon(chosen.kind)}<strong>${escapeHtml(chosen.title)}</strong>${stepPill(chosen.pill[0], chosen.pill[1])}${usage}</div><div class="step-body">${chosen.body}</div></div></section>`;
     }
 
     function renderProgress(item, { running = false } = {}) {
@@ -8552,10 +7356,6 @@
       const logs = (item.logs || []).join("\n");
       const summary = progressNotes(item);
       const extra = item.error ? `error: ${item.error}` : "";
-      const progressHtml = renderProgressStageBar(events, {
-        status: item.status || "",
-        running,
-      });
       let logHtml = "";
       if (events.length) {
         const tail = [summary, extra]
@@ -8578,7 +7378,7 @@
         return totals;
       }, { added: 0, removed: 0 });
       const board = changeBoardHtml(item);
-      return board + (board ? "" : progressHtml) + renderTaskPanes(
+      return board + renderTaskPanes(
         logHtml,
         renderFileChanges(events, item.workspace || workspaceEl.value),
         groups.length,
@@ -8764,6 +7564,30 @@
       return "";
     }
 
+    function jobPeopleHtml(task) {
+      if (!task) return "";
+      const parts = [];
+      const starter = task.started_by && (task.started_by.name || task.started_by.id);
+      if (starter) parts.push(`Started by ${starter}`);
+      for (const gate of task.gates || []) {
+        const who = (gate.actor && (gate.actor.name || gate.actor.id)) || "";
+        if (!who) continue;
+        if (gate.action === "send_back") {
+          parts.push(gate.note ? `${who} sent this back: ${gate.note}` : `${who} sent this back`);
+        } else if (gate.action === "continue") {
+          parts.push(
+            gate.note ? `${who} asked for more changes: ${gate.note}` : `${who} asked for more changes`
+          );
+        } else if (gate.action === "build" || gate.action === "approve") {
+          parts.push(`${who} accepted`);
+        } else if (gate.action === "hand_off") {
+          parts.push(`${who} handed this off`);
+        }
+      }
+      if (!parts.length) return "";
+      return `<span class="inbox-people">${escapeHtml(parts.join(" · "))}</span>`;
+    }
+
     function inboxRowHtml(entry, items, section) {
       const task = entry.item;
       const selected = entry.kind === "task"
@@ -8777,11 +7601,13 @@
             <span class="inbox-project">${escapeHtml(project)}</span>
             <span class="inbox-step">${escapeHtml(step)}</span>
             <span class="inbox-goal">${escapeHtml(goalHeadline(task))}</span>
+            ${jobPeopleHtml(task)}
           </button>`
         : `<button type="button" class="inbox-item${selected}" data-inbox-id="${escapeHtml(task.id)}" data-inbox-workspace="${escapeHtml(task.workspace || "")}" title="${title}">
             <span class="inbox-project">${escapeHtml(project)}</span>
             <span class="inbox-step">${escapeHtml(step)}</span>
             <span class="inbox-goal">${escapeHtml(goalHeadline(task))}</span>
+            ${jobPeopleHtml(task)}
           </button>`;
       return `<div class="inbox-row">${button}${inboxActionsHtml(entry, section)}</div>`;
     }
@@ -8929,7 +7755,7 @@
           : `<p class="inbox-empty">${empty}</p>`;
         return `
           <section class="inbox-group release-group release-${bucket}">
-            <h3>${title}<span class="inbox-count">${rows.length}</span></h3>
+            <h3 class="release-head"><span>${title}</span><span class="release-count">${rows.length}</span></h3>
             ${body}
           </section>
         `;
@@ -8938,7 +7764,7 @@
       if (committed.length) {
         html += `
           <section class="inbox-group release-group">
-            <h3>Committed<span class="inbox-count">${committed.length}</span></h3>
+            <h3 class="release-head"><span>Committed</span><span class="release-count">${committed.length}</span></h3>
             ${committed.map((entry) => releaseRowHtml(entry)).join("")}
           </section>
         `;
@@ -9344,12 +8170,6 @@
       });
     }
 
-    document.getElementById("clear-console")?.addEventListener("click", () => {
-      const outputEl = document.getElementById("live-console-output");
-      if (outputEl) {
-        outputEl.innerHTML = "";
-      }
-    });
 
     editorSchemeEl.value = editorScheme();
     editorSchemeEl.addEventListener("change", (event) => {
@@ -9411,18 +8231,17 @@
       const allowed = ["proposals", "changes", "releases", "rules", "skills", "roles", "schedules", "personal", "organization"];
       const next = allowed.includes(name) ? name : "proposals";
       state.section = next;
-      if (next !== "skills") closeSkillInfo();
       document.querySelectorAll("[data-section]").forEach((el) => {
         el.hidden = el.dataset.section !== next;
       });
-      if (next === "rules") {
-        loadAppliedRules().catch((err) => notify("error", err.message, { title: "Could not load rules" }));
-      }
+      if (next === "rules") loadRulesSection();
       if (next === "skills") loadWorkspaceSkills();
       if (next === "roles") {
         loadWorkspaceRoles().catch((err) => notify("error", err.message, { title: "Could not load roles" }));
       }
       if (next === "schedules") {
+        loadScheduleBranches();
+        loadScheduleModels();
         refreshSchedules().catch((err) => showNotice(scheduleErrorEl, "error", err.message));
       }
       if (next === "proposals" && githubIssuesReady && !githubGoalsSection.hidden) {
@@ -9679,6 +8498,13 @@
     }
 
     runDetailEl.addEventListener("click", (event) => {
+      const pick = event.target.closest("[data-step-pick]");
+      if (pick && pick.dataset.stepPick) {
+        state.stepFocus = pick.dataset.stepPick;
+        state.stepPinned = true;
+        render();
+        return;
+      }
       const reply = event.target.closest("[data-reply-continue]");
       if (reply) {
         const box = reply.closest(".reply-box");
@@ -9989,7 +8815,8 @@
     const scheduleFormEl = document.getElementById("schedule-form");
     const scheduleNameEl = document.getElementById("schedule-name");
     const scheduleGoalEl = document.getElementById("schedule-goal");
-    const scheduleOutputEl = document.getElementById("schedule-output");
+    const scheduleBaseEl = document.getElementById("schedule-base");
+    const scheduleModelEl = document.getElementById("schedule-model");
     const scheduleEnabledEl = document.getElementById("schedule-enabled");
     const cadenceMinuteEl = document.getElementById("cadence-minute");
     const cadenceTimeEl = document.getElementById("cadence-time");
@@ -10008,6 +8835,8 @@
       items: [],
       agenda: { next_up: [], days: [] },
       selectedId: "",
+      baseBranch: "",
+      modelId: "",
       listKey: "",
       resultKey: "",
       liveKey: "",
@@ -10127,9 +8956,7 @@
 
     function renderScheduleResults(item, force) {
       const runs = (item && item.runs) || [];
-      const files = (item && item.files) || [];
-      const key = runs.map((run) => [run.id, run.status, run.summary, run.error].join(":")).join("|")
-        + "#" + files.map((file) => file.name).join(",");
+      const key = runs.map((run) => [run.id, run.status, run.outcome, run.pr_url, run.summary, run.error].join(":")).join("|");
       if (!force && key === scheduleState.resultKey && scheduleResultsEl.childElementCount) return;
       scheduleState.resultKey = key;
       scheduleResultsEl.replaceChildren();
@@ -10156,8 +8983,18 @@
         const status = document.createElement("div");
         status.className = `schedule-run-status ${run.status || ""}`;
         const when = formatWhen(run.finished_at || run.started_at);
-        status.textContent = when ? `${runStatusLabel(run.status)} · ${when}` : runStatusLabel(run.status);
+        const label = run.outcome === "clear" ? "Found nothing" : runStatusLabel(run.status);
+        status.textContent = when ? `${label} · ${when}` : label;
         row.append(status);
+        if (run.pr_url) {
+          const link = document.createElement("a");
+          link.className = "pr-link";
+          link.href = run.pr_url;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = "Pull request";
+          row.append(link);
+        }
         const text = run.summary || run.error;
         if (text) {
           const body = document.createElement("p");
@@ -10166,30 +9003,12 @@
         }
         scheduleResultsEl.append(row);
       }
-      if (!item || item.kind !== "files") return;
-      const folder = document.createElement("p");
-      folder.className = "hint";
-      folder.textContent = item.workspace ? `Saved in ${item.workspace}` : "Files are saved with this schedule.";
-      scheduleResultsEl.append(folder);
-      if (!files.length) return;
-      const list = document.createElement("ul");
-      list.className = "schedule-files";
-      for (const file of files) {
-        const itemRow = document.createElement("li");
-        const link = document.createElement("a");
-        const query = new URLSearchParams({ path: file.name });
-        link.href = `/api/schedules/${encodeURIComponent(item.id)}/file?${query}`;
-        link.textContent = file.name;
-        itemRow.append(link);
-        list.append(itemRow);
-      }
-      scheduleResultsEl.append(list);
     }
 
     function renderScheduleList() {
       const key = scheduleState.items.map((item) => {
         const latest = (item.runs || [])[0] || {};
-        return [item.id, item.kind, item.name, item.label, item.enabled, item.next_run_at, latest.status].join("|");
+        return [item.id, item.base_branch, item.name, item.label, item.enabled, item.next_run_at, latest.status].join("|");
       }).join("\n");
       if (key === scheduleState.listKey && scheduleListEl.childElementCount) {
         for (const button of scheduleListEl.querySelectorAll(".schedule-row")) {
@@ -10217,7 +9036,8 @@
         const meta = document.createElement("span");
         meta.className = "schedule-row-meta";
         const when = item.enabled ? `Next ${formatWhen(item.next_run_at)}` : "Paused";
-        meta.textContent = `${item.label} · ${when}`;
+        const branch = item.base_branch || "main";
+        meta.textContent = `${item.label} · ${branch} · ${when}`;
         button.append(name, meta);
         button.addEventListener("click", () => selectSchedule(item.id));
         scheduleListEl.append(button);
@@ -10235,7 +9055,10 @@
       scheduleNameEl.value = item.name;
       scheduleGoalEl.value = item.goal;
       scheduleEnabledEl.checked = !!item.enabled;
-      scheduleOutputEl.value = item.kind === "files" ? (item.workspace || "") : "";
+      scheduleState.baseBranch = item.base_branch || "";
+      scheduleState.modelId = item.model_id || "";
+      if (scheduleBaseEl && item.base_branch) scheduleBaseEl.value = item.base_branch;
+      if (scheduleModelEl && item.model_id) scheduleModelEl.value = item.model_id;
       cadenceTimeEl.value = `${String(item.cadence.hour).padStart(2, "0")}:${String(item.cadence.minute).padStart(2, "0")}`;
       cadenceMinuteEl.value = String(item.cadence.minute);
       scheduleHeadingEl.textContent = item.name;
@@ -10254,7 +9077,9 @@
       scheduleNameEl.value = "";
       scheduleGoalEl.value = "";
       scheduleEnabledEl.checked = true;
-      scheduleOutputEl.value = "";
+      scheduleState.baseBranch = "";
+      scheduleState.modelId = "";
+      if (scheduleBaseEl && scheduleBaseEl.dataset.head) scheduleBaseEl.value = scheduleBaseEl.dataset.head;
       cadenceTimeEl.value = "09:00";
       cadenceMinuteEl.value = "0";
       scheduleHeadingEl.textContent = "New schedule";
@@ -10404,20 +9229,89 @@
     }
 
     function schedulePayload() {
+      const branch = scheduleBaseEl ? scheduleBaseEl.value.trim() : "";
       return {
         name: scheduleNameEl.value.trim(),
         goal: scheduleGoalEl.value.trim(),
-        kind: "files",
-        workspace: scheduleOutputEl.value.trim(),
+        kind: "project",
+        workspace: workspaceEl.value,
+        base_branch: branch,
+        model_id: scheduleModelEl ? scheduleModelEl.value : "",
         enabled: scheduleEnabledEl.checked,
-        auto_commit: false,
-        create_pr: false,
         cadence: readCadenceFromForm(),
       };
     }
 
+    async function loadScheduleBranches() {
+      if (!scheduleBaseEl) return;
+      const workspace = workspaceEl.value || "";
+      const saved = scheduleState.baseBranch || "";
+      if (!workspace) return;
+      try {
+        const res = await fetch("/api/branches?workspace=" + encodeURIComponent(workspace));
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Could not list branches");
+        const names = body.branches || [];
+        const head = body.default || "main";
+        scheduleBaseEl.replaceChildren();
+        const listed = names.length ? names : [head];
+        for (const name of listed) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name === head ? name + " (default)" : name;
+          scheduleBaseEl.appendChild(option);
+        }
+        scheduleBaseEl.dataset.head = head;
+        scheduleBaseEl.value = listed.indexOf(saved) >= 0 ? saved : head;
+      } catch (_err) {
+        scheduleBaseEl.replaceChildren();
+        const option = document.createElement("option");
+        option.value = "main";
+        option.textContent = "main";
+        scheduleBaseEl.appendChild(option);
+        scheduleBaseEl.dataset.head = "main";
+        scheduleBaseEl.value = "main";
+      }
+    }
+
+    async function loadScheduleModels() {
+      if (!scheduleModelEl) return;
+      const workspace = workspaceEl.value || "";
+      const saved = scheduleState.modelId || "";
+      try {
+        const res = await fetch("/api/org/models?workspace=" + encodeURIComponent(workspace));
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Could not list models");
+        const models = body.models || [];
+        scheduleModelEl.replaceChildren();
+        if (!models.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "No models granted";
+          scheduleModelEl.append(option);
+          scheduleModelEl.disabled = true;
+          return;
+        }
+        scheduleModelEl.disabled = false;
+        for (const model of models) {
+          const option = document.createElement("option");
+          option.value = model.id;
+          const host = model.endpoint_name ? ` · ${model.endpoint_name}` : "";
+          option.textContent = (model.name || model.model_name) + host;
+          scheduleModelEl.append(option);
+        }
+        if (saved && [...scheduleModelEl.options].some((option) => option.value === saved)) {
+          scheduleModelEl.value = saved;
+        }
+      } catch (_err) {
+        scheduleModelEl.disabled = true;
+      }
+    }
+
     async function refreshSchedules() {
-      const res = await fetch("/api/schedules");
+      const workspace = workspaceEl.value || "";
+      const query = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
+      const res = await fetch("/api/schedules" + query);
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Could not load schedules");
       scheduleState.items = body.schedules || [];

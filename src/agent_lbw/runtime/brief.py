@@ -62,13 +62,11 @@ def build_task_brief(root: Path, goal: str, project) -> str:
         " (never pushes to main)",
     ]
 
-    # AGENTS.md excerpt: first 80 lines if exists
-    agents_path = root / "AGENTS.md"
-    if agents_path.exists():
-        lines = agents_path.read_text(encoding="utf-8").splitlines()
-        excerpt = lines[:80]
-        parts.append("AGENTS.md excerpt:")
-        parts.extend(excerpt)
+    from agent_lbw.runtime.repo_rules import text_for_prompt
+
+    instructions = text_for_prompt(root, line_limit=80)
+    if instructions:
+        parts.append(instructions)
 
     # Relevant paths: up to 12 files matching tokens from goal
     goal_tokens = _extract_goal_tokens(goal)

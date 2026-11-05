@@ -28,6 +28,10 @@ history.json
 workspaces/*
 !workspaces/.gitkeep
 
+# Frontend build
+web/node_modules/
+.web-check/
+
 # Editor / OS
 .DS_Store
 .idea/

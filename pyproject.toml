@@ -56,7 +56,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-agent_lbw = ["templates/*.html", "static/*.css", "static/*.svg", "templates/Dockerfile.sandbox", "skills/*/SKILL.md", "roles/*/ROLE.md"]
+agent_lbw = ["templates/*.html", "static/*.css", "static/*.svg", "static/app/*", "templates/Dockerfile.sandbox", "skills/*/SKILL.md", "roles/*/ROLE.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

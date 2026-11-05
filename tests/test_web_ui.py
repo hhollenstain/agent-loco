@@ -324,16 +324,9 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'<option value="cursor">Cursor</option>' in home.content
         assert b"file-open-link" in home.content
         assert b"function editorFileUrl(" in home.content
-        assert b'id="open-live-console"' in home.content
-        assert b'id="live-console"' in home.content
-        assert b'id="close-live-console"' in home.content
-        assert b"/api/events/stream" in home.content
-        assert b"function appendConsoleEntry(" in home.content
-        assert b"log-chat log-agent" in home.content
-        assert b"log-chat log-model" in home.content
-        assert b"log-speaker" in home.content
-        assert b"data.agent" in home.content
-        assert b"data.model" in home.content
+        assert b'id="open-live-console"' not in home.content
+        assert b'id="live-console"' not in home.content
+        assert b"function appendConsoleEntry(" not in home.content
         assert b"data-history-update" in home.content
         assert b"card-actions" in home.content
         assert b"pr-state" in home.content
@@ -402,7 +395,8 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b'data-stage="' in home.content
         assert b"pinTimelineStage" in home.content
         assert b"function renderProgressStageBar(" in home.content
-        assert b'return board + (board ? "" : progressHtml) + renderTaskPanes' in home.content
+        assert b">Log</button>" in home.content
+        assert b"progressHtml + logHtml" not in home.content
         assert b"${taskProgress}" not in home.content
         assert b"Before tests" in home.content
         assert b'event.kind === "lint"' in home.content
@@ -1106,19 +1100,20 @@ def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_pa
         assert b'id="load-goals"' not in home.content
         assert b'id="settings-kind-label"' in home.content
         assert b'id="save-guidelines"' in home.content
-        assert b'id="workspace-skills"' in home.content
-        assert home.content.count(b'id="workspace-skills"') == 1
+        assert b'id="project-skills-root"' in home.content
+        assert home.content.count(b'id="project-skills-root"') == 1
         assert b'data-rail="skills"' in home.content
         assert b'id="skills-panel"' in home.content
-        assert b'id="skills-search"' in home.content
-        assert b"data-skill-repo" in home.content
-        assert b"function filterSkills(" in home.content
+        script = client.get("/static/app/app.js").content
+        assert b'id:"skills-search"' in script
+        assert b'"data-skill-repo"' in script
+        assert b'id:"workspace-skills"' in script
         assert b'data-rail="rules"' in home.content
         assert b'id="rules-view"' in home.content
         assert b'id="skills-popup"' not in home.content
         assert b'id="guidelines-popup"' not in home.content
-        assert b'id="clone-skill-source"' in home.content
-        assert b'id="skill-info-pop"' in home.content
+        assert b'id:"clone-skill-source"' in script
+        assert b'id:"skill-info-pop"' in script
         assert b"skill-markdown" in home.content
         assert b'id="workspace" name="workspace" type="hidden"' in home.content
         assert b"Clone a repository" in home.content
@@ -2211,8 +2206,9 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b'id="open-roles"' not in home.content
         assert b'id="roles-panel"' not in home.content
         assert b"function changeBoardHtml(" in home.content
-        assert b'class="step-list"' in home.content
-        assert b"Open one for its verdict" in home.content
+        assert b'class="step-rail"' in home.content
+        assert b'data-step-pick="' in home.content
+        assert b'role="tabpanel"' in home.content
         assert b"function renderInbox(" in home.content
         assert b'id="inbox"' in home.content
         assert b'data-rail="proposals"' in home.content
@@ -2261,7 +2257,7 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b"function sentBackText(" in home.content
         assert b"function stepMetrics(" in home.content
         assert b" tok" in home.content
-        assert b"${stepPill(step.pill[0], step.pill[1])}${usage}</summary>" in home.content
+        assert b"${stepPill(chosen.pill[0], chosen.pill[1])}${usage}" in home.content
         assert b'id="open-profile"' in home.content
         assert b'id="org-name"' in home.content
         assert b"Why it was sent back" in home.content

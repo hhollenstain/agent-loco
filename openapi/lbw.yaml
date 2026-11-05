@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: LBW
+  version: 0.1.0
+  description: >
+    The organization API. Add a route here first, then run make openapi.
+    Handlers use the generated models in src/agent_lbw/openapi_models.py.
+paths:
+  /api/schedules:
+    post:
+      operationId: createSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleWrite"
+      responses:
+        "200":
+          description: The saved schedule.
+  /api/repo-rules:
+    get:
+      operationId: listRepoRules
+      responses:
+        "200":
+          description: Instruction files from the primary branch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoRuleList"
+    put:
+      operationId: setRepoRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoRuleWrite"
+      responses:
+        "200":
+          description: The instruction files after one switch changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoRuleList"
+  /api/audit:
+    get:
+      operationId: listAudit
+      responses:
+        "200":
+          description: Recent notes of who changed the organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditList"
+components:
+  schemas:
+    ScheduleCadence:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+        minute:
+          type: integer
+          default: 0
+        hour:
+          type: integer
+          default: 9
+        weekdays:
+          type: array
+          items:
+            type: integer
+    ScheduleWrite:
+      type: object
+      required: [name, goal, cadence]
+      properties:
+        name:
+          type: string
+        goal:
+          type: string
+        workspace:
+          type: string
+          default: ""
+        kind:
+          type: string
+          default: project
+        enabled:
+          type: boolean
+          default: true
+        auto_commit:
+          type: boolean
+          default: true
+        create_pr:
+          type: boolean
+          default: true
+        base_branch:
+          type: string
+          default: ""
+        model_id:
+          type: string
+          default: ""
+        cadence:
+          $ref: "#/components/schemas/ScheduleCadence"
+    AuditEntry:
+      type: object
+      required: [id, at, action, summary]
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+        actor_id:
+          type: string
+          default: ""
+        actor_name:
+          type: string
+          default: ""
+        action:
+          type: string
+        method:
+          type: string
+          default: ""
+        path:
+          type: string
+          default: ""
+        target_type:
+          type: string
+          default: ""
+        target_id:
+          type: string
+          default: ""
+        summary:
+          type: string
+        detail:
+          type: string
+          default: ""
+    AuditList:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+    RepoRuleFile:
+      type: object
+      required: [path, enabled, body]
+      properties:
+        path:
+          type: string
+        enabled:
+          type: boolean
+        body:
+          type: string
+    RepoRuleList:
+      type: object
+      required: [branch, files]
+      properties:
+        branch:
+          type: string
+          default: ""
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/RepoRuleFile"
+    RepoRuleWrite:
+      type: object
+      required: [path, enabled]
+      properties:
+        workspace:
+          type: string
+          default: ""
+        path:
+          type: string
+        enabled:
+          type: boolean
+    TaskActor:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    TaskGate:
+      type: object
+      required: [action, at, actor]
+      properties:
+        action:
+          type: string
+        at:
+          type: string
+        note:
+          type: string
+          default: ""
+        actor:
+          $ref: "#/components/schemas/TaskActor"

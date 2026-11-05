@@ -21,6 +21,11 @@ The task lists the rules that apply to this project: organization rules marked
 required, team rules for teams granted on the project, and the project's own
 rules. Follow them. Do not search another space for more.
 
+Repository instruction files, such as AGENTS.md, CLAUDE.md, and CURSOR.md,
+are included when this project has them turned on. They are read from the
+primary branch. A file that is not included was turned off. Do not read it
+back in, and do not copy it into a KiwiFS rule.
+
 ## Write a rule when asked
 
 1. `list_rules` for the scope the person named, so you do not duplicate one.

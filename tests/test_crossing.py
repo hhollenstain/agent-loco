@@ -47,8 +47,12 @@ def test_crossing_guard_restores_access_without_opening_a_change(
     assert "does not open a repository" in page.text
     assert "Add crossing guard" in page.text
     assert "Remove team" not in page.text
+    assert 'id="open-live-console"' in page.text
+    assert 'id="live-console"' in page.text
+    assert "/api/events/stream" in page.text
     home = owner.get("/")
     assert 'id="open-crossing"' in home.text
+    assert 'id="open-live-console"' not in home.text
     assert 'data-crossing-url="/crossingguard"' in home.text
 
     org_host = {"host": "www-local.lookbothways.dev"}

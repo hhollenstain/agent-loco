@@ -154,6 +154,53 @@ def register_org(app: FastAPI) -> None:
 
         return _act_kiwi(request, apply)
 
+    @app.put("/api/org/skill-repos/{repo_id}", response_model=None)
+    def write_skill_repo(request: Request, repo_id: str, payload: EnabledBody) -> object:
+        def apply(db, root: Path) -> dict:
+            from agent_lbw.runtime.store.skill_repos import set_repo_enabled
+
+            set_repo_enabled(db, require_account(db), repo_id=repo_id, enabled=payload.enabled)
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.put("/api/org/skill-repos/{repo_id}/skills/{skill_name}", response_model=None)
+    def write_skill_repo_skill(
+        request: Request, repo_id: str, skill_name: str, payload: EnabledBody
+    ) -> object:
+        def apply(db, root: Path) -> dict:
+            from agent_lbw.runtime.store.skill_repos import set_skill_enabled
+
+            set_skill_enabled(
+                db,
+                require_account(db),
+                repo_id=repo_id,
+                name=skill_name,
+                enabled=payload.enabled,
+            )
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.get("/api/org/skill-repos/{repo_id}/skills/{skill_name}", response_model=None)
+    def read_skill_repo_skill(request: Request, repo_id: str, skill_name: str) -> object:
+        def apply(db, _root: Path, kiwi) -> dict:
+            from agent_lbw.runtime.store.skill_repos import skill_document
+
+            return skill_document(db, kiwi, require_account(db), repo_id=repo_id, name=skill_name)
+
+        return _act_kiwi(request, apply)
+
+    @app.delete("/api/org/skill-repos/{repo_id}", response_model=None)
+    def delete_skill_repo(request: Request, repo_id: str) -> object:
+        def apply(db, root: Path, kiwi) -> dict:
+            from agent_lbw.runtime.store.skill_repos import remove_repo
+
+            remove_repo(db, kiwi, require_account(db), repo_id=repo_id)
+            return _settings(db, root)
+
+        return _act_kiwi(request, apply)
+
     @app.post("/api/org/endpoints", response_model=None)
     def add_endpoint(request: Request, payload: EndpointBody) -> object:
         def apply(db, root: Path) -> dict:
@@ -168,6 +215,9 @@ def register_org(app: FastAPI) -> None:
             body = _settings(db, root)
             if warning:
                 body["endpoint_warning"] = warning
+            request.state.audit_action = "endpoint.add"
+            request.state.audit_summary = f"Added endpoint {payload.name.strip()}"
+            request.state.audit_target_type = "endpoint"
             return body
 
         return _act(request, apply)
@@ -211,6 +261,10 @@ def register_org(app: FastAPI) -> None:
                 model_name=payload.model_name,
                 name=payload.name,
             )
+            label = payload.name.strip() or payload.model_name
+            request.state.audit_action = "model.add"
+            request.state.audit_summary = f"Added model {label}"
+            request.state.audit_target_type = "model"
             return _settings(db, root)
 
         return _act(request, apply)
@@ -219,6 +273,10 @@ def register_org(app: FastAPI) -> None:
     def remove_model(request: Request, model_id: str) -> object:
         def apply(db, root: Path) -> dict:
             delete_model(db, model_id)
+            request.state.audit_action = "model.remove"
+            request.state.audit_summary = "Removed a model"
+            request.state.audit_target_type = "model"
+            request.state.audit_target_id = model_id
             return _settings(db, root)
 
         return _act(request, apply)
@@ -227,6 +285,11 @@ def register_org(app: FastAPI) -> None:
     def enable_model(request: Request, model_id: str, payload: EnabledBody) -> object:
         def apply(db, root: Path) -> dict:
             set_model_enabled(db, model_id, enabled=payload.enabled)
+            state = "on" if payload.enabled else "off"
+            request.state.audit_action = "model.enable"
+            request.state.audit_summary = f"Turned a model {state}"
+            request.state.audit_target_type = "model"
+            request.state.audit_target_id = model_id
             return _settings(db, root)
 
         return _act(request, apply)

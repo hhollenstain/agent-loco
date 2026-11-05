@@ -127,6 +127,7 @@ _STATEMENTS = (
         url TEXT NOT NULL,
         sha TEXT NOT NULL,
         space_name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
         UNIQUE (tenant_id, scope_type, scope_id, team_id, url)
     )
     """,
@@ -134,6 +135,7 @@ _STATEMENTS = (
     CREATE TABLE IF NOT EXISTS skill_repo_files (
         repo_id TEXT NOT NULL REFERENCES skill_repos (id),
         path TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
         PRIMARY KEY (repo_id, path)
     )
     """,
@@ -263,6 +265,21 @@ _STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        actor_id TEXT REFERENCES identities (id),
+        at INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        method TEXT,
+        path TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        summary TEXT NOT NULL,
+        detail TEXT
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS schedules (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL REFERENCES tenants (id),
@@ -292,6 +309,7 @@ _STATEMENTS = (
 
 # Child rows go before the identity and tenant they point at.
 CLEAR_ORDER = (
+    "audit_log",
     "agent_grants",
     "model_grants",
     "agents",
@@ -368,6 +386,8 @@ def apply_schema(db: Database) -> None:
     _add_column(db, "sessions", "tenant_id", "TEXT")
     _add_column(db, "models", "endpoint_id", "TEXT")
     _add_column(db, "models", "enabled", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(db, "skill_repos", "enabled", "INTEGER NOT NULL DEFAULT 1")
+    _add_column(db, "skill_repo_files", "enabled", "INTEGER NOT NULL DEFAULT 1")
     _add_column(db, "agents", "enabled", "INTEGER NOT NULL DEFAULT 0")
     _add_column(db, "teams", "github_slug", "TEXT NOT NULL DEFAULT ''")
     db.execute(

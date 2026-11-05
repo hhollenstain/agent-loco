@@ -527,6 +527,15 @@ def _run_cycle(
             rules_text = ""
         if rules_text:
             base_context = f"{base_context}\n\n{rules_text}"
+    try:
+        from agent_lbw.runtime.repo_rules import text_for_prompt
+
+        repo_text = text_for_prompt(workspace.root)
+    except Exception as exc:  # noqa: BLE001 - a missing instruction file must not stop the cycle
+        log_progress(f"Repository instructions were not loaded: {exc}")
+        repo_text = ""
+    if repo_text:
+        base_context = f"{base_context}\n\n{repo_text}"
     named_files = format_goal_files(workspace.root, selected_goal)
     plan = None
     architect = plan_role(workspace.root)
@@ -2716,12 +2725,65 @@ def _ensure_lint(
     return lint_after
 
 
+_PROMPT_STARTS = (
+    "start from the ",
+    "if this project already meets the goal",
+    "if you find a fix",
+    "this folder is for documents",
+    "do the task below",
+    "do not add tests",
+)
+
+
+def _is_prompt_line(line: str) -> bool:
+    lowered = " ".join(line.split()).lower()
+    return any(lowered.startswith(prefix) for prefix in _PROMPT_STARTS)
+
+
+def _user_request(goal: str) -> str:
+    """The person's request, without the schedule or document-run instructions."""
+    text = (goal or "").strip()
+    if "\n\n" in text:
+        head, tail = text.split("\n\n", 1)
+        if _is_prompt_line(head):
+            text = tail.strip()
+    lines = [
+        line.strip() for line in text.splitlines() if line.strip() and not _is_prompt_line(line)
+    ]
+    return lines[0] if lines else ""
+
+
+def _same_request(left: str, right: str) -> bool:
+    a = " ".join((left or "").split()).strip().lower().rstrip(".")
+    b = " ".join((right or "").split()).strip().lower().rstrip(".")
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    return len(shorter) >= 24 and shorter in longer
+
+
+def _clip_title(text: str, limit: int = 72) -> str:
+    clean = " ".join((text or "").split()).strip()
+    if len(clean) <= limit:
+        return clean
+    cut = clean[:limit].rsplit(" ", 1)[0].rstrip(".,;:-")
+    return cut or clean[:limit].rstrip()
+
+
 def _commit_message(goal: str, summary: str) -> str:
-    first_goal_line = goal_headline(goal)[:72]
-    first_summary = summary.strip().splitlines()[0][:72] if summary.strip() else first_goal_line
-    if first_goal_line.lower().startswith("make the project's test suite pass"):
-        return first_summary
-    return first_goal_line
+    request = _user_request(goal)
+    summary_line = summary.strip().splitlines()[0] if summary.strip() else ""
+    if (
+        summary_line
+        and not _is_prompt_line(summary_line)
+        and not _same_request(summary_line, request)
+    ):
+        title = _clip_title(summary_line)
+    else:
+        title = _clip_title(request or summary_line)
+    return title or "Update the project"
 
 
 _AGENT_REVIEW_UI_SLUG = "ui-review_review-ui_"
@@ -2796,7 +2858,7 @@ def _pr_body(
     screenshots: list[str] | None = None,
     image_base: str | None = None,
 ) -> str:
-    detail = (summary or "").strip() or goal.strip()
+    request = _user_request(goal)
     if tests_passed is True:
         tests_line = "- [x] Project tests passed locally"
     elif tests_passed is False:
@@ -2804,32 +2866,32 @@ def _pr_body(
     else:
         tests_line = "- [ ] No project test command; verify manually"
 
-    # Extract changes and reason from summary
     changes_section = _extract_changes_from_summary(summary)
+    changed = changes_section if changes_section else ((summary or "").strip() or request)
+    if changed and _is_prompt_line(changed.splitlines()[0]):
+        changed = request or "No changes described."
+    changed = changed or "No changes described."
     testing_steps = _extract_testing_steps_from_summary(summary)
-
     reason = _extract_reason_from_summary(summary)
-    if not reason:
-        reason = f"To address the stated goal: {goal.strip()}"
-    lines = [
-        "## What Changed",
-        "",
-        changes_section if changes_section else (detail or "No changes described."),
-        "",
-        "## Why This Update",
-        "",
-        reason,
-        "",
-        "## Goal",
-        "",
-        goal.strip(),
-        "",
-        "## Test plan",
-        "",
-        tests_line,
-        "- [x] Goal review confirmed the requested outcome",
-        "- [ ] Review this feature branch; do not merge unreviewed commits to main",
-    ]
+    if reason and (
+        _same_request(reason, request) or reason.lower().startswith("to address the stated goal")
+    ):
+        reason = ""
+    lines = ["## What Changed", "", changed]
+    if reason:
+        lines.extend(["", "## Why This Update", "", reason])
+    if request and not _same_request(request, changed) and not _same_request(request, reason):
+        lines.extend(["", "## Goal", "", request])
+    lines.extend(
+        [
+            "",
+            "## Test plan",
+            "",
+            tests_line,
+            "- [x] Goal review confirmed the requested outcome",
+            "- [ ] Review this feature branch; do not merge unreviewed commits to main",
+        ]
+    )
 
     # Add testing steps if available
     if testing_steps:
@@ -2929,49 +2991,47 @@ def _extract_reason_from_summary(summary: str | None) -> str:
 
 
 def _extract_testing_steps_from_summary(summary: str | None) -> list[str]:
-    """Extract testing steps from the summary."""
-    if not summary:
-        return []
+    """Short unique checks: commands that ran, then numbered steps under a test heading."""
+    steps: list[str] = []
+    seen: set[str] = set()
 
-    lines = [line.strip() for line in summary.split("\n") if line.strip()]
-    testing_steps = []
+    def add(text: str) -> None:
+        clean = " ".join(text.split()).strip()
+        clean = re.sub(r"^\d+[.)]\s+", "", clean).lstrip("-").strip()
+        if not clean or len(clean) > 140:
+            return
+        key = clean.lower().rstrip(".")
+        if key in seen:
+            return
+        seen.add(key)
+        steps.append(clean)
 
-    # Look for testing-related sections
-    for i, line in enumerate(lines):
-        lower = line.lower()
-        if any(
-            trigger in lower
-            for trigger in (
-                "test",
-                "verify",
-                "check",
-                "validate",
-                "steps",
-                "how to test",
-                "testing",
-            )
-        ):
-            # Collect testing-related content
-            for j in range(i, min(i + 6, len(lines))):
-                test_line = lines[j]
-                headers = ("testing notes:", "testing:", "tests:", "verify:", "check:")
-                if test_line.lower().strip() in headers:
-                    # Skip headers, start from the next line
-                    continue
-                numbered = test_line[:2] in {"1.", "2.", "3.", "4.", "5."}
-                if numbered or test_line.startswith("-"):
-                    if numbered:
-                        test_line = test_line.split(".", 1)[-1].strip()
-                    else:
-                        test_line = test_line.lstrip("-").strip()
-                    if test_line:
-                        testing_steps.append(test_line)
-                elif test_line.startswith("##") and "testing" not in lower:
-                    break
-                elif test_line:
-                    testing_steps.append(test_line)
+    for event in current_events():
+        if event.get("kind") != "test":
+            continue
+        command = " ".join(str(event.get("command") or "").split())
+        if not command:
+            continue
+        outcome = "passed" if event.get("ok") else "failed"
+        add(f"`{command}` — {outcome}")
 
-    return testing_steps
+    capture = False
+    for line in (summary or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        lower = stripped.lower()
+        if any(heading in lower for heading in ("how to test", "steps to test", "testing:")):
+            capture = True
+            continue
+        numbered = bool(re.match(r"^(\d+[.)]|-)\s+", stripped))
+        if capture and numbered:
+            add(stripped)
+        elif capture:
+            capture = False
+        if len(steps) >= 5:
+            break
+    return steps[:5]
 
 
 def _git_env(settings: Settings) -> dict[str, str]:

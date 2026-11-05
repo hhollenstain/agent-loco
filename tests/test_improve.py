@@ -826,8 +826,10 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert captured["pr_branch"] == captured["push_branch"]
     assert captured["base"] == protected
     assert "## What Changed" in str(captured["body"])
-    assert "## Why This Update" in str(captured["body"])
+    assert "To address the stated goal" not in str(captured["body"])
     assert "## Test plan" in str(captured["body"])
+    assert "Start from" not in str(captured["title"])
+    assert len(str(captured["title"])) <= 72
     assert CO_AUTHORED_BY in str(captured["body"])
     assert result.merged is False
     log = run_git(workspace, ["log", "-1", "--format=%B"]).stdout
@@ -835,6 +837,78 @@ def test_cycle_create_pr_uses_feature_branch_not_main(
     assert current_branch(workspace).startswith("lbw/")
     assert run_git(workspace, ["rev-parse", protected or "HEAD"]).stdout.strip() == initial
     assert "Goal review confirmed the requested outcome" in str(captured["body"])
+
+
+def test_pull_request_title_describes_the_change_not_the_schedule_prompt() -> None:
+    from agent_lbw.progress import bind_progress, record_event, reset_progress
+    from agent_lbw.runtime.improve import _commit_message, _pr_body
+    from agent_lbw.runtime.schedules import project_task_goal
+
+    goal = project_task_goal("Review the login flow for unsigned session cookies.", "master")
+    title = _commit_message(goal, "Reject unsigned session cookies.")
+    assert title == "Reject unsigned session cookies."
+    assert "Start from" not in title
+    bare = _commit_message(goal, "")
+    assert bare == "Review the login flow for unsigned session cookies."
+    prompt = (
+        "Start from the master branch. If this project already meets the goal, "
+        "change nothing and report what you checked."
+    )
+    clipped = _commit_message(prompt, "")
+    assert clipped == "Update the project"
+    assert "ch-" not in clipped
+
+    body = _pr_body(
+        goal,
+        "Reject unsigned session cookies.\n\nWhy: cookies were accepted without a signature.",
+        tests_passed=True,
+        commit_sha="abc",
+        branch="lbw/login",
+    )
+    assert "## Why This Update" in body
+    assert "cookies were accepted without a signature" in body
+    assert body.count("Review the login flow for unsigned session cookies.") == 1
+    assert "Start from the master" not in body
+
+    repeated = _pr_body(
+        goal,
+        "Review the login flow for unsigned session cookies.",
+        tests_passed=None,
+        commit_sha=None,
+        branch="lbw/login",
+    )
+    assert "## Why This Update" not in repeated
+    assert repeated.count("Review the login flow for unsigned session cookies.") == 1
+
+    token = bind_progress()
+    try:
+        record_event(kind="test", command="pytest -q", ok=True)
+        record_event(kind="test", command="pytest -q", ok=True)
+        record_event(kind="test", command="pytest -q tests/test_login.py", ok=False)
+        noisy = "\n".join(
+            [
+                "Verified the login flow and checked the cookie parser.",
+                "Steps to test:",
+                "1. Sign in and confirm the session cookie is rejected.",
+                "2. Sign in and confirm the session cookie is rejected.",
+                "3. " + ("repeat the same check " * 20),
+            ]
+        )
+        steps_body = _pr_body(
+            goal,
+            noisy,
+            tests_passed=True,
+            commit_sha=None,
+            branch="",
+        )
+    finally:
+        reset_progress(token)
+    section = steps_body.split("## Steps to Test", 1)[1]
+    assert section.count("`pytest -q` — passed") == 1
+    assert "`pytest -q tests/test_login.py` — failed" in section
+    assert "Verified the login flow" not in section
+    assert section.count("Sign in and confirm the session cookie is rejected.") == 1
+    assert "repeat the same check" not in section
 
 
 def test_cycle_continuous_proposes_when_goals_are_empty(tmp_path: Path, settings: Settings) -> None:

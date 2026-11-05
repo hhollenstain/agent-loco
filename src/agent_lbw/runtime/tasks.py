@@ -180,6 +180,9 @@ class Task:
     review_notes: str = ""
     committer_name: str = ""
     committer_email: str = ""
+    requester_id: str = ""
+    requester_name: str = ""
+    gates: list[dict] = field(default_factory=list)
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -218,6 +221,12 @@ class Task:
             "plan": self.plan,
             "criteria": list(self.criteria),
             "evidence": list(self.evidence),
+            "started_by": (
+                {"id": self.requester_id, "name": self.requester_name}
+                if self.requester_id or self.requester_name
+                else None
+            ),
+            "gates": [dict(gate) for gate in self.gates if isinstance(gate, dict)],
         }
         if include_logs:
             payload["logs"] = list(self.logs)
@@ -288,6 +297,7 @@ class TaskManager:
         gate: str = "auto",
         triage_gate: str = "",
         approval_gate: str = "",
+        requester_id: str | None = None,
     ) -> Task:
         workspace = workspace.expanduser().resolve()
         if not workspace.is_dir():
@@ -333,6 +343,7 @@ class TaskManager:
             gate=picked_gate,
             triage_gate=picked_triage,
             approval_gate=picked_approval,
+            requester_id=(requester_id or "").strip(),
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -653,6 +664,9 @@ class TaskManager:
             plan=str(record.get("plan") or ""),
             criteria=criteria,
             evidence=evidence,
+            requester_id=str((record.get("started_by") or {}).get("id") or ""),
+            requester_name=str((record.get("started_by") or {}).get("name") or ""),
+            gates=[item for item in (record.get("gates") or []) if isinstance(item, dict)],
         )
 
     def _run(self, task: Task) -> None:

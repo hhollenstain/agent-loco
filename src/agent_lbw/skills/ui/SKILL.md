@@ -8,9 +8,11 @@ description: >-
 
 # UI layout
 
-The page is `templates/index.html` until a section is moved onto the React
-client in `docs/frontend-react.md`. Do not start that move inside an
-unrelated change.
+Organization Models, Skills, and Roles, and project Skills and Roles, live
+in `web/src/sections/`. Other sections stay in `templates/index.html` until
+they move. After a change under `web/src`, run `make web` before pytest and
+before `review_ui`. Visual style stays the bundled `style` skill. The plan
+is `docs/frontend-react.md`.
 
 A UI change is done when the rendered page shows the new control, a click
 reaches it, and it does not cover or get covered by something already there.
@@ -37,14 +39,26 @@ styling, update that skill in the same change, then match the CSS to it.
   in either corner overlaps them. Put a new card action in a footer row, or
   reuse the existing rerun button, and keep the card's bottom padding.
 - Rules, Skills, Schedules, and Roles are rail sections beside Proposals,
-  Changes, and Releases. The main pane shows the selected section. Schedules
-  save documents; they do not run a goal in a project. A project shows an
+  Changes, and Releases. The main pane shows the selected section. A schedule
+  runs in the current project. It starts from a base branch, which defaults
+  to main, and uses a model granted to this project. A fix opens a pull
+  request. When nothing needs changing, the result says it found nothing.
+  A job shows who started it, who accepted a gate, and who sent it back.
+  A project shows an
   organization or team rule, and an organization skill, only when it is
-  assigned to that project. Skills from a cloned repository start collapsed
-  under that repository. An empty search keeps them collapsed. A search
-  opens the matches. Roles lists the jobs for this project. Builder
-  and QA stay on. An enforced role stays on and its checkbox cannot turn it
-  off. Settings opens a small
+  assigned to that project. Rules has two tabs. LBW rules are the standards
+  stored for the project. Repository lists instruction files such as
+  AGENTS.md, CLAUDE.md, and CURSOR.md from the primary branch. Each file
+  loads into project work until its switch is turned off. Update reads that
+  branch again. Releases show open, merged, and closed counts as pills at
+  the right of each heading, in that pull-request color. Skills from a cloned repository start collapsed
+  under that repository, with a count and a switch for the whole repository.
+  Each skill has a switch. Hovering the name shows its summary, and the info
+  control reads the skill. An empty search keeps them collapsed. A search
+  opens the matches. Roles lists the jobs for this project. A switch turns
+  a role on. Builder and QA stay on. An enforced role stays on and its
+  switch cannot turn it off. Hovering the name shows its summary. The live
+  console is on the engineer dashboard, not this page. Settings opens a small
   menu for Personal, Organization, and Workspace. Personal and Organization
   fill the main window. Personal uses tabs for Profile, Rules, and GitHub.
   The GitHub tab appears once the organization has a GitHub App, and LBW
@@ -59,9 +73,12 @@ styling, update that skill in the same change, then match the CSS to it.
   for people who connected. Organization settings open in the main window and
   switch with tabs for
   People, Teams, Rules, Skills, Roles, Models, and GitHub. Skills stores
-  repositories for the whole organization and lists the skills each one
-  loaded. Resync is on that repository. A project turns a skill on. Models
-  holds endpoints, models, and agents in tables. An endpoint row shows its
+  repositories for the whole organization. Each repository starts collapsed
+  and shows how many skills it loaded. Opening it lists those skills. A
+  switch turns the whole repository or one skill on for every project, an
+  info control shows that skill, and Remove takes the repository off the
+  organization. Resync is on that repository. A project turns an available
+  skill on. Models holds endpoints, models, and agents in tables. An endpoint row shows its
   name, URL, and how many model names it returned, and can resync. Removing
   an endpoint asks in a dialog first. A model row shows the endpoint and the
   model name, with a switch and a remove button. An agent row shows its name
@@ -140,6 +157,10 @@ Modal dialogs should follow this structure:
 - Maintain consistent z-index stacking with other UI elements
 
 ### Task Cards
+A change shows its steps as a horizontal rail. Selecting a step loads that
+step in the pane under the rail. Log, Changes, and Screenshots stay as
+tabs under that pane. The log tab is labeled Log.
+
 Task cards follow specific positioning rules:
 - Bottom-right corner owned by `.pr-link` and `.rerun-btn`
 - Bottom-left corner owned by `.history-line-stats` 

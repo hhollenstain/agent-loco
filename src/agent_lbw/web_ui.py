@@ -32,6 +32,7 @@ from pydantic import BaseModel
 from agent_lbw.auth_http import register_auth
 from agent_lbw.config import Settings
 from agent_lbw.llm.client import effective_context_window, normalize_model_base_url
+from agent_lbw.openapi_models import AuditList, ScheduleWrite
 from agent_lbw.progress import attach_token_usage, clip_text, llm_turn_snippets, public_run_item
 from agent_lbw.runtime.account import (
     add_user,
@@ -56,6 +57,7 @@ from agent_lbw.runtime.schedules import (
     file_task_goal,
     get_schedule,
     list_schedules,
+    project_task_goal,
     resolve_output_file,
     start_run,
     sync_runs,
@@ -314,24 +316,6 @@ class WorkspaceClone(BaseModel):
     parent: str | None = None
     name: str | None = None
     guidelines: str | None = None
-
-
-class ScheduleCadence(BaseModel):
-    kind: str
-    minute: int = 0
-    hour: int = 9
-    weekdays: list[int] = []
-
-
-class ScheduleWrite(BaseModel):
-    name: str
-    goal: str
-    workspace: str = ""
-    kind: str = "project"
-    enabled: bool = True
-    auto_commit: bool = False
-    create_pr: bool = False
-    cadence: ScheduleCadence
 
 
 class UiState:
@@ -973,6 +957,7 @@ def create_app(
         default_goal=default_goal,
         default_create_pr=default_create_pr,
     )
+    _audit_middleware(app)
     register_auth(app)
     bind_directory(
         app,
@@ -1010,10 +995,23 @@ def create_app(
         ui: UiState = request.app.state.ui
         return ui.meta()
 
-    @app.get("/api/events/stream")
-    async def events_stream(request: Request) -> StreamingResponse:
-        """Stream the running task's agent and LLM log as server-sent events."""
+    @app.get("/api/events/stream", response_model=None)
+    async def events_stream(request: Request) -> StreamingResponse | JSONResponse:
+        """Stream the running task's agent and LLM log for an LBW engineer."""
+        from agent_lbw.runtime.db import database
+        from agent_lbw.runtime.store.auth import current_actor
+
         ui: UiState = request.app.state.ui
+        actor = current_actor()
+        if not actor:
+            return JSONResponse({"error": "sign in"}, status_code=401)
+        with database(Path(ui.store_root), ui.manager.settings.database_url) as db:
+            row = db.fetchone("SELECT crossing FROM identities WHERE id = ?", (actor,))
+        if row is None or not int(row["crossing"] or 0):
+            return JSONResponse(
+                {"error": "crossing guard is for LBW engineers"},
+                status_code=403,
+            )
         manager = ui.manager
 
         async def event_stream():
@@ -1224,6 +1222,8 @@ def create_app(
                 {"error": "this change is not waiting for that decision"},
                 status_code=409,
             )
+        _remember_gate(ui, updated, choice, body.note)
+        request.state.audit_explicit = True
         return updated.to_dict()
 
     @app.get("/api/branches")
@@ -1531,7 +1531,11 @@ def create_app(
         ui: UiState = request.app.state.ui
         root, url = _account_store(ui)
         try:
-            return add_user(root, payload.name, email=payload.email, database_url=url)
+            account = add_user(root, payload.name, email=payload.email, database_url=url)
+            request.state.audit_action = "person.add"
+            request.state.audit_summary = f"Added {payload.name.strip()}"
+            request.state.audit_target_type = "person"
+            return account
         except PermissionError as exc:
             return JSONResponse({"error": str(exc)}, status_code=403)
         except ValueError as exc:
@@ -1808,11 +1812,18 @@ def create_app(
         return _workspace_payload(ui)
 
     @app.get("/api/schedules", response_model=None)
-    def list_schedule_route(request: Request) -> Any:
+    def list_schedule_route(request: Request, workspace: str | None = None) -> Any:
         ui: UiState = request.app.state.ui
         root = Path(ui.store_root)
         sync_runs(root, _task_lookup(ui.manager))
         schedules = list_schedules(root)
+        if workspace and workspace.strip():
+            wanted = Path(workspace).expanduser().resolve()
+            schedules = [
+                item
+                for item in schedules
+                if Path(str(item.get("workspace") or "")).expanduser().resolve() == wanted
+            ]
         _attach_schedule_live(schedules, ui.manager)
         return {"schedules": schedules, "agenda": agenda(schedules)}
 
@@ -1896,7 +1907,93 @@ def create_app(
     register_rules(app)
     register_github(app)
     register_org(app)
+    _register_audit(app)
     return app
+
+
+def _audit_middleware(app: FastAPI) -> None:
+    """Run inside the session middleware so the signed-in person is still set."""
+
+    @app.middleware("http")
+    async def record_api_change(request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if (
+            request.method not in {"POST", "PUT", "PATCH", "DELETE"}
+            or not path.startswith("/api/")
+            or response.status_code >= 400
+            or getattr(request.state, "audit_explicit", False)
+            or (request.method == "POST" and path == "/api/tasks")
+        ):
+            return response
+        _write_request_audit(request)
+        return response
+
+
+def _register_audit(app: FastAPI) -> None:
+    @app.get("/api/audit", response_model=AuditList)
+    def read_audit(request: Request) -> AuditList | JSONResponse:
+        ui: UiState = request.app.state.ui
+        from agent_lbw.runtime.account import load_account
+        from agent_lbw.runtime.db import database, database_configured
+        from agent_lbw.runtime.store.audit import list_audit
+
+        root = Path(ui.store_root)
+        url = ui.manager.settings.database_url
+        if not database_configured(root, url):
+            return AuditList()
+        try:
+            account = load_account(root, database_url=url)
+        except (OSError, ValueError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        person = next(
+            (user for user in account["users"] if user["id"] == account["current_user_id"]),
+            None,
+        )
+        if person is None or person.get("role") not in {"owner", "admin"}:
+            return JSONResponse({"error": "an owner or admin reads the audit log"}, status_code=403)
+        with database(root, url) as db:
+            return AuditList(entries=list_audit(db, account["org"]["id"]))
+
+
+def _write_request_audit(request: Request) -> None:
+    from agent_lbw.runtime.account import load_account
+    from agent_lbw.runtime.db import database, database_configured
+    from agent_lbw.runtime.store.audit import record_audit
+    from agent_lbw.runtime.store.auth import current_actor, current_tenant
+
+    ui: UiState | None = getattr(request.app.state, "ui", None)
+    if ui is None:
+        return
+    root = Path(ui.store_root)
+    url = ui.manager.settings.database_url
+    if not database_configured(root, url):
+        return
+    try:
+        account = load_account(root, database_url=url)
+        tenant_id = current_tenant() or account["org"]["id"]
+        actor = current_actor() or ""
+        action = str(getattr(request.state, "audit_action", "") or "")
+        summary = str(getattr(request.state, "audit_summary", "") or "")
+        if not action:
+            action = f"{request.method.lower()} {request.url.path}"
+        if not summary:
+            summary = f"{request.method} {request.url.path}"
+        with database(root, url) as db:
+            record_audit(
+                db,
+                tenant_id=tenant_id,
+                actor_id=actor,
+                action=action,
+                summary=summary,
+                method=request.method,
+                path=request.url.path,
+                target_type=str(getattr(request.state, "audit_target_type", "") or ""),
+                target_id=str(getattr(request.state, "audit_target_id", "") or ""),
+                detail=str(getattr(request.state, "audit_detail", "") or ""),
+            )
+    except (OSError, PermissionError, ValueError) as exc:
+        log.warning("audit note was not stored: %s", exc)
 
 
 def _roles_for_workspace(ui: UiState, root: Path) -> dict:
@@ -2108,9 +2205,98 @@ def _task_lookup(manager: TaskManager):
             "summary": task.summary or "",
             "error": task.error or "",
             "finished_at": task.finished_at,
+            "pr_url": task.pr_url or "",
+            "reason": task.reason or "",
         }
 
     return lookup
+
+
+def _settings_model(ui: UiState) -> tuple[str, str, str]:
+    """The model from this install, used when the project has none granted."""
+    selected = ui.selection()
+    return (
+        str(selected.get("last_model") or ui.manager.settings.model_name or ""),
+        str(selected.get("last_base_url") or ui.manager.settings.model_base_url or ""),
+        str(ui.manager.settings.model_api_key or ""),
+    )
+
+
+def _schedule_model(ui: UiState, workspace: Path, model_id: str) -> tuple[str, str, str] | str:
+    """A granted model's name, host, and key, or a sentence when it cannot run."""
+    from agent_lbw.runtime.db import database_configured
+
+    root = Path(ui.store_root)
+    url = ui.manager.settings.database_url
+    if not database_configured(root, url):
+        return _settings_model(ui)
+    from agent_lbw.runtime.account import load_account
+    from agent_lbw.runtime.db import database
+    from agent_lbw.runtime.store.catalog import models_for_workspace, use_model
+
+    chosen = model_id.strip()
+    try:
+        load_account(root, database_url=url)
+        with database(root, url) as db:
+            if not chosen:
+                if models_for_workspace(db, workspace):
+                    return "Choose a model granted to this project."
+                return _settings_model(ui)
+            creds = use_model(db, root, workspace, chosen)
+    except PermissionError:
+        return "That model is not granted for this project."
+    except KeyError:
+        return "That model is not granted for this project."
+    except (OSError, ValueError) as exc:
+        return str(exc)
+    host = str(creds.get("base_url") or "").strip()
+    if not host:
+        return "That model has no server."
+    return (str(creds.get("model_name") or ""), host, str(creds.get("api_key") or ""))
+
+
+def _remember_gate(ui: UiState, task, action: str, note: str) -> None:
+    """Write who accepted a gate, or who sent the work back, onto the job."""
+    from agent_lbw.runtime.account import load_account
+    from agent_lbw.runtime.db import database, database_configured
+    from agent_lbw.runtime.store.audit import note_gate
+    from agent_lbw.runtime.store.auth import current_actor
+
+    root = Path(ui.store_root)
+    url = ui.manager.settings.database_url
+    if not database_configured(root, url):
+        return
+    try:
+        account = load_account(root, database_url=url)
+        actor = current_actor() or account["current_user_id"]
+        name = next((user["name"] for user in account["users"] if user["id"] == actor), "")
+        with database(root, url) as db:
+            gate = note_gate(
+                db,
+                tenant_id=account["org"]["id"],
+                task_id=task.id,
+                actor_id=actor,
+                actor_name=name,
+                action=action,
+                note=note,
+            )
+        task.gates.append(gate)
+    except (OSError, PermissionError, ValueError) as exc:
+        log.warning("task %s gate was not recorded: %s", task.id, exc)
+
+
+def _schedule_base_branch(schedule: dict, workspace: Path) -> str | None:
+    if schedule.get("kind") == "files":
+        return None
+    picked = str(schedule.get("base_branch") or "").strip()
+    if picked:
+        return picked
+    if (workspace / ".git").exists():
+        from agent_lbw.sandbox import Workspace
+        from agent_lbw.tools.git import default_base_branch
+
+        return default_base_branch(Workspace(workspace)) or "main"
+    return "main"
 
 
 def _launch_scheduled_run(ui: UiState, schedule: dict) -> None:
@@ -2121,24 +2307,38 @@ def _launch_scheduled_run(ui: UiState, schedule: dict) -> None:
     if not run_id:
         return
     root = Path(ui.store_root)
-    goal = schedule.get("goal")
+    workspace = Path(str(schedule.get("workspace") or ""))
+    goal = str(schedule.get("goal") or "")
     auto_commit = bool(schedule.get("auto_commit"))
     create_pr = bool(schedule.get("create_pr"))
+    base_branch = _schedule_base_branch(schedule, workspace)
     if schedule.get("kind") == "files":
-        goal = file_task_goal(str(goal or ""))
+        goal = file_task_goal(goal)
         auto_commit = False
         create_pr = False
-    selected = ui.selection()
-    model_name = selected.get("last_model") or ui.manager.settings.model_name
-    model_base_url = selected.get("last_base_url") or ui.manager.settings.model_base_url
+    else:
+        goal = project_task_goal(goal, base_branch or "main")
+        auto_commit = True
+        create_pr = True
+    from agent_lbw.runtime.store.auth import current_actor
+
+    requester = current_actor() or str(schedule.get("created_by") or "")
+    granted = _schedule_model(ui, workspace, str(schedule.get("model_id") or ""))
+    if isinstance(granted, str):
+        fail_run(root, str(schedule.get("id") or ""), run_id, granted)
+        return
+    model_name, model_base_url, model_api_key = granted
     try:
         task = ui.manager.submit(
-            Path(str(schedule.get("workspace") or "")),
+            workspace,
             goal,
             auto_commit=auto_commit,
             create_pr=create_pr,
-            model_name=str(model_name or ""),
-            model_base_url=str(model_base_url or ""),
+            base_branch=base_branch,
+            model_name=model_name,
+            model_base_url=model_base_url,
+            model_api_key=model_api_key,
+            requester_id=requester or None,
         )
     except Exception as exc:
         fail_run(root, str(schedule.get("id") or ""), run_id, str(exc))

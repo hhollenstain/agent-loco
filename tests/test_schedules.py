@@ -4,6 +4,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -143,7 +144,8 @@ def test_schedule_api_saves_updates_runs_and_lists_results(
         assert b'id="app-switch"' not in page.content
         assert b'data-rail="schedules"' in page.content
         assert b'id="schedules-app"' in page.content
-        assert b'id="schedule-output"' in page.content
+        assert b'id="schedule-base"' in page.content
+        assert b'id="schedule-output"' not in page.content
         assert b'id="target-project"' not in page.content
         assert b'id="schedule-commit"' not in page.content
         assert b"/api/schedules" in page.content
@@ -217,7 +219,7 @@ def test_schedule_api_saves_updates_runs_and_lists_results(
         assert client.get("/api/schedules").json()["schedules"] == []
         assert client.delete(f"/api/schedules/{body['id']}").status_code == 404
         home = page.content
-        assert b'id="schedule-output"' in home
+        assert b'id="schedule-base"' in home
         assert b"schedule-target" not in home
     finally:
         manager.shutdown(wait=False)
@@ -314,6 +316,138 @@ def test_file_schedule_saves_documents_outside_a_project(
         manager.shutdown(wait=False)
 
 
+def test_project_schedule_starts_from_the_base_branch_and_reports_the_outcome(
+    settings: Settings, tmp_path: Path
+) -> None:
+    other = tmp_path / "other"
+    other.mkdir()
+    seen: list[Task] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append(task)
+        if "Fix the security header." in (task.goal or ""):
+            return CycleResult(
+                status="success",
+                goal=task.goal,
+                summary="Fixed the header check.",
+                tests_passed=True,
+                committed=True,
+                published=True,
+                commit_sha="abc",
+                reason="opened a pull request",
+                pr_url="https://github.com/acme/app/pull/4",
+            )
+        if "Review this project" in (task.goal or ""):
+            return CycleResult(
+                status="success",
+                goal=task.goal,
+                summary="No work to do: the review found nothing.",
+                tests_passed=True,
+                committed=False,
+                published=False,
+                commit_sha=None,
+                reason="no changes needed: the tree already meets the goal",
+            )
+        return CycleResult(
+            status="success",
+            goal=task.goal,
+            summary="Finished.",
+            tests_passed=True,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="completed",
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        rejected = client.post(
+            "/api/schedules",
+            json={
+                "name": "Security review",
+                "goal": "Review this project for security issues.",
+                "workspace": str(tmp_path),
+                "base_branch": "not a branch",
+                "cadence": _daily(),
+            },
+        )
+        assert rejected.status_code == 400
+
+        created = client.post(
+            "/api/schedules",
+            json={
+                "name": "Security review",
+                "goal": "Review this project for security issues.",
+                "workspace": str(tmp_path),
+                "base_branch": "main",
+                "cadence": _daily(6, 0),
+            },
+        )
+        assert created.status_code == 200
+        body = created.json()
+        assert body["kind"] == "project"
+        assert body["base_branch"] == "main"
+        assert body["create_pr"] is True
+        assert body["auto_commit"] is True
+
+        elsewhere = client.post(
+            "/api/schedules",
+            json={
+                "name": "Other project",
+                "goal": "Look here too.",
+                "workspace": str(other),
+                "base_branch": "develop",
+                "cadence": _daily(),
+            },
+        )
+        assert elsewhere.status_code == 200
+        listed = client.get("/api/schedules", params={"workspace": str(tmp_path)})
+        assert [item["name"] for item in listed.json()["schedules"]] == ["Security review"]
+
+        ran = client.post(f"/api/schedules/{body['id']}/run")
+        assert ran.status_code == 200
+        deadline = time.time() + 3
+        latest: dict = {}
+        while time.time() < deadline:
+            latest = client.get("/api/schedules", params={"workspace": str(tmp_path)}).json()
+            run = (latest["schedules"][0].get("runs") or [{}])[0]
+            if run.get("outcome") == "clear":
+                break
+            time.sleep(0.05)
+        assert latest["schedules"][0]["runs"][0]["outcome"] == "clear"
+        assert seen[0].base_branch == "main"
+        assert seen[0].create_pr is True
+        assert seen[0].auto_commit is True
+        assert "Start from the main branch." in (seen[0].goal or "")
+
+        fix = client.post(
+            "/api/schedules",
+            json={
+                "name": "Header fix",
+                "goal": "Fix the security header.",
+                "workspace": str(tmp_path),
+                "cadence": _daily(),
+            },
+        )
+        assert fix.status_code == 200
+        client.post(f"/api/schedules/{fix.json()['id']}/run")
+        deadline = time.time() + 3
+        opened: dict = {}
+        while time.time() < deadline:
+            rows = client.get("/api/schedules", params={"workspace": str(tmp_path)}).json()
+            opened = next(item for item in rows["schedules"] if item["name"] == "Header fix")
+            if opened["runs"] and opened["runs"][0].get("outcome") == "pull_request":
+                break
+            time.sleep(0.05)
+        assert opened["runs"][0]["pr_url"] == "https://github.com/acme/app/pull/4"
+        assert opened["runs"][0]["outcome"] == "pull_request"
+        assert seen[-1].base_branch == "main"
+    finally:
+        manager.shutdown(wait=False)
+
+
 def test_agenda_shows_the_next_run_and_the_coming_week() -> None:
     now = _local(2026, 10, 23, 21, 0)
     items = [
@@ -391,6 +525,84 @@ def test_open_schedule_run_includes_live_progress(settings: Settings, tmp_path: 
         assert b'id="schedule-view-agenda"' in page.content
         assert b'id="schedule-live"' in page.content
         assert b"schedule-view" in page.content
+        assert b'id="schedule-model"' in page.content
     finally:
         release.set()
+        manager.shutdown(wait=False)
+
+
+def test_a_scheduled_run_uses_a_granted_model_and_refuses_a_missing_one(
+    settings: Settings, tmp_path: Path
+) -> None:
+    seen: list[Task] = []
+
+    def runner(task: Task) -> CycleResult:
+        seen.append(task)
+        return CycleResult(
+            status="success",
+            goal=task.goal,
+            summary="Finished.",
+            tests_passed=True,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="completed",
+        )
+
+    manager = TaskManager(settings, runner=runner)
+    client = TestClient(create_app(manager, default_workspace=tmp_path))
+    try:
+        bare = client.post(
+            "/api/schedules",
+            json={
+                "name": "Review",
+                "goal": "Review this project.",
+                "workspace": str(tmp_path),
+                "cadence": _daily(),
+            },
+        )
+        assert bare.status_code == 200
+        chosen = client.post(
+            "/api/schedules",
+            json={
+                "name": "Review with a model",
+                "goal": "Review this project.",
+                "workspace": str(tmp_path),
+                "model_id": "model_qwen",
+                "cadence": _daily(),
+            },
+        )
+        assert chosen.status_code == 200
+        assert chosen.json()["model_id"] == "model_qwen"
+
+        with patch(
+            "agent_lbw.runtime.store.catalog.models_for_workspace",
+            return_value=[{"id": "model_qwen", "name": "Qwen"}],
+        ):
+            missed = client.post(f"/api/schedules/{bare.json()['id']}/run")
+        assert missed.status_code == 200
+        assert missed.json()["runs"][0]["error"] == "Choose a model granted to this project."
+        assert seen == []
+
+        with patch(
+            "agent_lbw.runtime.store.catalog.use_model",
+            return_value={
+                "model_name": "qwen",
+                "base_url": "http://models.internal/v1",
+                "api_key": "secret",
+            },
+        ) as use:
+            ran = client.post(f"/api/schedules/{chosen.json()['id']}/run")
+        assert ran.status_code == 200
+        assert "secret" not in ran.text
+        task = manager.get(ran.json()["runs"][0]["task_id"])
+        assert task is not None
+        assert task.model_name == "qwen"
+        assert task.model_base_url == "http://models.internal/v1"
+        assert task.model_base_url != settings.model_base_url
+        assert task.requester_id
+        assert task.requester_name
+        assert task.to_dict()["started_by"]["name"] == task.requester_name
+        assert use.call_args.args[3] == "model_qwen"
+    finally:
         manager.shutdown(wait=False)

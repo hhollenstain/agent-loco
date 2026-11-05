@@ -15,7 +15,7 @@ are in `AGENTS.md` at the git root.
 
 - Package: `src/agent_lbw/`
 - Tests: `tests/` — `uv run pytest -q`
-- Web UI: `templates/index.html`, `static/`, `web_ui.py`
+- Web UI: `templates/index.html`, `static/`, `web_ui.py`. React sections are `web/src/sections/`. Run `make web` after changing `web/src`.
 - Cycle: `runtime/improve.py`, `runtime/roles.py`, `runtime/review.py`, `agent/loop.py`
 - Bundled skills: `src/agent_lbw/skills/<name>/SKILL.md` (shipped with the package)
 - Repo skills: `skills/<name>/SKILL.md` at the git root (this file)

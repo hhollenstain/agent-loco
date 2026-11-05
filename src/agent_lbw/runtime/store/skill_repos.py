@@ -109,6 +109,88 @@ def sync_repo(
     return _public(db, _row(db, tenant_id, str(row["id"])), account)
 
 
+def set_repo_enabled(
+    db: Database,
+    account: dict,
+    *,
+    repo_id: str,
+    enabled: bool,
+) -> None:
+    """Turn every skill in one repository on or off."""
+    tenant_id = account["org"]["id"]
+    row = _row(db, tenant_id, repo_id)
+    _require_write(db, account, row)
+    flag = 1 if enabled else 0
+    db.execute("UPDATE skill_repos SET enabled = ? WHERE id = ?", (flag, row["id"]))
+    db.execute(
+        "UPDATE skill_repo_files SET enabled = ? WHERE repo_id = ?",
+        (flag, row["id"]),
+    )
+
+
+def set_skill_enabled(
+    db: Database,
+    account: dict,
+    *,
+    repo_id: str,
+    name: str,
+    enabled: bool,
+) -> None:
+    """Turn one skill in a repository on or off."""
+    tenant_id = account["org"]["id"]
+    row = _row(db, tenant_id, repo_id)
+    _require_write(db, account, row)
+    wanted = name.strip()
+    flag = 1 if enabled else 0
+    matched = False
+    for item in _files(db, str(row["id"])):
+        if Path(str(item["path"])).parent.name != wanted:
+            continue
+        db.execute(
+            "UPDATE skill_repo_files SET enabled = ? WHERE repo_id = ? AND path = ?",
+            (flag, row["id"], item["path"]),
+        )
+        matched = True
+    if not matched:
+        raise KeyError(wanted)
+    still_on = any(int(item["enabled"]) for item in _files(db, str(row["id"])))
+    db.execute(
+        "UPDATE skill_repos SET enabled = ? WHERE id = ?",
+        (1 if still_on else 0, row["id"]),
+    )
+
+
+def skill_document(
+    db: Database,
+    kiwi: Any,
+    account: dict,
+    *,
+    repo_id: str,
+    name: str,
+) -> dict:
+    """The stored markdown for one skill in a repository."""
+    tenant_id = account["org"]["id"]
+    row = _row(db, tenant_id, repo_id)
+    space = _required_space(row)
+    wanted = name.strip()
+    for item in _files(db, str(row["id"])):
+        path = str(item["path"])
+        if Path(path).parent.name != wanted:
+            continue
+        text = kiwi.in_space(space).raw(path)
+        parsed, description, body = parse_skill_markdown(text, fallback_name=wanted)
+        return Skill(
+            name=parsed or wanted,
+            description=description,
+            body=body,
+            origin="source",
+            path=path,
+            source_url=str(row["url"]),
+            enabled=bool(int(item["enabled"])),
+        ).public_dict(include_body=True)
+    raise KeyError(wanted)
+
+
 def remove_repo(
     db: Database,
     kiwi: Any,
@@ -152,7 +234,7 @@ def repos_for_settings(db: Database, account: dict) -> list[dict]:
     tenant_id = account["org"]["id"]
     rows = db.fetchall(
         """
-        SELECT id, tenant_id, scope_type, scope_id, team_id, url, sha, space_name
+        SELECT id, tenant_id, scope_type, scope_id, team_id, url, sha, space_name, enabled
         FROM skill_repos
         WHERE tenant_id = ? AND scope_type IN ('tenant', 'team')
         ORDER BY scope_type, url
@@ -174,7 +256,7 @@ def visible_repos(db: Database, tenant_id: str, project_id: str) -> list[dict]:
     teams = _granted_teams(db, tenant_id, project_id)
     rows = db.fetchall(
         """
-        SELECT id, tenant_id, scope_type, scope_id, team_id, url, sha, space_name
+        SELECT id, tenant_id, scope_type, scope_id, team_id, url, sha, space_name, enabled
         FROM skill_repos
         WHERE tenant_id = ?
         ORDER BY scope_type, scope_id, url
@@ -204,10 +286,14 @@ def skills_for_project(
     turned_on = enabled if enabled is not None else set()
     found: list[Skill] = []
     for row in visible_repos(db, tenant_id, project_id):
+        if not int(row["enabled"]):
+            continue
         space = _required_space(row, strict=False)
         if space is None:
             continue
         for item in _files(db, str(row["id"])):
+            if not int(item["enabled"]):
+                continue
             path = str(item["path"])
             if not _file_path(str(row["id"]), path):
                 continue
@@ -418,6 +504,9 @@ def _replace_files(
     kiwi.ensure_space(space)
     client = kiwi.in_space(space)
     paths: set[str] = set()
+    previous = {str(item["path"]): int(item["enabled"]) for item in _files(db, repo_id)}
+    repo = db.fetchone("SELECT enabled FROM skill_repos WHERE id = ?", (repo_id,))
+    inherited = int(repo["enabled"]) if repo is not None else 1
     db.execute("DELETE FROM skill_repo_files WHERE repo_id = ?", (repo_id,))
     for relative, text in documents:
         path = f"skills/{repo_id}/{relative}"
@@ -425,8 +514,8 @@ def _replace_files(
             raise ValueError("skill path is not in this scope")
         client.write(path, text)
         db.execute(
-            "INSERT INTO skill_repo_files (repo_id, path) VALUES (?, ?)",
-            (repo_id, path),
+            "INSERT INTO skill_repo_files (repo_id, path, enabled) VALUES (?, ?, ?)",
+            (repo_id, path, previous.get(path, inherited)),
         )
         paths.add(path)
     return paths
@@ -454,7 +543,7 @@ def _file_path(repo_id: str, path: str) -> bool:
 
 def _files(db: Database, repo_id: str) -> list[dict]:
     return db.fetchall(
-        "SELECT path FROM skill_repo_files WHERE repo_id = ? ORDER BY path",
+        "SELECT path, enabled FROM skill_repo_files WHERE repo_id = ? ORDER BY path",
         (repo_id,),
     )
 
@@ -462,7 +551,7 @@ def _files(db: Database, repo_id: str) -> list[dict]:
 def _row(db: Database, tenant_id: str, repo_id: str) -> dict:
     row = db.fetchone(
         """
-        SELECT id, tenant_id, scope_type, scope_id, team_id, url, sha, space_name
+        SELECT id, tenant_id, scope_type, scope_id, team_id, url, sha, space_name, enabled
         FROM skill_repos WHERE id = ?
         """,
         (repo_id,),
@@ -474,14 +563,19 @@ def _row(db: Database, tenant_id: str, repo_id: str) -> dict:
 
 def _loaded_names(db: Database, repo_id: str) -> list[str]:
     """Skill folder names stored for this repository."""
-    names: list[str] = []
+    return [entry["name"] for entry in _skill_entries(db, repo_id)]
+
+
+def _skill_entries(db: Database, repo_id: str) -> list[dict]:
+    entries: list[dict] = []
+    seen: set[str] = set()
     for item in _files(db, repo_id):
         parent = Path(str(item["path"])).parent.name
-        if not parent or parent == repo_id or parent.startswith("src_"):
+        if not parent or parent == repo_id or parent.startswith("src_") or parent in seen:
             continue
-        if parent not in names:
-            names.append(parent)
-    return names
+        seen.add(parent)
+        entries.append({"name": parent, "enabled": bool(int(item["enabled"]))})
+    return entries
 
 
 def _public(db: Database, row: dict, account: dict) -> dict:
@@ -501,7 +595,9 @@ def _public(db: Database, row: dict, account: dict) -> dict:
         "team_id": row["team_id"],
         "space": space,
         "can_sync": can_sync,
+        "enabled": bool(int(row["enabled"])),
         "skills": _loaded_names(db, str(row["id"])),
+        "entries": _skill_entries(db, str(row["id"])),
     }
 
 

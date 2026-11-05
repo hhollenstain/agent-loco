@@ -42,8 +42,9 @@ def test_repo_skills_stay_in_the_org_team_and_project_space(
     client = TestClient(app)
     page = client.get("/")
     assert page.status_code == 200
-    assert 'id="add-org-skill-repo"' in page.text
-    assert 'id="org-skill-repos"' in page.text
+    script = client.get("/static/app/app.js").text
+    assert 'id:"add-org-skill-repo"' in script
+    assert 'id:"org-skill-repos"' in script
 
     client.get("/api/directory")
     client.post("/api/directory/promote")
@@ -98,6 +99,28 @@ def test_repo_skills_stay_in_the_org_team_and_project_space(
     seen = client.get("/api/workspaces/skills", params={"path": str(alpha)})
     assert seen.status_code == 200
     assert "code-review" in [item["name"] for item in seen.json()["skills"]]
+    detail = client.get(f"/api/org/skill-repos/{repo['id']}/skills/code-review")
+    assert detail.status_code == 200
+    assert detail.json()["description"] == "Review the public API."
+    assert "Review the public API." in detail.json()["html"]
+    off = client.put(
+        f"/api/org/skill-repos/{repo['id']}/skills/code-review",
+        json={"enabled": False},
+    )
+    assert off.status_code == 200
+    paused = next(item for item in off.json()["skill_repos"] if item["id"] == repo["id"])
+    assert (
+        next(item["enabled"] for item in paused["entries"] if item["name"] == "code-review")
+        is False
+    )
+    hidden_skill = client.get("/api/workspaces/skills", params={"path": str(alpha)})
+    assert "code-review" not in [item["name"] for item in hidden_skill.json()["skills"]]
+    repo_off = client.put(f"/api/org/skill-repos/{repo['id']}", json={"enabled": False})
+    assert repo_off.status_code == 200
+    on = client.put(f"/api/org/skill-repos/{repo['id']}", json={"enabled": True})
+    assert on.status_code == 200
+    restored = client.get("/api/workspaces/skills", params={"path": str(alpha)})
+    assert "code-review" in [item["name"] for item in restored.json()["skills"]]
     hidden = client.get("/api/workspaces/skills", params={"path": str(beta)})
     assert "code-review" not in [item["name"] for item in hidden.json()["skills"]]
 
@@ -114,6 +137,15 @@ def test_repo_skills_stay_in_the_org_team_and_project_space(
     for place in (alpha, beta):
         listed = client.get("/api/workspaces/skills", params={"path": str(place)})
         assert "shared-notes" in [item["name"] for item in listed.json()["skills"]]
+    org_repo = next(
+        item for item in org_added.json()["skill_repos"] if item["scope_type"] == "tenant"
+    )
+    dropped = client.delete(f"/api/org/skill-repos/{org_repo['id']}")
+    assert dropped.status_code == 200
+    assert all(item["id"] != org_repo["id"] for item in dropped.json()["skill_repos"])
+    after_drop = client.get("/api/workspaces/skills", params={"path": str(alpha)})
+    assert "shared-notes" not in [item["name"] for item in after_drop.json()["skills"]]
+    assert "code-review" in [item["name"] for item in after_drop.json()["skills"]]
 
     project_remote = _skill_repo(tmp_path / "project-origin", name="alpha-only", body="Alpha only.")
     project_added = client.post(
@@ -130,7 +162,10 @@ def test_repo_skills_stay_in_the_org_team_and_project_space(
     only_beta = client.get("/api/workspaces/skills", params={"path": str(beta)})
     assert "alpha-only" in [item["name"] for item in only_alpha.json()["skills"]]
     assert "alpha-only" not in [item["name"] for item in only_beta.json()["skills"]]
-    assert "data-skill-source-remove" in page.text
+    assert "data-skill-source-remove" in script
+    assert "data-org-skill-remove" in script
+    assert "data-org-skill-info" in script
+    assert "data-org-skill-enable" in script
 
     kept = client.post(
         "/api/workspaces/skills/sources/remove",
@@ -158,6 +193,20 @@ def test_repo_skills_stay_in_the_org_team_and_project_space(
     assert fresh["sha"] != repo["sha"]
     again = client.get("/api/workspaces/skills", params={"path": str(alpha)})
     assert "follow-up" in [item["name"] for item in again.json()["skills"]]
+    client.put(
+        f"/api/org/skill-repos/{repo['id']}/skills/code-review",
+        json={"enabled": False},
+    )
+    kept_off = client.post(f"/api/org/skill-repos/{repo['id']}/sync")
+    assert kept_off.status_code == 200
+    kept_repo = next(item for item in kept_off.json()["skill_repos"] if item["id"] == repo["id"])
+    flags = {item["name"]: item["enabled"] for item in kept_repo["entries"]}
+    assert flags["code-review"] is False
+    assert flags["follow-up"] is True
+    selective = client.get("/api/workspaces/skills", params={"path": str(alpha)})
+    names = [item["name"] for item in selective.json()["skills"]]
+    assert "follow-up" in names
+    assert "code-review" not in names
 
     with database(alpha) as db:
         db.execute(

@@ -53,6 +53,14 @@
             <button type="button" id="add-guard">Add crossing guard</button>
           </div>
         </div>
+        <div class="sidebar-tools">
+          <button type="button" class="secondary" id="open-live-console" aria-label="Live console" aria-expanded="false" title="Live console">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
+              <circle cx="12" cy="12" r="2" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
         <button type="button" class="secondary" id="crossing-sign-out">Sign out</button>
       </div>
     </aside>
@@ -139,6 +147,19 @@
       </div>
     </section>
   </main>
+  <div class="modal-backdrop" id="live-console" role="dialog" aria-modal="true" aria-labelledby="live-console-title" hidden>
+    <div class="modal">
+      <div class="live-console-head">
+        <h2 id="live-console-title">Live console</h2>
+        <div class="live-console-actions">
+          <button type="button" class="secondary" id="close-live-console">Close</button>
+          <button type="button" class="secondary" id="clear-console">Clear</button>
+        </div>
+      </div>
+      <div class="live-console-output" id="live-console-output"></div>
+      <p class="hint">Agent and model traffic for the running task.</p>
+    </div>
+  </div>
   <div class="modal-backdrop" id="guard-dialog" hidden>
     <div class="modal" role="dialog" aria-labelledby="guard-title">
       <h2 id="guard-title">Add crossing guard</h2>
@@ -611,6 +632,144 @@
       button.addEventListener("click", () => showIntegration(button.dataset.integration));
     }
     document.getElementById("crossing-github").addEventListener("submit", saveCrossingGitHub);
+    const liveConsoleEl = document.getElementById("live-console");
+    const openConsoleBtn = document.getElementById("open-live-console");
+    let consoleEventSource = null;
+
+    function setLiveConsoleOpen(open) {
+      liveConsoleEl.classList.toggle("open", open);
+      liveConsoleEl.hidden = !open;
+      openConsoleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) connectConsoleStream();
+      else disconnectConsoleStream();
+    }
+
+    function disconnectConsoleStream() {
+      if (consoleEventSource) {
+        consoleEventSource.close();
+        consoleEventSource = null;
+      }
+    }
+
+    function connectConsoleStream() {
+      disconnectConsoleStream();
+      consoleEventSource = new EventSource("/api/events/stream");
+      consoleEventSource.onmessage = (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch (_exc) {
+          return;
+        }
+        appendConsoleEntry(data);
+      };
+    }
+
+    function appendConsoleEntry(data) {
+      const outputEl = document.getElementById("live-console-output");
+      if (!data || !outputEl) return;
+      const entry = document.createElement("div");
+      entry.className = "log-entry";
+      if (data.kind) {
+        const kind = data.kind;
+        const at = data.at || "";
+        const purpose = data.purpose || "";
+        const elapsed = data.elapsed_ms;
+        const ok = data.ok;
+        const path = data.path || "";
+        const action = data.action || "";
+        const diff = data.net_diff || data.diff || "";
+        const command = data.command || "";
+        const phase = data.phase || "";
+        const message = data.message || "";
+        const url = data.url || "";
+        let html = `<span class="log-timestamp">[${escapeHtml(at)}]</span>`;
+        if (kind === "llm") {
+          const status = ok ? "✓" : "✗";
+          const elapsedStr = elapsed ? formatElapsed(elapsed / 1000) : "";
+          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> LLM (<span class="log-purpose">${escapeHtml(purpose)}</span>)`;
+          if (elapsedStr) html += ` <span class="log-time">${elapsedStr}</span>`;
+          if (data.agent) {
+            html += `<div class="log-chat log-agent"><span class="log-speaker">agent</span> ${escapeHtml(data.agent)}</div>`;
+          }
+          if (data.model) {
+            html += `<div class="log-chat log-model"><span class="log-speaker">model</span> ${escapeHtml(data.model)}</div>`;
+          }
+        } else if (kind === "file") {
+          const diffPreview = diff
+            ? escapeHtml(String(diff).replace("\n", " ").trim().slice(0, 80)) + (String(diff).length > 80 ? "…" : "")
+            : "";
+          html += ` <span class="log-action">${escapeHtml(action)}</span> <span class="log-path">${escapeHtml(path)}</span>`;
+          if (diffPreview) html += ` [<span class="log-diff">${diffPreview}</span>]`;
+        } else if (kind === "test") {
+          const status = ok ? "✓" : "✗";
+          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span>`;
+          if (command) {
+            const cmdDisplay = escapeHtml(String(command).slice(0, 50)) + (String(command).length > 50 ? "…" : "");
+            html += ` test (<span class="log-command">${cmdDisplay}</span>)`;
+          } else if (phase) {
+            html += ` <span class="log-phase">${escapeHtml(phase)}</span> tests`;
+          } else {
+            html += " test run";
+          }
+        } else if (kind === "step") {
+          if (message) {
+            html += `<div class="log-chat log-agent"><span class="log-speaker">agent</span> ${escapeHtml(message)}</div>`;
+          } else {
+            html += ` step at <span class="log-time">${escapeHtml(at)}</span>`;
+          }
+        } else if (kind === "pr") {
+          const status = ok ? "✓" : "✗";
+          html += ` <span class="log-status ${ok ? "log-ok" : "log-fail"}">${status}</span> PR:`;
+          if (url) {
+            html += ` <span class="log-url"><a href="${escapeHtml(url)}" target="_blank">${escapeHtml(url)}</a></span>`;
+          } else if (message) {
+            html += ` <span class="log-message">${escapeHtml(message)}</span>`;
+          } else {
+            html += " PR created";
+          }
+        } else if (message) {
+          html += ` ${escapeHtml(message)}`;
+        }
+        entry.innerHTML = html;
+      } else if (data.line) {
+        entry.textContent = String(data.line);
+      } else {
+        return;
+      }
+      outputEl.insertBefore(entry, outputEl.firstChild);
+      outputEl.scrollTop = 0;
+    }
+
+    function formatElapsed(seconds) {
+      if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+      if (seconds < 60) return `${seconds.toFixed(1)}s`;
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.round(seconds % 60);
+      return `${mins}m ${secs}s`;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    openConsoleBtn.addEventListener("click", () => setLiveConsoleOpen(true));
+    document.getElementById("close-live-console").addEventListener("click", () => {
+      setLiveConsoleOpen(false);
+    });
+    document.getElementById("clear-console").addEventListener("click", () => {
+      document.getElementById("live-console-output").replaceChildren();
+    });
+    liveConsoleEl.addEventListener("click", (event) => {
+      if (event.target === liveConsoleEl) setLiveConsoleOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !liveConsoleEl.hidden) setLiveConsoleOpen(false);
+    });
     loadCrossing();
   </script>
 </body>

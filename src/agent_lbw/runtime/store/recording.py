@@ -44,6 +44,13 @@ def record_task(root: Path, database_url: str, task) -> None:
     """Store a queued request before its run starts."""
     account = load_account(root, database_url=database_url)
     workspace = Path(task.workspace)
+    requester = str(getattr(task, "requester_id", "") or "") or account["current_user_id"]
+    name = next(
+        (user["name"] for user in account["users"] if user["id"] == requester),
+        "",
+    )
+    task.requester_id = requester
+    task.requester_name = name
     with database(root, database_url) as db:
         project = _project(db, account, workspace, workspace.name or "project")
         save_task_request(
@@ -52,12 +59,26 @@ def record_task(root: Path, database_url: str, task) -> None:
             task_id=task.id,
             tenant_id=account["org"]["id"],
             project_id=project["id"],
-            requester_id=account["current_user_id"],
+            requester_id=requester,
             goal=task.goal,
             status=task.status,
             branch=task.branch,
             pr_url=task.pr_url,
             run_ref=f".lbw/runs/{task.id}",
+        )
+        from agent_lbw.runtime.store.audit import record_audit
+
+        who = name or "Someone"
+        record_audit(
+            db,
+            tenant_id=account["org"]["id"],
+            actor_id=requester,
+            action="task.start",
+            summary=f"{who} started a job",
+            method="POST",
+            path="/api/tasks",
+            target_type="task",
+            target_id=task.id,
         )
 
 
@@ -133,11 +154,12 @@ def recorded_job_stamp(root: Path, database_url: str, workspace: Path) -> tuple:
 
 
 def index_change_schedule(root: Path, database_url: str, item: dict) -> None:
-    """Index a file schedule. Its instruction text stays in the schedule file."""
+    """Index a schedule. Its instruction text stays in the schedule file."""
     account = load_account(root, database_url=database_url)
     workspace = Path(str(item.get("workspace") or root))
     cadence = item.get("cadence")
     text = cadence if isinstance(cadence, str) else json.dumps(cadence, sort_keys=True)
+    kind = "scan" if item.get("kind") == "project" else "change"
     with database(root, database_url) as db:
         project = _project(db, account, workspace, str(item.get("name") or "schedule"))
         save_schedule(
@@ -145,7 +167,7 @@ def index_change_schedule(root: Path, database_url: str, item: dict) -> None:
             schedule_id=str(item["id"]),
             tenant_id=account["org"]["id"],
             project_id=project["id"],
-            kind="change",
+            kind=kind,
             cadence=text,
             enabled=bool(item.get("enabled", True)),
             created_by=account["current_user_id"],
@@ -310,7 +332,7 @@ def _project_tasks(root: Path, database_url: str, workspace: Path) -> list[dict]
                 """
                 SELECT tasks.id, tasks.status, tasks.branch, tasks.pr_url,
                        tasks.goal_ciphertext, tasks.result_ciphertext, tasks.created,
-                       tasks.tenant_id, projects.locator
+                       tasks.tenant_id, tasks.requester_id, projects.locator
                 FROM tasks
                 JOIN projects ON projects.id = tasks.project_id
                 WHERE projects.tenant_id = ?
@@ -366,6 +388,7 @@ def _history_item(root: Path, database_url: str, row: dict) -> dict:
         "pr_url": row["pr_url"],
         "created_at": datetime.fromtimestamp(created, UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "events": [*steps, *file_events_from_diff(diff)],
+        **_people(root, database_url, row),
     }
 
 
@@ -381,7 +404,7 @@ def _open_rows(root: Path, database_url: str) -> list[dict]:
                 """
                 SELECT tasks.id, tasks.status, tasks.branch, tasks.pr_url,
                        tasks.goal_ciphertext, tasks.result_ciphertext, tasks.created,
-                       tasks.tenant_id, projects.locator
+                       tasks.tenant_id, tasks.requester_id, projects.locator
                 FROM tasks
                 JOIN projects ON projects.id = tasks.project_id
                 WHERE tasks.tenant_id = ?
@@ -407,7 +430,7 @@ def _task_row(root: Path, database_url: str, task_id: str) -> dict | None:
                 """
                 SELECT tasks.id, tasks.status, tasks.branch, tasks.pr_url,
                        tasks.goal_ciphertext, tasks.result_ciphertext, tasks.created,
-                       tasks.tenant_id, projects.locator
+                       tasks.tenant_id, tasks.requester_id, projects.locator
                 FROM tasks
                 JOIN projects ON projects.id = tasks.project_id
                 WHERE tasks.tenant_id = ? AND tasks.id = ?
@@ -479,7 +502,27 @@ def _open_record(root: Path, database_url: str, row: dict) -> dict | None:
         "created_at": created_at,
         "model_name": str(result.get("model_name") or ""),
         "model_base_url": str(result.get("model_base_url") or ""),
+        **_people(root, database_url, row),
     }
+
+
+def _people(root: Path, database_url: str, row: dict) -> dict:
+    requester = str(row.get("requester_id") or "")
+    started_by = None
+    gates: list[dict] = []
+    if not database_configured(root, database_url):
+        return {"started_by": started_by, "gates": gates}
+    try:
+        with database(root, database_url) as db:
+            from agent_lbw.runtime.store.audit import gates_for_tasks, person_name
+
+            name = person_name(db, requester)
+            if requester or name:
+                started_by = {"id": requester, "name": name}
+            gates = gates_for_tasks(db, [str(row.get("id") or "")]).get(str(row.get("id") or ""), [])
+    except (OSError, ValueError):
+        return {"started_by": started_by, "gates": gates}
+    return {"started_by": started_by, "gates": gates}
 
 
 def _goal_and_result(root: Path, database_url: str, row: dict) -> tuple[str, dict]:

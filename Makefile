@@ -1,4 +1,4 @@
-.PHONY: sync test lint doctor run watch certs up-local restart-local restart-agent restart-crossing wipe up-mac up-nvidia pull-model
+.PHONY: sync test lint doctor run watch certs up-local restart-local restart-agent restart-crossing wipe up-mac up-nvidia pull-model openapi openapi-check
 
 WORKSPACE ?= examples/demo-project
 GOAL ?= Make the test suite pass.
@@ -10,6 +10,23 @@ COMPOSE_ENV := LBW_UI_PORT=$(PORT) LBW_POSTGRES_PORT=$(LBW_POSTGRES_PORT) LBW_KI
 
 sync:
 	uv sync --extra dev
+
+web:
+	cd web && npm ci && npm run build
+
+openapi:
+	uv run python scripts/openapi_models.py
+	uv run ruff format src/agent_lbw/openapi_models.py
+
+openapi-check:
+	uv run python scripts/openapi_models.py --check
+
+web-check:
+	cd web && npm ci
+	rm -rf .web-check
+	cd web && LBW_WEB_OUT="$(CURDIR)/.web-check" npm run build
+	diff -rq .web-check src/agent_lbw/static/app
+	rm -rf .web-check
 
 test:
 	uv run pytest -q

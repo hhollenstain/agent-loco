@@ -44,20 +44,28 @@ def test_a_model_is_sealed_and_an_agent_needs_a_grant_and_a_person(
 ) -> None:
     client = TestClient(create_app(TaskManager(settings), default_workspace=tmp_path))
     page = client.get("/")
+    bundle = client.get("/static/app/app.js")
+    assert bundle.status_code == 200
+    script = bundle.text
     assert 'id="org-tab-models"' in page.text
     assert 'id="org-panel-rules" data-org-panel="rules" hidden' in page.text
-    assert 'id="org-endpoints"' in page.text
-    assert 'id="add-org-endpoint"' in page.text
-    assert 'id="org-models"' in page.text
-    assert 'id="add-org-model"' in page.text
-    assert 'id="org-agents"' in page.text
-    assert 'id="add-org-agent"' in page.text
-    assert 'id="open-org-model"' in page.text
-    assert 'id="open-org-agent"' in page.text
-    assert 'id="endpoint-remove-dialog"' in page.text
-    assert 'id="confirm-endpoint-remove"' in page.text
-    assert "data-model-enable" in page.text
-    assert "data-agent-remove" in page.text
+    assert 'id="org-models-root"' in page.text
+    assert 'src="/static/app/app.js"' in page.text
+    for token in (
+        'id:"org-endpoints"',
+        'id:"add-org-endpoint"',
+        'id:"org-models"',
+        'id:"add-org-model"',
+        'id:"org-agents"',
+        'id:"add-org-agent"',
+        'id:"open-org-model"',
+        'id:"open-org-agent"',
+        'id:"endpoint-remove-dialog"',
+        'id:"confirm-endpoint-remove"',
+        '"data-model-enable"',
+        '"data-agent-remove"',
+    ):
+        assert token in script
     assert 'id="org-skill-repo-scope"' not in page.text
 
     client.get("/api/directory")
@@ -268,7 +276,7 @@ def test_the_proposal_chooses_a_granted_model(settings: Settings, tmp_path: Path
         page = client.get("/")
         assert 'id="base-url"' not in page.text
         assert 'id="load-models"' not in page.text
-        assert 'id="add-org-endpoint"' in page.text
+        assert 'id:"add-org-endpoint"' in client.get("/static/app/app.js").text
         client.get("/api/directory")
         client.post("/api/directory/promote")
         account = client.get("/api/account").json()

@@ -8,8 +8,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from agent_lbw.openapi_models import RepoRuleList, RepoRuleWrite
 from agent_lbw.runtime.account import load_account
 from agent_lbw.runtime.db import database
+from agent_lbw.runtime.repo_rules import list_repo_rules, set_repo_rule
 from agent_lbw.runtime.store.install import require_account
 from agent_lbw.runtime.store.rules import (
     applied_view,
@@ -81,6 +83,30 @@ def register_rules(app: FastAPI) -> None:
             request,
             lambda db, account, kiwi, _root: _required(db, account, rule_id, body),
         )
+
+    @app.get("/api/repo-rules", response_model=RepoRuleList)
+    def read_repo_rules(request: Request, workspace: str = "") -> RepoRuleList | JSONResponse:
+        try:
+            return RepoRuleList(**list_repo_rules(_workspace_dir(request, workspace)))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.put("/api/repo-rules", response_model=RepoRuleList)
+    def write_repo_rule(request: Request, body: RepoRuleWrite) -> RepoRuleList | JSONResponse:
+        try:
+            listed = set_repo_rule(
+                _workspace_dir(request, body.workspace),
+                body.path,
+                enabled=body.enabled,
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        state = "on" if body.enabled else "off"
+        request.state.audit_action = "repo_rule.set"
+        request.state.audit_summary = f"Turned {body.path.strip()} {state}"
+        request.state.audit_target_type = "repo_rule"
+        request.state.audit_target_id = body.path.strip()
+        return RepoRuleList(**listed)
 
 
 def _editor(db, account: dict, kiwi: KiwiFS) -> dict:
@@ -168,6 +194,15 @@ def _required(db, account: dict, rule_id: str, body: RequiredBody) -> dict:
         project_id=body.project_id,
         required=body.required,
     )
+
+
+def _workspace_dir(request: Request, workspace: str) -> Path:
+    ui = request.app.state.ui
+    place = (workspace or "").strip() or str(ui.default_workspace)
+    path = Path(place).expanduser()
+    if not path.is_dir():
+        raise ValueError("workspace is not a directory")
+    return path
 
 
 def _rank(account: dict, identity_id: str) -> str:
