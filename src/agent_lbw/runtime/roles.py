@@ -309,17 +309,17 @@ def _string_list(value: object) -> list[str]:
 
 
 def _load_raw_config(root: Path) -> dict:
-    path = Path(root).expanduser().resolve() / ".lbw" / "config.yaml"
-    if not path.exists():
-        return {}
+    from agent_lbw.runtime.project import read_project_config
+
     try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+        return read_project_config(root)
+    except (OSError, ValueError):
         return {}
-    return loaded if isinstance(loaded, dict) else {}
 
 
 def _write_raw_config(root: Path, raw: dict) -> None:
+    from agent_lbw.runtime.project import dump_project_config
+
     path = Path(root).expanduser().resolve() / ".lbw" / "config.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    path.write_text(dump_project_config(raw), encoding="utf-8")

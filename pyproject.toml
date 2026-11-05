@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Henry Hollenstain" }]
 dependencies = [
+    "lbw-shared",
     "openai>=1.60",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
@@ -38,6 +39,12 @@ browser = [
 [project.scripts]
 lbw = "agent_lbw.cli:app"
 
+[tool.uv.workspace]
+members = ["libs/lbw_shared", "services/crossing"]
+
+[tool.uv.sources]
+lbw-shared = { workspace = true }
+
 [build-system]
 requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -53,12 +60,12 @@ agent_lbw = ["templates/*.html", "static/*.css", "static/*.svg", "templates/Dock
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["src", "libs/lbw_shared/src", "services/crossing/src", "."]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = ["src", "tests", "libs", "services"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

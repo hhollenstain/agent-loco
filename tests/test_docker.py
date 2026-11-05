@@ -21,7 +21,7 @@ def _recipe(name: str) -> str:
 
 def test_up_local_builds_the_agent_image_before_postgres() -> None:
     recipe = _recipe("up-local")
-    build_at = recipe.find("build agent")
+    build_at = recipe.find("build agent crossing")
     postgres_at = recipe.find("up -d --wait postgres")
     assert "docker compose -f docker-compose.yml -f docker-compose.postgres.yml" in (
         ROOT / "Makefile"
@@ -33,7 +33,7 @@ def test_up_local_builds_the_agent_image_before_postgres() -> None:
 def test_up_local_starts_kiwifs_and_the_agent() -> None:
     recipe = _recipe("up-local")
     assert "up -d kiwifs" in recipe
-    assert "up -d --no-deps agent" in recipe
+    assert "up -d --no-deps agent crossing ingress" in recipe
     assert "stop postgres kiwifs" not in recipe
     assert "nohup" not in recipe
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
@@ -44,11 +44,28 @@ def test_up_local_starts_kiwifs_and_the_agent() -> None:
     assert "http://kiwifs:3333" in mac
 
 
-def test_restart_local_rebuilds_only_the_agent() -> None:
+def test_wipe_removes_compose_volumes() -> None:
+    recipe = _recipe("wipe")
+    assert "$(COMPOSE) down --volumes --remove-orphans" in recipe
+    assert "docker-compose.nvidia.yml down --volumes --remove-orphans" in recipe
+    assert "workspaces" not in recipe
+
+
+def test_restart_local_rebuilds_both_services() -> None:
     recipe = _recipe("restart-local")
-    assert "up -d --build --no-deps --force-recreate agent" in recipe
+    assert "up -d --build --no-deps --force-recreate agent crossing" in recipe
+    assert "up -d --no-deps ingress" in recipe
     assert "postgres" not in recipe
     assert "kiwifs" not in recipe
+    agent = _recipe("restart-agent")
+    crossing = _recipe("restart-crossing")
+    assert "force-recreate agent" in agent
+    assert "crossing" not in agent
+    assert "force-recreate crossing" in crossing
+    assert "up -d --no-deps ingress" in agent
+    assert "up -d --no-deps ingress" in crossing
+    assert "postgres" not in agent
+    assert "postgres" not in crossing
 
 
 def test_agent_image_installs_the_github_cli() -> None:
@@ -61,9 +78,27 @@ def test_compose_mounts_workspace_not_app_lbw() -> None:
     assert "${LBW_WORKSPACE:-./workspaces}:/workspaces" in compose
     assert "./.lbw:/workspaces/.lbw" not in compose
     assert ".lbw:/workspaces/.lbw" not in compose
-    assert '"${LBW_UI_PORT:-8080}:8080"' in compose
+    assert "lbw-crossing:local" in compose
+    assert "deploy/nginx.conf" in compose
+    assert "nginx:1.27-alpine" in compose
+    assert '"443:443"' in compose
     assert '"ui"' in compose
     assert "0.0.0.0" in compose
+
+
+def test_certs_uses_certutil_and_reloads_ingress() -> None:
+    recipe = _recipe("certs")
+    assert "scripts/local-certs.sh" in recipe
+    script = (ROOT / "scripts/local-certs.sh").read_text(encoding="utf-8")
+    assert "certutil" in script
+    assert "brew install nss" in script
+    assert "--force-recreate" in script
+    assert "ingress" in script
+    nginx = (ROOT / "deploy/nginx.conf").read_text(encoding="utf-8")
+    assert "server_name www-local.lookbothways.dev" in nginx
+    assert "server_name crossing-local.lookbothways.dev" in nginx
+    assert "set $lbw_agent http://agent:8080" in nginx
+    assert "set $lbw_crossing http://crossing:8080" in nginx
 
 
 def test_readme_documents_lbw_clone_not_docker_clone() -> None:

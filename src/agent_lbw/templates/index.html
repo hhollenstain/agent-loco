@@ -355,7 +355,8 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
-    input[type="text"], input[type="search"], input[type="number"], textarea, select {
+    input[type="text"], input[type="search"], input[type="number"], input[type="url"],
+    input[type="password"], input[type="email"], textarea, select {
       width: 100%;
       background: var(--panel);
       color: var(--ink);
@@ -365,6 +366,7 @@
       font: inherit;
     }
     input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus,
+    input[type="url"]:focus, input[type="password"]:focus, input[type="email"]:focus,
     textarea:focus, select:focus {
       outline: none;
       border-color: var(--navy);
@@ -393,16 +395,8 @@
     }
     .llm-block label { margin-top: 0.9rem; }
     .llm-block > label:first-of-type { margin-top: 0; }
-    .llm-load {
-      width: 100%;
-      margin-top: 0.75rem;
-    }
-    #base-url, #server-history, #model, #context-window {
+    #model, #context-window {
       font-size: 0.88rem;
-    }
-    #base-url {
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      font-size: 0.78rem;
     }
     .hint { margin: 0.4rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
     #github-app-install-row[hidden], #github-repos[hidden] { display: none; }
@@ -457,13 +451,27 @@
     .workspace-kind[data-kind="github"] .icon-github,
     .workspace-kind[data-kind="git"] .icon-git,
     .workspace-kind[data-kind="folder"] .icon-folder { display: block; }
-    .workspace-summary .path {
+    .workspace-identity {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
       flex: 1;
+      min-width: 0;
+    }
+    .workspace-summary .repo,
+    .workspace-summary .branch {
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .workspace-summary .repo { flex: 0 1 auto; font-weight: 650; }
+    .workspace-summary .branch {
+      flex: 1 1 auto;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .workspace-summary .branch[hidden] { display: none; }
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -475,6 +483,7 @@
       padding: 1.25rem;
     }
     .modal-backdrop.open { display: flex; }
+    .modal-backdrop.open[hidden] { display: none; }
     .modal {
       width: min(42rem, 100%);
       max-height: min(36rem, 92vh);
@@ -547,7 +556,7 @@
       text-align: right;
       word-break: break-all;
     }
-    .modal-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+    .modal-actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.75rem; }
     .modal-error { color: var(--bad); min-height: 1.2rem; margin: 0.45rem 0 0; font-size: 0.86rem; }
     .checks { display: flex; gap: 1rem; margin: 0.9rem 0 1.1rem; color: var(--muted); }
     .sidebar-tools {
@@ -855,6 +864,7 @@
       box-shadow: var(--shadow);
     }
     .account-menu[hidden] { display: none; }
+    .account-menu button[hidden] { display: none; }
     .account-menu button {
       text-align: left;
       background: transparent;
@@ -1186,8 +1196,12 @@
     }
     .settings-skill-source {
       display: flex;
-      gap: 0.4rem;
+      gap: 0.65rem;
       align-items: stretch;
+      margin-top: 0.65rem;
+    }
+    .settings-skill-source[hidden] {
+      display: none;
     }
     .settings-skill-source input,
     .settings-skill-source select {
@@ -2587,6 +2601,33 @@
   </style>
 </head>
 <body>
+  <div class="auth-gate" id="auth-gate">
+    <form class="auth-card" id="auth-form">
+      <h1 id="auth-title">Sign in</h1>
+      <p class="hint" id="auth-hint">Use the email and password for this install.</p>
+      <div id="auth-name-row" hidden>
+        <label for="auth-name">Name</label>
+        <input id="auth-name" type="text" maxlength="80" autocomplete="name" spellcheck="false">
+      </div>
+      <label for="auth-email">Email</label>
+      <input id="auth-email" type="email" maxlength="200" autocomplete="username" spellcheck="false">
+      <label for="auth-password">Password</label>
+      <input id="auth-password" type="password" maxlength="200" autocomplete="current-password">
+      <div id="auth-org-row" hidden>
+        <label for="auth-org">Organization</label>
+        <input id="auth-org" type="text" maxlength="80" spellcheck="false">
+      </div>
+      <div class="modal-actions">
+        <button type="submit" id="auth-submit">Sign in</button>
+        <button type="button" class="secondary" id="auth-signup" hidden>Create an organization</button>
+      </div>
+      <p class="error" id="auth-error"></p>
+      <p class="auth-links" id="auth-links">
+        <a id="auth-sso" href="/api/auth/sso" hidden>Sign in with single sign-on</a>
+        <a id="auth-github" href="/api/auth/github" hidden>Sign in with GitHub</a>
+      </p>
+    </form>
+  </div>
   {% set ws_kind = 'github' if workspace_git_remote and 'github.com' in (workspace_git_remote|lower) else ('git' if workspace_is_git else 'folder') %}
   {% set ws_kind_label = 'GitHub repository' if ws_kind == 'github' else ('Git repository' if ws_kind == 'git' else 'Local folder') %}
   <main id="main">
@@ -2611,7 +2652,7 @@
         <label class="project-switch-label" for="project-select">Project</label>
         <select id="project-select" aria-label="Project">
           {% for ws in known_workspaces %}
-          <option value="{{ ws.path }}" {% if ws.path == default_workspace %}selected{% endif %}>{{ ws.name }}</option>
+          <option value="{{ ws.path }}" {% if ws.path == default_workspace %}selected{% endif %}>{{ ws.name }}{% if ws.missing %} (no checkout){% endif %}</option>
           {% endfor %}
         </select>
       </div>
@@ -2643,28 +2684,18 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="8" width="14" height="11" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 8V6.4A1.9 1.9 0 0 1 8.9 4.5h11.1A1.9 1.9 0 0 1 21.9 6.4V16" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
           <span>Skills</span>
         </button>
+        <button type="button" class="rail-item" data-rail="roles" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="16" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M3.4 19.2c.5-2.5 2.3-3.7 4.6-3.7s4.1 1.2 4.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M13.2 19.2c.35-1.7 1.5-2.7 3-2.7 1.4 0 2.5.9 3 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <span>Roles</span>
+        </button>
       </nav>
-      <div class="sidebar-overlay" id="roles-panel" hidden>
-        <div class="sidebar-overlay-head">
-          <h2>Roles</h2>
-          <button type="button" class="secondary" id="close-roles">Close</button>
-        </div>
-        <div class="sidebar-overlay-body">
-          <p class="hint">Each role has one job. Builder and QA stay on. Turn the others on for this project, or add one at .lbw/roles/&lt;name&gt;/ROLE.md with job set to review. An organization admin can enforce a role on every project.</p>
-          <div class="settings-skills-list" id="workspace-roles"></div>
-          <p class="hint" id="roles-status">Loading roles…</p>
-        </div>
-      </div>
       </div>
     <div class="sidebar-tools">
-      <button type="button" class="secondary" id="open-roles" aria-label="Manage roles" aria-expanded="false" aria-controls="roles-panel" title="Manage roles">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/>
-          <circle cx="16" cy="9" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
-          <path d="M3.4 19.2c.5-2.5 2.3-3.7 4.6-3.7s4.1 1.2 4.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-          <path d="M13.2 19.2c.35-1.7 1.5-2.7 3-2.7 1.4 0 2.5.9 3 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-      </button>
       <button type="button" class="secondary" id="open-live-console" aria-label="Live console" aria-expanded="false" title="Live console">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
@@ -2683,6 +2714,7 @@
         <button type="button" id="open-personal-page">Personal</button>
         <button type="button" id="open-organization-page">Organization</button>
         <button type="button" id="open-workspace-page">Workspace</button>
+        <button type="button" id="open-crossing" data-crossing-url="{{ crossing_url }}" hidden>Crossing guard</button>
       </div>
       <button type="button" class="secondary" id="theme-toggle" aria-label="Switch to dark theme" aria-pressed="false" title="Dark theme">
         <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
@@ -2731,13 +2763,16 @@
     </aside>
     <section class="tasks">
       <header class="project-bar">
-        <div class="workspace-summary" id="workspace-summary" title="{{ default_workspace }}">
+        <div class="workspace-summary" id="workspace-summary" data-remote="{{ workspace_git_remote or workspace_repo_label }}" title="{{ workspace_git_remote or workspace_repo_label }}">
           <span class="workspace-kind" id="workspace-kind" data-kind="{{ ws_kind }}" title="{{ ws_kind_label }}" aria-label="{{ ws_kind_label }}">
             <svg class="icon-github" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
             <svg class="icon-git" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M23.546 10.93 13.067.452a1.55 1.55 0 0 0-2.188 0L8.548 2.783l2.762 2.762a1.838 1.838 0 0 1 2.327 2.341l2.658 2.658a1.838 1.838 0 1 1-1.1 1.1L12.45 8.9v6.897a1.838 1.838 0 1 1-1.51-.055v-6.97a1.838 1.838 0 0 1-.997-2.414L7.43 3.902.452 10.88a1.55 1.55 0 0 0 0 2.188l10.48 10.477a1.55 1.55 0 0 0 2.188 0l10.425-10.425a1.55 1.55 0 0 0 0-2.188"/></svg>
             <svg class="icon-folder" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.31 5.55 1 5 1H1.75Z"/></svg>
           </span>
-          <span class="path" id="workspace-summary-path">{{ default_workspace }}</span>
+          <span class="workspace-identity">
+            <span class="repo" id="workspace-summary-repo">{{ workspace_repo_label }}</span>
+            <span class="branch" id="workspace-summary-branch" hidden></span>
+          </span>
         </div>
         <div class="project-actions">
           <button type="button" class="secondary icon-button" id="open-workspace-picker" aria-label="Add project" title="Add a project, folder, or repository">
@@ -2779,30 +2814,12 @@
       <p class="hint">New tasks start from a clean copy of the head branch. Pick another branch here, or name one in the goal.</p>
 
       <div class="llm-block">
-        <p class="llm-heading">
-          LLM
-          <button type="button" class="secondary llm-toggle" id="llm-server-toggle" aria-expanded="false" aria-controls="llm-server-fields" aria-label="Server settings" title="Server settings">
-            <span class="llm-toggle-icon" aria-hidden="true"></span>
-          </button>
-        </p>
-        <div id="llm-server-fields" hidden>
-          <label for="server-history">Saved server</label>
-          <select id="server-history" aria-label="Remembered LLM servers">
-            {% for server in known_servers %}
-            {% set server_url = server.url if server is mapping else server %}
-            {% set server_alias = server.alias if server is mapping else None %}
-            <option value="{{ server_url }}" title="{{ server_url }}" {% if server_url == default_base_url %}selected{% endif %}>{{ server_alias or server_url }}</option>
-            {% endfor %}
-          </select>
-          <label for="base-url">Server URL</label>
-          <input id="base-url" name="base_url" type="text" spellcheck="false" required value="{{ default_base_url }}" placeholder="http://127.0.0.1:11434/v1">
-          <p class="hint">Pick a saved host or type a new one (host:port or /v1 URL). Used servers are remembered after you load models.</p>
-          <button type="button" class="secondary llm-load" id="load-models">Load models</button>
-        </div>
-        <label for="model">Model</label>
-        <select id="model" name="model">
-          <option value="{{ default_model }}" selected>{{ default_model }}</option>
+        <p class="llm-heading">Model</p>
+        <label for="model">Granted model</label>
+        <select id="model" name="model_id" aria-label="Granted model">
+          <option value="">No models granted</option>
         </select>
+        <p class="hint" id="model-hint">Add a host and its models in organization settings. This list shows the models granted to this project.</p>
         <label for="context-window">Context window</label>
         <input id="context-window" name="context_window" type="number" min="512" max="1048576" step="1" inputmode="numeric" placeholder="server default" value="{{ default_context_window }}">
         <p class="hint">Tokens this model can hold on this machine. Leave blank to use the server window, or LBW_CONTEXT_WINDOW when that is set.</p>
@@ -2902,6 +2919,15 @@
           </div>
         </div>
       </div>
+      <div class="center-view" id="roles-view" data-section="roles" hidden>
+        <div class="section-page">
+          <p class="ask-kicker">Project</p>
+          <h1 class="ask-heading">Roles</h1>
+          <p class="hint">Each role has one job. Builder and QA stay on. Turn the others on for this project, or add one at .lbw/roles/&lt;name&gt;/ROLE.md with job set to review. An organization admin can enforce a role on every project.</p>
+          <div class="settings-skills-list" id="workspace-roles"></div>
+          <p class="hint" id="roles-status">Loading roles…</p>
+        </div>
+      </div>
       <div class="center-view" id="skills-view" data-section="skills" hidden>
         <div class="skill-info-pop" id="skill-info-pop" hidden>
           <div class="skill-info-pop-head">
@@ -2913,7 +2939,7 @@
         <div class="section-page" id="skills-panel">
           <p class="ask-kicker">Process</p>
           <h1 class="ask-heading">Skills</h1>
-          <p class="hint">Skills assigned to this project. A cloned repository is stored for this organization, team, and project. Organization skills are assigned in organization settings.</p>
+          <p class="hint">Skills for this project. A cloned repository starts folded under its name. Search to open the skills inside it. Organization settings is where a repository is added and resynced.</p>
           <div class="settings-skills-search">
             <input type="search" id="skills-search" aria-label="Search skills" placeholder="Search skills…" autocomplete="off">
           </div>
@@ -2931,14 +2957,38 @@
         <div class="section-page" id="personal-settings">
           <p class="ask-kicker">Account</p>
           <h1 class="ask-heading">Personal</h1>
-          <label for="profile-name">Your name</label>
-          <input id="profile-name" type="text" maxlength="80" autocomplete="name" spellcheck="false">
-          <div class="modal-actions">
-            <button type="button" id="save-profile">Save</button>
+          <div class="personal-tabs" role="tablist" aria-label="Personal">
+            <button type="button" class="secondary personal-tab" id="personal-tab-profile" data-personal-tab="profile" aria-pressed="true">Profile</button>
+            <button type="button" class="secondary personal-tab" id="personal-tab-github" data-personal-tab="github" aria-pressed="false" hidden>GitHub</button>
+            <button type="button" class="secondary personal-tab" id="personal-tab-rules" data-personal-tab="rules" aria-pressed="false">Rules</button>
           </div>
-          <h2 class="rule-heading">Your rules</h2>
-          <p class="hint">These follow you. They are not copied onto a project.</p>
-          <div id="personal-rules-list" class="rule-list"></div>
+          <div class="notice-slot" id="personal-tab-error"></div>
+          <div class="personal-panel" id="personal-panel-profile" data-personal-panel="profile">
+            <label for="profile-name">Your name</label>
+            <input id="profile-name" type="text" maxlength="80" autocomplete="name" spellcheck="false">
+            <label for="profile-email">Email</label>
+            <input id="profile-email" type="email" maxlength="200" autocomplete="email" spellcheck="false">
+            <div class="modal-actions">
+              <button type="button" id="save-profile">Save</button>
+              <button type="button" class="secondary" id="sign-out">Sign out</button>
+            </div>
+          </div>
+          <div class="personal-panel" id="personal-panel-github" data-personal-panel="github" hidden>
+            <p class="hint">Connect GitHub here. The organization shows the username GitHub returns. It is not entered on the organization page.</p>
+            <p class="hint" id="profile-github">Not connected.</p>
+            <div class="modal-actions">
+              <button type="button" class="secondary" id="github-connect">Connect GitHub</button>
+            </div>
+          </div>
+          <div class="personal-panel" id="personal-panel-rules" data-personal-panel="rules" hidden>
+            <div class="personal-rules-head">
+              <p class="hint">These follow you. They are not copied onto a project.</p>
+              <button type="button" class="secondary icon-button" id="add-personal-rule" aria-label="Add rule" title="Add a rule">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div id="personal-rules-list" class="rule-list"></div>
+          </div>
         </div>
       </div>
       <div class="center-view" id="organization-view" data-section="organization" hidden>
@@ -2946,63 +2996,104 @@
           <p class="ask-kicker">Account</p>
           <h1 class="ask-heading">Organization</h1>
           <p class="hint">The hierarchy is organization, then teams, then projects. A project shows an organization or team rule, and an organization skill, only when it is assigned there. Roles are chosen on the project. An organization admin can enforce a role on every project.</p>
-          <label for="org-name">Organization</label>
-          <input id="org-name" type="text" maxlength="80" autocomplete="organization" spellcheck="false">
-          <div class="modal-actions">
-            <button type="button" id="save-org">Save organization</button>
+          <div class="org-tabs" role="tablist" aria-label="Organization settings">
+            <button type="button" class="secondary org-tab" id="org-tab-people" data-org-tab="people" aria-pressed="true">People</button>
+            <button type="button" class="secondary org-tab" id="org-tab-teams" data-org-tab="teams" aria-pressed="false">Teams</button>
+            <button type="button" class="secondary org-tab" id="org-tab-rules" data-org-tab="rules" aria-pressed="false">Rules</button>
+            <button type="button" class="secondary org-tab" id="org-tab-skills" data-org-tab="skills" aria-pressed="false">Skills</button>
+            <button type="button" class="secondary org-tab" id="org-tab-roles" data-org-tab="roles" aria-pressed="false">Roles</button>
+            <button type="button" class="secondary org-tab" id="org-tab-models" data-org-tab="models" aria-pressed="false">Models</button>
+            <button type="button" class="secondary org-tab" id="org-tab-github" data-org-tab="github" aria-pressed="false">GitHub</button>
           </div>
-          <label>People</label>
-          <div id="account-users" class="account-users"></div>
-          <div id="account-add-row">
-            <label for="new-user-name">Add a person</label>
-            <div class="account-add">
-              <input id="new-user-name" type="text" maxlength="80" placeholder="Name" autocomplete="off" spellcheck="false">
-              <button type="button" class="secondary" id="add-user">Add</button>
+          <div class="notice-slot" id="org-tab-error"></div>
+          <div class="org-panel" id="org-panel-people" data-org-panel="people">
+            <label for="org-name">Organization</label>
+            <input id="org-name" type="text" maxlength="80" autocomplete="organization" spellcheck="false">
+            <div class="modal-actions">
+              <button type="button" id="save-org">Save organization</button>
             </div>
-          </div>
-          <p class="hint">This install is local. The people here belong to one organization.</p>
-          <div class="notice-slot" id="account-error"></div>
-          <h2 class="rule-heading">Rules</h2>
-          <p class="hint">Organization and team rules. Mark an organization rule required on a project for it to show up there. A rules duty can edit these. Other members can read them.</p>
-          <div id="org-rules-list" class="rule-list"></div>
-          <div id="org-rule-draft">
-            <label for="org-rule-scope">Draft a rule for</label>
-            <select id="org-rule-scope"></select>
-            <label for="org-rule-ask">What the rule should say</label>
-            <textarea id="org-rule-ask" spellcheck="false"></textarea>
-            <div class="sidebar-overlay-actions">
-              <button type="button" class="secondary" id="ask-org-rule">Draft with LBW</button>
+            <label>People</label>
+            <div id="account-users" class="account-users"></div>
+            <div id="account-add-row">
+              <label for="new-user-name">Add a person</label>
+              <div class="account-add">
+                <input id="new-user-name" type="text" maxlength="80" placeholder="Name" autocomplete="off" spellcheck="false">
+                <input id="new-user-email" type="email" maxlength="200" placeholder="Email" autocomplete="off" spellcheck="false">
+                <button type="button" class="secondary" id="add-user">Add</button>
+              </div>
             </div>
+            <p class="hint">People belong to this organization as a member or an admin. The owner is the admin account created at setup. A GitHub username shows after that person connects it from Personal.</p>
+            <div class="notice-slot" id="account-error"></div>
           </div>
-          <div class="notice-slot" id="org-rules-error"></div>
-          <h2 class="rule-heading">Skills</h2>
-          <p class="hint" id="org-skills-hint">Assign a bundled skill to the organization, a team, or a project.</p>
-          <div id="org-skills" class="rule-list"></div>
-          <div class="notice-slot" id="org-skills-error"></div>
-          <h2 class="rule-heading">Skill repositories</h2>
-          <p class="hint">A repository is stored in its own space for the organization or a team. Resync pulls the latest commit into that space.</p>
-          <div class="settings-skill-sources" id="org-skill-repos"></div>
-          <div class="settings-skill-source" id="org-skill-repo-form">
-            <select id="org-skill-repo-scope" aria-label="Where to store the repository"></select>
-            <input id="org-skill-repo-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
-            <button type="button" class="secondary" id="add-org-skill-repo">Add</button>
+          <div class="org-panel" id="org-panel-teams" data-org-panel="teams" hidden>
+            <h2 class="rule-heading">Teams</h2>
+            <p class="hint">Teams belong to this organization. A team has members and admins.</p>
+            <div id="org-teams" class="rule-list"></div>
+            <form class="account-add" id="org-team-form">
+              <input id="org-team-name" type="text" maxlength="80" placeholder="Team name" autocomplete="off" spellcheck="false">
+              <button type="submit" id="add-org-team">Add team</button>
+            </form>
+            <div class="notice-slot" id="org-teams-error"></div>
           </div>
-          <h2 class="rule-heading">Enforced roles</h2>
-          <p class="hint">Checked roles stay on for every project. Project settings can still turn on the others.</p>
-          <div id="org-roles" class="settings-skills-list"></div>
+          <div class="org-panel" id="org-panel-rules" data-org-panel="rules" hidden>
+            <h2 class="rule-heading">Rules</h2>
+            <p class="hint">Organization and team rules. Mark an organization rule required on a project for it to show up there. A rules duty can edit these. Other members can read them.</p>
+            <div id="org-rules-list" class="rule-list"></div>
+            <div id="org-rule-draft">
+              <label for="org-rule-scope">Draft a rule for</label>
+              <select id="org-rule-scope"></select>
+              <label for="org-rule-ask">What the rule should say</label>
+              <textarea id="org-rule-ask" spellcheck="false"></textarea>
+              <div class="sidebar-overlay-actions">
+                <button type="button" class="secondary" id="ask-org-rule">Draft with LBW</button>
+              </div>
+            </div>
+            <div class="notice-slot" id="org-rules-error"></div>
+          </div>
+          <div class="org-panel" id="org-panel-skills" data-org-panel="skills" hidden>
+            <div class="org-section-head">
+              <h2 class="rule-heading">Skills</h2>
+            </div>
+            <p class="hint" id="org-skills-hint">Add a repository for the whole organization. Resync it here. A project turns a loaded skill on.</p>
+            <div class="settings-skill-sources" id="org-skill-repos"></div>
+            <div class="settings-skill-source" id="org-skill-repo-form">
+              <input id="org-skill-repo-url" type="url" placeholder="https://github.com/org/skills.git" autocomplete="off">
+              <button type="button" class="secondary" id="add-org-skill-repo">Add</button>
+            </div>
+            <div class="notice-slot" id="org-skills-error"></div>
+          </div>
+          <div class="org-panel" id="org-panel-roles" data-org-panel="roles" hidden>
+            <h2 class="rule-heading">Enforced roles</h2>
+            <p class="hint">Checked roles stay on for every project. Project settings can still turn on the others.</p>
+            <div id="org-roles" class="settings-skills-list"></div>
+          </div>
+          <div class="org-panel" id="org-panel-models" data-org-panel="models" hidden>
+            <div class="org-section-head">
+              <h2 class="rule-heading">Endpoints</h2>
+              <button type="button" class="secondary icon-button" id="open-org-endpoint" aria-label="Add an endpoint">+</button>
+            </div>
+            <p class="hint" id="org-models-hint">Bring your own endpoint. Resync stores the model names it returns. The key is sealed and is not shown again.</p>
+            <div id="org-endpoints"></div>
+            <div class="org-section-head">
+              <h2 class="rule-heading">Models</h2>
+              <button type="button" class="secondary icon-button" id="open-org-model" aria-label="Add a model">+</button>
+            </div>
+            <p class="hint">Turn a model on to use it in this organization. Plus adds one the endpoint returned.</p>
+            <div id="org-models"></div>
+            <div class="org-section-head">
+              <h2 class="rule-heading">Agents</h2>
+              <button type="button" class="secondary icon-button" id="open-org-agent" aria-label="Add an agent">+</button>
+            </div>
+            <p class="hint">LBW stays the orchestrator. Turn an agent on for the organization, or remove it. A person must accept its work.</p>
+            <div id="org-agents"></div>
+          </div>
+          <div class="org-panel" id="org-panel-github" data-org-panel="github" hidden>
           <div class="github-app" id="github-app">
-            <label for="github-app-id">GitHub App</label>
             <p class="hint" id="github-app-status">Not connected.</p>
+            <p class="hint">Install the LBW GitHub App on the account that owns this organization's repositories, then choose that account. An LBW engineer saves the app key on the engineer dashboard.</p>
             <p class="hint" id="github-app-install-row" hidden><a id="github-app-install" href="https://github.com/apps" target="_blank" rel="noopener noreferrer">Install on GitHub</a></p>
             <div class="notice-slot" id="github-app-error"></div>
             <div id="github-app-edit">
-              <p class="hint">Public repositories can be added by URL without this. Connect a GitHub App so LBW can push commits, open pull requests, and merge them. <a href="https://github.com/settings/apps/new" target="_blank" rel="noopener noreferrer">Create the app</a>, allow it on any account, grant Contents, Issues, Pull requests, and Members read, and turn the webhook off. Then install it on the organization that owns the repositories.</p>
-              <input id="github-app-id" type="text" inputmode="numeric" maxlength="20" placeholder="App ID" autocomplete="off" spellcheck="false">
-              <label for="github-app-key">Private key</label>
-              <textarea id="github-app-key" class="github-app-key" spellcheck="false" placeholder="Paste the PEM. It is stored sealed and is not shown again."></textarea>
-              <div class="modal-actions">
-                <button type="button" id="save-github-app">Save GitHub App</button>
-              </div>
               <label for="github-installation">Installation</label>
               <select id="github-installation"></select>
               <div class="modal-actions">
@@ -3012,7 +3103,7 @@
             </div>
             <div id="github-repos" hidden>
               <h2 class="rule-heading">Repositories</h2>
-              <p class="hint">Add a repository this app can see to the organization, a person, or a team. Sync copies GitHub roles, teams, and repository access onto people who have a GitHub login.</p>
+              <p class="hint">Add a repository this app can see to the organization, a person, or a team. Sync copies GitHub roles, teams, and repository access onto people who connected GitHub.</p>
               <div class="settings-skill-source">
                 <select id="github-repo" aria-label="Repository"></select>
                 <select id="github-repo-subject" aria-label="Who receives the repository"></select>
@@ -3023,6 +3114,7 @@
                 <button type="button" id="sync-github-access">Sync access</button>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -3104,6 +3196,119 @@
       </div>
     </section>
   </main>
+  <div class="modal-backdrop" id="endpoint-remove-dialog" role="dialog" aria-modal="true" aria-labelledby="endpoint-remove-title" hidden>
+    <div class="modal">
+      <h2 id="endpoint-remove-title">Remove this endpoint?</h2>
+      <p class="hint" id="endpoint-remove-copy"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="cancel-endpoint-remove">Cancel</button>
+        <button type="button" id="confirm-endpoint-remove">Remove endpoint</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="org-endpoint-dialog" role="dialog" aria-modal="true" aria-labelledby="org-endpoint-title" hidden>
+    <div class="modal">
+      <h2 id="org-endpoint-title">Add an endpoint</h2>
+      <form class="org-form" id="org-endpoint-form">
+        <label>Name
+          <input id="org-endpoint-name" type="text" maxlength="80" placeholder="Desk" autocomplete="off">
+        </label>
+        <label>Provider
+          <select id="org-endpoint-provider" aria-label="Model provider"></select>
+        </label>
+        <label>Base URL
+          <input id="org-endpoint-url" type="url" maxlength="200" placeholder="Base URL" autocomplete="off">
+        </label>
+        <label>API key
+          <input id="org-endpoint-key" type="password" placeholder="API key" autocomplete="off">
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancel-org-endpoint">Cancel</button>
+          <button type="button" id="add-org-endpoint">Check</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="org-model-dialog" role="dialog" aria-modal="true" aria-labelledby="org-model-title" hidden>
+    <div class="modal">
+      <h2 id="org-model-title">Add a model</h2>
+      <form class="org-form" id="org-model-form">
+        <label>Endpoint
+          <select id="org-model-endpoint" aria-label="Endpoint"></select>
+        </label>
+        <label>Model
+          <select id="org-model-model" aria-label="Model name"></select>
+        </label>
+        <label>Shown name
+          <input id="org-model-name" type="text" maxlength="80" placeholder="Shown name" autocomplete="off">
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancel-org-model">Cancel</button>
+          <button type="button" id="add-org-model">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="org-agent-dialog" role="dialog" aria-modal="true" aria-labelledby="org-agent-title" hidden>
+    <div class="modal">
+      <h2 id="org-agent-title">Add an agent</h2>
+      <form class="org-form" id="org-agent-form">
+        <label>Name
+          <input id="org-agent-name" type="text" maxlength="80" placeholder="Name" autocomplete="off">
+        </label>
+        <label>Agent
+          <select id="org-agent-kind" aria-label="Agent"></select>
+        </label>
+        <label>Model
+          <select id="org-agent-model" aria-label="Model this agent spends"></select>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="cancel-org-agent">Cancel</button>
+          <button type="button" id="add-org-agent">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="personal-rule-dialog" role="dialog" aria-modal="true" aria-labelledby="personal-rule-title" hidden>
+    <div class="modal">
+      <h2 id="personal-rule-title">New rule</h2>
+      <form class="org-form" id="personal-rule-form">
+        <label for="personal-rule-name">Name
+          <input id="personal-rule-name" type="text" maxlength="80" spellcheck="false">
+        </label>
+        <label class="personal-rule-body" for="personal-rule-body">Rule
+          <textarea id="personal-rule-body" maxlength="20000" spellcheck="true"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="submit" id="personal-rule-save">Save</button>
+        </div>
+      </form>
+      <article id="personal-rule-view" class="skill-markdown" hidden></article>
+      <p class="error" id="personal-rule-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="personal-rule-close">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="team-member-picker" role="dialog" aria-modal="true" aria-labelledby="team-member-picker-title" hidden>
+    <div class="modal">
+      <h2 id="team-member-picker-title">Add people</h2>
+      <p class="hint" id="team-member-picker-hint">Choose one or more people. Search matches a name or an email.</p>
+      <label for="team-member-search">Find a person</label>
+      <input id="team-member-search" type="search" maxlength="80" placeholder="Name or email" autocomplete="off" spellcheck="false">
+      <div id="team-member-choices" class="team-member-choices"></div>
+      <label for="team-member-rank">Add as</label>
+      <select id="team-member-rank">
+        <option value="member">Member</option>
+        <option value="admin">Admin</option>
+      </select>
+      <div class="modal-actions">
+        <button type="button" id="team-member-add">Add</button>
+        <button type="button" class="secondary" id="team-member-close">Close</button>
+      </div>
+      <p class="error" id="team-member-error"></p>
+    </div>
+  </div>
   <div class="modal-backdrop" id="workspace-picker" role="dialog" aria-modal="true" aria-labelledby="workspace-picker-title" hidden>
     <div class="modal">
       <h2 id="workspace-picker-title">Choose a workspace</h2>
@@ -3167,7 +3372,7 @@
   <div class="modal-backdrop" id="rerun-goal-picker" role="dialog" aria-modal="true" aria-labelledby="rerun-goal-picker-title" hidden>
     <div class="modal">
       <h2 id="rerun-goal-picker-title">Update this run</h2>
-      <p class="hint">Edit the goal to add context. The new run continues on the same branch and updates its pull request when one exists.</p>
+      <p class="hint" id="rerun-goal-hint">Edit the goal to add context. The new run continues on the same branch and updates its pull request when one exists.</p>
       <div class="modal-section">
         <label for="rerun-new-goal">Goal</label>
         <textarea id="rerun-new-goal" spellcheck="false"></textarea>
@@ -3196,7 +3401,7 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-relevant="additions"></div>
   </div>
   <script>
-    const state = { tasks: [], allTasks: [], inbox: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, runRailCollapsed: false, openDiffs: new Set(), selectedChange: "", closedChangeDirs: new Set(), changeJump: false, expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, openSteps: new Set(), closedSteps: new Set(), stepItem: "", stepFocus: "", defaultGuidelines: {{ default_guidelines | tojson }} };
+    const state = { tasks: [], allTasks: [], inbox: [], history: [], historyToken: "", selected: null, selectedHistoryKey: "", selectedRunKey: "", statusFilter: "", search: "", sidebarCollapsed: false, runRailCollapsed: false, openDiffs: new Set(), selectedChange: "", closedChangeDirs: new Set(), changeJump: false, expandedRuns: new Set(), taskPane: "progress", pinnedStage: "", taskStatus: {}, notifications: [], prStates: {}, openSteps: new Set(), closedSteps: new Set(), stepItem: "", stepFocus: "", inboxFold: {}, skillRepoOpen: {}, defaultGuidelines: {{ default_guidelines | tojson }} };
     const listEl = document.getElementById("run-list");
     const runDetailEl = document.getElementById("run-detail");
     function activeDetailEl() {
@@ -3217,7 +3422,8 @@
     const workspaceEl = document.getElementById("workspace");
     const workspaceSummaryEl = document.getElementById("workspace-summary");
     const workspaceKindEl = document.getElementById("workspace-kind");
-    const workspaceSummaryPathEl = document.getElementById("workspace-summary-path");
+    const workspaceSummaryRepoEl = document.getElementById("workspace-summary-repo");
+    const workspaceSummaryBranchEl = document.getElementById("workspace-summary-branch");
     const settingsKindEl = document.getElementById("settings-kind");
     const settingsKindLabelEl = document.getElementById("settings-kind-label");
     const settingsRemoteEl = document.getElementById("settings-remote");
@@ -3248,9 +3454,6 @@
     const notifyPanelEl = document.getElementById("notify-history");
     const notifyListEl = document.getElementById("notify-list");
     const notifyBadgeEl = document.getElementById("notify-badge");
-    const rolesPanelEl = document.getElementById("roles-panel");
-    const openRolesBtn = document.getElementById("open-roles");
-    const closeRolesBtn = document.getElementById("close-roles");
     const workspaceRolesEl = document.getElementById("workspace-roles");
     const rolesStatusEl = document.getElementById("roles-status");
     const enabledSkillsHint = document.getElementById("enabled-skills-hint");
@@ -3491,12 +3694,12 @@
       settingsDockEl.classList.remove("open");
       if (settingsPanelEl) settingsPanelEl.hidden = true;
       setNotifyPanel(false);
-      closeSidebarOverlays();
     }
 
     function loadAccountPages() {
       loadAccount()
         .then(() => Promise.all([
+          loadDirectory().catch(showAccountError),
           loadGitHubApp().catch(showGitHubError),
           loadOrgRules().catch(showOrgRulesError),
           loadOrgSettings().catch(showOrgSettingsError),
@@ -3532,7 +3735,17 @@
         orgEl.disabled = !manage;
       }
       const current = (account.users || []).find((user) => user.id === account.current_user_id);
-      if (nameEl) nameEl.value = current ? current.name : "";
+      if (nameEl && document.activeElement !== nameEl) nameEl.value = current ? current.name : "";
+      const emailEl = document.getElementById("profile-email");
+      if (emailEl && document.activeElement !== emailEl) emailEl.value = current ? current.email || "" : "";
+      const crossingEl = document.getElementById("open-crossing");
+      if (crossingEl) crossingEl.hidden = !(current && current.crossing);
+      const githubEl = document.getElementById("profile-github");
+      if (githubEl) {
+        githubEl.textContent = current && current.github_login ? current.github_login : "Not connected.";
+      }
+      const connectEl = document.getElementById("github-connect");
+      if (connectEl) connectEl.textContent = current && current.github_login ? "Disconnect" : "Connect GitHub";
       if (addRow) addRow.hidden = !manage;
       const githubEdit = document.getElementById("github-app-edit");
       if (githubEdit) githubEdit.hidden = !manage;
@@ -3552,26 +3765,38 @@
         const role = document.createElement("span");
         role.className = "role";
         role.textContent = roleLabel(user.role);
-        row.append(name, role);
-        if (manage || user.id === account.current_user_id) {
-          const login = document.createElement("input");
-          login.className = "github-login";
-          login.type = "text";
-          login.maxLength = 39;
-          login.spellcheck = false;
-          login.autocomplete = "off";
-          login.placeholder = "GitHub login";
-          login.setAttribute("aria-label", "GitHub login for " + user.name);
-          login.value = user.github_login || "";
-          const connect = document.createElement("button");
-          connect.type = "button";
-          connect.className = "secondary";
-          connect.textContent = "Connect";
-          connect.addEventListener("click", () => {
-            saveGitHubLogin(user.id, login.value).catch(showGitHubError);
+        const email = document.createElement("span");
+        email.className = "role";
+        email.textContent = user.email || "No email";
+        row.append(name, email);
+        if (manage && user.role !== "owner") {
+          const rank = document.createElement("select");
+          rank.setAttribute("aria-label", "Organization rank for " + user.name);
+          for (const choice of ["member", "admin"]) {
+            const option = document.createElement("option");
+            option.value = choice;
+            option.textContent = roleLabel(choice);
+            rank.append(option);
+          }
+          rank.value = user.role === "admin" ? "admin" : "member";
+          rank.addEventListener("change", () => {
+            updateAccountUser(user.id, { role: rank.value }).catch(showAccountError);
           });
-          row.append(login, connect);
+          row.append(rank);
+        } else {
+          row.append(role);
         }
+        if (user.github_login) {
+          const login = document.createElement("span");
+          login.className = "role";
+          login.textContent = user.github_login;
+          row.append(login);
+        }
+        const teams = document.createElement("span");
+        teams.className = "role";
+        const names = (user.teams || []).map((team) => team.name + " (" + roleLabel(team.rank) + ")");
+        teams.textContent = names.length ? names.join(", ") : "No team";
+        row.append(teams);
         if (manage && user.id !== account.current_user_id) {
           const remove = document.createElement("button");
           remove.type = "button";
@@ -3599,6 +3824,11 @@
       const installEl = document.getElementById("github-app-install");
       const installRow = document.getElementById("github-app-install-row");
       if (idEl && document.activeElement !== idEl) idEl.value = app.app_id || "";
+      const githubTab = document.getElementById("personal-tab-github");
+      if (githubTab) {
+        githubTab.hidden = !app.configured;
+        if (githubTab.hidden && personalTab === "github") showPersonalTab("profile");
+      }
       const showInstall = Boolean(app.install_url) && !app.account_login;
       if (installRow) installRow.hidden = !showInstall;
       if (installEl && showInstall) installEl.href = app.install_url;
@@ -3606,8 +3836,16 @@
       const reposEl = document.getElementById("github-repos");
       const manage = githubAccount ? canManageOrg(githubAccount) : false;
       if (reposEl) reposEl.hidden = !app.account_login || !manage;
+      const callbackEl = document.getElementById("github-callback");
+      if (callbackEl) callbackEl.textContent = window.location.origin + "/api/github/callback";
+      const secretEl = document.getElementById("github-app-secret");
+      if (secretEl && document.activeElement !== secretEl) {
+        secretEl.placeholder = app.has_client_secret
+          ? "Client secret saved. Paste a new one to replace it."
+          : "Paste the client secret. It is stored sealed and is not shown again.";
+      }
       if (app.account_login) {
-        statusEl.textContent = "Connected to " + app.account_login + ". Add a repository below, or sync access for people with a GitHub login.";
+        statusEl.textContent = "Connected to " + app.account_login + ". People connect GitHub from Personal, then sync.";
       } else if (app.configured) {
         statusEl.textContent = "Saved. Install the app on the GitHub account or organization that owns the repositories, then refresh.";
       } else {
@@ -3624,37 +3862,6 @@
       renderGitHubApp(body);
       renderGitHubInstallations(body.installations, body.installation_id);
       return body;
-    }
-
-    async function saveGitHubApp() {
-      const idEl = document.getElementById("github-app-id");
-      const keyEl = document.getElementById("github-app-key");
-      const res = await fetch("/api/github/app", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          app_id: idEl ? idEl.value : "",
-          private_key: keyEl ? keyEl.value : "",
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "failed to save the GitHub App");
-      if (keyEl) keyEl.value = "";
-      const slot = document.getElementById("github-app-error");
-      if (slot) slot.replaceChildren();
-      renderGitHubApp(body);
-      if (body.installations) {
-        renderGitHubInstallations(body.installations, body.installation_id);
-      }
-      if (body.warning) {
-        showGitHubError(new Error(body.warning));
-        return;
-      }
-      if (body.account_login) {
-        notify("success", "Connected to " + body.account_login + ".", { title: "GitHub App" });
-      } else {
-        notify("success", "Saved. Install the app on the GitHub account or organization, then refresh.", { title: "GitHub App" });
-      }
     }
 
     function renderGitHubInstallations(installations, selected) {
@@ -3726,6 +3933,9 @@
         body: JSON.stringify({
           org_name: orgEl ? orgEl.value : "",
           user_name: nameEl ? nameEl.value : "",
+          user_email: document.getElementById("profile-email")
+            ? document.getElementById("profile-email").value
+            : "",
         }),
       });
       const body = await res.json();
@@ -3736,16 +3946,422 @@
 
     async function addAccountUser() {
       const input = document.getElementById("new-user-name");
+      const email = document.getElementById("new-user-email");
+      if (!email || !email.value.trim()) throw new Error("email is required");
       const res = await fetch("/api/account/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: input ? input.value : "" }),
+        body: JSON.stringify({
+          name: input ? input.value : "",
+          email: email.value,
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "failed to add a person");
       if (input) input.value = "";
+      email.value = "";
       if (accountErrorEl) accountErrorEl.replaceChildren();
       renderAccount(body);
+      await loadDirectory();
+    }
+
+    async function updateAccountUser(userId, fields) {
+      const res = await fetch("/api/account/users/" + encodeURIComponent(userId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to update that person");
+      if (accountErrorEl) accountErrorEl.replaceChildren();
+      renderAccount(body);
+      loadDirectory().catch(showAccountError);
+    }
+
+    async function loadDirectory() {
+      const res = await fetch("/api/directory");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to load teams");
+      renderTeams(body);
+      return body;
+    }
+
+    let teamDirectory = { members: [], teams: [] };
+    let editingTeamId = "";
+    let teamPickerId = "";
+    const teamEditSelected = {};
+    const teamPickerSelected = new Set();
+
+    function showTeamError(err) {
+      const slot = document.getElementById("org-teams-error");
+      const message = err && (err.message || String(err));
+      if (slot) showNotice(slot, "error", message);
+    }
+
+    function clearTeamError() {
+      const slot = document.getElementById("org-teams-error");
+      if (slot) slot.replaceChildren();
+    }
+
+    function teamEditDistance(left, right) {
+      const rows = [];
+      for (let i = 0; i <= left.length; i++) {
+        rows[i] = [i];
+      }
+      for (let j = 0; j <= right.length; j++) rows[0][j] = j;
+      for (let i = 1; i <= left.length; i++) {
+        for (let j = 1; j <= right.length; j++) {
+          const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+          rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost);
+        }
+      }
+      return rows[left.length][right.length];
+    }
+
+    function teamSearchScore(query, person) {
+      const needle = String(query || "").trim().toLowerCase();
+      if (!needle) return 1;
+      const words = [person.name, person.email, person.github_login]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .split(/[^a-z0-9@._+-]+/)
+        .filter(Boolean);
+      const at = words.join(" ").indexOf(needle);
+      if (at >= 0) return 1000 - at;
+      let score = 0;
+      for (const token of needle.split(/\s+/)) {
+        let best = 0;
+        for (const word of words) {
+          if (word.includes(token)) best = Math.max(best, 50);
+          else if (
+            token.length >= 3 &&
+            Math.abs(word.length - token.length) <= 2 &&
+            teamEditDistance(token, word) <= 1
+          ) {
+            best = Math.max(best, 20);
+          }
+        }
+        if (!best) return 0;
+        score += best;
+      }
+      return score;
+    }
+
+    function renderTeams(body) {
+      teamDirectory = body || { members: [], teams: [] };
+      const list = document.getElementById("org-teams");
+      if (!list) return;
+      const manage = githubAccount ? canManageOrg(githubAccount) : false;
+      const form = document.getElementById("org-team-form");
+      if (form) form.hidden = !manage;
+      list.replaceChildren();
+      const teams = teamDirectory.teams || [];
+      if (editingTeamId && !teams.some((team) => team.id === editingTeamId)) editingTeamId = "";
+      if (!teams.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No teams yet.";
+        list.append(empty);
+        return;
+      }
+      for (const team of teams) {
+        const card = document.createElement("section");
+        card.className = "org-team";
+        const head = document.createElement("div");
+        head.className = "org-team-head";
+        const title = document.createElement("h3");
+        title.textContent = team.name;
+        const actions = document.createElement("div");
+        actions.className = "org-team-actions";
+        const members = team.members || [];
+        if (editingTeamId === team.id && !members.length) {
+          editingTeamId = "";
+          delete teamEditSelected[team.id];
+        }
+        const editing = manage && editingTeamId === team.id;
+        if (manage && members.length) {
+          const edit = document.createElement("button");
+          edit.type = "button";
+          edit.className = "secondary";
+          edit.textContent = editing ? "Done" : "Edit";
+          edit.setAttribute("aria-pressed", editing ? "true" : "false");
+          edit.addEventListener("click", () => {
+            if (editingTeamId === team.id) {
+              editingTeamId = "";
+              delete teamEditSelected[team.id];
+            } else {
+              editingTeamId = team.id;
+              teamEditSelected[team.id] = teamEditSelected[team.id] || new Set();
+            }
+            clearTeamError();
+            renderTeams(teamDirectory);
+          });
+          actions.append(edit);
+        }
+        if (manage) {
+          const add = document.createElement("button");
+          add.type = "button";
+          add.className = "secondary icon-button";
+          add.setAttribute("aria-label", "Add people to " + team.name);
+          add.title = "Add people";
+          const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          icon.setAttribute("viewBox", "0 0 24 24");
+          icon.setAttribute("aria-hidden", "true");
+          const mark = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          mark.setAttribute("d", "M12 5.5v13M5.5 12h13");
+          mark.setAttribute("fill", "none");
+          mark.setAttribute("stroke", "currentColor");
+          mark.setAttribute("stroke-width", "1.8");
+          mark.setAttribute("stroke-linecap", "round");
+          icon.append(mark);
+          add.append(icon);
+          add.addEventListener("click", () => openTeamPicker(team.id));
+          actions.append(add);
+        }
+        if (manage && !members.length) {
+          const drop = document.createElement("button");
+          drop.type = "button";
+          drop.className = "secondary";
+          drop.textContent = "Remove team";
+          drop.addEventListener("click", () => {
+            removeOrgTeam(team.id).catch(showTeamError);
+          });
+          actions.append(drop);
+        }
+        head.append(title, actions);
+        card.append(head);
+        if (!members.length) {
+          const empty = document.createElement("p");
+          empty.className = "hint";
+          empty.textContent = "No one is on this team yet.";
+          card.append(empty);
+        }
+        const selected = teamEditSelected[team.id] || new Set();
+        for (const member of members) {
+          const row = document.createElement("div");
+          row.className = "account-user";
+          if (editing) {
+            const box = document.createElement("input");
+            box.type = "checkbox";
+            box.checked = selected.has(member.id);
+            box.setAttribute("aria-label", "Select " + member.name);
+            box.addEventListener("change", () => {
+              const chosen = teamEditSelected[team.id] || new Set();
+              if (box.checked) chosen.add(member.id);
+              else chosen.delete(member.id);
+              teamEditSelected[team.id] = chosen;
+            });
+            row.append(box);
+          }
+          const label = document.createElement("span");
+          label.className = "name";
+          label.textContent = member.name;
+          const rank = document.createElement("span");
+          rank.className = "role";
+          rank.textContent = roleLabel(member.rank);
+          row.append(label, rank);
+          card.append(row);
+        }
+        if (editing) {
+          const bar = document.createElement("div");
+          bar.className = "org-team-edit";
+          const asMember = document.createElement("button");
+          asMember.type = "button";
+          asMember.className = "secondary";
+          asMember.textContent = "Set as member";
+          asMember.addEventListener("click", () => {
+            applyTeamRank(team.id, "member").catch(showTeamError);
+          });
+          const asAdmin = document.createElement("button");
+          asAdmin.type = "button";
+          asAdmin.className = "secondary";
+          asAdmin.textContent = "Set as admin";
+          asAdmin.addEventListener("click", () => {
+            applyTeamRank(team.id, "admin").catch(showTeamError);
+          });
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "secondary";
+          remove.textContent = "Remove";
+          remove.addEventListener("click", () => {
+            removeTeamMembers(team.id).catch(showTeamError);
+          });
+          bar.append(asMember, asAdmin, remove);
+          card.append(bar);
+        }
+        list.append(card);
+      }
+      if (teamPickerId) renderTeamChoices();
+    }
+
+    async function addOrgTeam() {
+      const input = document.getElementById("org-team-name");
+      const name = input ? input.value.trim() : "";
+      if (!name) throw new Error("team name is required");
+      if (githubAccount && githubAccount.org && githubAccount.org.kind !== "organization") {
+        const promoted = await fetch("/api/directory/promote", { method: "POST" });
+        const promotion = await promoted.json();
+        if (!promoted.ok) throw new Error(promotion.error || "failed to open the organization");
+        githubAccount.org.kind = "organization";
+      }
+      const res = await fetch("/api/directory/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to add that team");
+      if (input) input.value = "";
+      await loadDirectory();
+      await loadAccount();
+    }
+
+    async function removeOrgTeam(teamId) {
+      const res = await fetch("/api/directory/teams/" + encodeURIComponent(teamId), {
+        method: "DELETE",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to remove that team");
+      if (teamPickerId === teamId) closeTeamPicker();
+      if (editingTeamId === teamId) editingTeamId = "";
+      clearTeamError();
+      await loadDirectory();
+      await loadAccount();
+    }
+
+    function chosenTeamIds(teamId) {
+      return Array.from(teamEditSelected[teamId] || []);
+    }
+
+    async function postTeamMember(teamId, identityId, rank) {
+      const res = await fetch("/api/directory/teams/" + encodeURIComponent(teamId) + "/members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identity_id: identityId, rank: rank }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to update that person");
+    }
+
+    async function applyTeamRank(teamId, rank) {
+      const ids = chosenTeamIds(teamId);
+      if (!ids.length) throw new Error("Select people first.");
+      clearTeamError();
+      for (const id of ids) await postTeamMember(teamId, id, rank);
+      await loadDirectory();
+      await loadAccount();
+    }
+
+    async function removeTeamMembers(teamId) {
+      const ids = chosenTeamIds(teamId);
+      if (!ids.length) throw new Error("Select people first.");
+      clearTeamError();
+      for (const id of ids) {
+        const res = await fetch(
+          "/api/directory/teams/" + encodeURIComponent(teamId) + "/members/" + encodeURIComponent(id),
+          { method: "DELETE" }
+        );
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "failed to remove that person");
+        teamEditSelected[teamId].delete(id);
+      }
+      await loadDirectory();
+      await loadAccount();
+    }
+
+    function closeTeamPicker() {
+      const picker = document.getElementById("team-member-picker");
+      if (!picker) return;
+      picker.classList.remove("open");
+      picker.hidden = true;
+      teamPickerId = "";
+      teamPickerSelected.clear();
+    }
+
+    function openTeamPicker(teamId) {
+      const picker = document.getElementById("team-member-picker");
+      const search = document.getElementById("team-member-search");
+      const error = document.getElementById("team-member-error");
+      const team = (teamDirectory.teams || []).find((item) => item.id === teamId);
+      if (!picker || !team) return;
+      teamPickerId = teamId;
+      teamPickerSelected.clear();
+      if (search) search.value = "";
+      if (error) error.textContent = "";
+      const title = document.getElementById("team-member-picker-title");
+      if (title) title.textContent = "Add people to " + team.name;
+      picker.hidden = false;
+      picker.classList.add("open");
+      renderTeamChoices();
+      if (search) search.focus();
+    }
+
+    function renderTeamChoices() {
+      const list = document.getElementById("team-member-choices");
+      const team = (teamDirectory.teams || []).find((item) => item.id === teamPickerId);
+      if (!list || !team) return;
+      const query = document.getElementById("team-member-search");
+      const needle = query ? query.value : "";
+      const onTeam = new Set((team.members || []).map((member) => member.id));
+      const people = (teamDirectory.members || [])
+        .filter((person) => !onTeam.has(person.id))
+        .map((person) => ({ person: person, score: teamSearchScore(needle, person) }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score || a.person.name.localeCompare(b.person.name));
+      list.replaceChildren();
+      if (!(teamDirectory.members || []).some((person) => !onTeam.has(person.id))) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "Everyone in the organization is already on this team.";
+        list.append(empty);
+        return;
+      }
+      if (!people.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No one matches that search.";
+        list.append(empty);
+        return;
+      }
+      for (const item of people) {
+        const person = item.person;
+        const row = document.createElement("label");
+        row.className = "team-choice";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = teamPickerSelected.has(person.id);
+        box.addEventListener("change", () => {
+          if (box.checked) teamPickerSelected.add(person.id);
+          else teamPickerSelected.delete(person.id);
+        });
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = person.name;
+        const detail = document.createElement("span");
+        detail.className = "role";
+        detail.textContent = person.email || "No email";
+        row.append(box, name, detail);
+        list.append(row);
+      }
+    }
+
+    async function addChosenTeamMembers() {
+      const error = document.getElementById("team-member-error");
+      const rankEl = document.getElementById("team-member-rank");
+      const ids = Array.from(teamPickerSelected);
+      if (!teamPickerId) return;
+      if (!ids.length) {
+        if (error) error.textContent = "Select at least one person.";
+        return;
+      }
+      if (error) error.textContent = "";
+      const rank = rankEl ? rankEl.value : "member";
+      for (const id of ids) await postTeamMember(teamPickerId, id, rank);
+      closeTeamPicker();
+      clearTeamError();
+      await loadDirectory();
+      await loadAccount();
     }
 
     async function removeAccountUser(userId) {
@@ -3756,6 +4372,7 @@
       if (!res.ok) throw new Error(body.error || "failed to remove that person");
       if (accountErrorEl) accountErrorEl.replaceChildren();
       renderAccount(body);
+      await loadDirectory();
     }
 
     function setSettingsOpen(open) {
@@ -3763,7 +4380,6 @@
       settingsPanelEl.hidden = !open;
       settingsToggleEl.setAttribute("aria-expanded", open ? "true" : "false");
       if (!open) return;
-      closeSidebarOverlays();
       setAccountMenuOpen(false);
     }
 
@@ -3788,6 +4404,50 @@
       if (el.getAttribute("aria-hidden") !== "true") el.setAttribute("aria-label", label);
     }
 
+    function repoLabel(remote, name) {
+      let text = String(remote || "").trim();
+      if (text.endsWith(".git")) text = text.slice(0, -4);
+      const ssh = text.match(/^git@[^:]+:(.+)$/);
+      if (ssh) return ssh[1];
+      try {
+        const url = new URL(text);
+        const parts = url.pathname.split("/").filter(Boolean);
+        if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
+        if (parts.length === 1) return parts[0];
+      } catch (_err) {
+        /* a remote that is not a URL stays as written */
+      }
+      return text || String(name || "");
+    }
+
+    function viewedJob() {
+      const selected = workspaceRuns().find((run) => run.key === state.selectedRunKey);
+      return selected ? selected.item : null;
+    }
+
+    function paintViewedBranch() {
+      const job = viewedJob();
+      const branch = String((job && (job.branch || job.resume_branch)) || "").trim();
+      if (workspaceSummaryBranchEl) {
+        workspaceSummaryBranchEl.textContent = branch;
+        workspaceSummaryBranchEl.hidden = !branch;
+      }
+      if (!workspaceSummaryEl) return;
+      const base = String(workspaceSummaryEl.dataset.remote || workspaceSummaryRepoEl.textContent || "");
+      workspaceSummaryEl.title = branch ? `${base} · ${branch}` : base;
+    }
+
+    function paintWorkspaceSummary(item) {
+      const workspace = item || {};
+      const remote = String(workspace.git_remote || "");
+      const label = repoLabel(remote, workspace.name)
+        || (workspaceSummaryRepoEl ? workspaceSummaryRepoEl.textContent : "")
+        || "Project";
+      if (workspaceSummaryRepoEl) workspaceSummaryRepoEl.textContent = label;
+      if (workspaceSummaryEl) workspaceSummaryEl.dataset.remote = remote || label;
+      paintViewedBranch();
+    }
+
     function updateWorkspaceDisplay(body) {
       const path = (body && body.current) || workspaceEl.value;
       if (path) workspaceEl.value = path;
@@ -3795,10 +4455,7 @@
       const kind = workspaceType(item);
       applyWorkspaceKind(workspaceKindEl, kind);
       applyWorkspaceKind(settingsKindEl, kind);
-      if (workspaceSummaryPathEl) workspaceSummaryPathEl.textContent = path;
-      if (workspaceSummaryEl) {
-        workspaceSummaryEl.title = `${WORKSPACE_KIND_LABELS[kind]} · ${path}`;
-      }
+      paintWorkspaceSummary(item);
       if (settingsKindLabelEl) settingsKindLabelEl.textContent = WORKSPACE_KIND_LABELS[kind];
       if (settingsRemoteEl) {
         settingsRemoteEl.textContent = item.git_remote || "";
@@ -3809,10 +4466,13 @@
     }
 
     function applyWorkspacePayload(body) {
+      state.workspaceCatalog = body.workspaces || [];
       if (body.default_guidelines) state.defaultGuidelines = body.default_guidelines;
       if (body.current) workspaceEl.value = body.current;
-      if (body.home && !cloneParentEl.value) {
-        cloneParentEl.value = `${body.home.replace(/\/$/, "")}/projects`;
+      if (!cloneParentEl.value) {
+        let root = body.checkout_root || "";
+        if (!root && body.home) root = body.home.replace(/\/$/, "") + "/projects";
+        if (root) cloneParentEl.value = root;
       }
       updateWorkspaceDisplay(body);
       renderProjectSelect(body.workspaces || [], body.current);
@@ -3836,6 +4496,7 @@
         const option = document.createElement("option");
         option.value = item.path;
         option.textContent = item.name || item.path;
+        if (item.missing) option.textContent += " (no checkout)";
         option.title = item.path;
         projectSelectEl.append(option);
       }
@@ -3996,6 +4657,7 @@
       resetRunView();
       await refresh();
       await loadBranches();
+      await loadGrantedModels();
       if (opts.close !== false && !opts.quiet) {
         notify("success", body.current, { title: "Workspace selected" });
       }
@@ -4078,37 +4740,6 @@
     document.getElementById("use-folder").addEventListener("click", () => {
       selectWorkspace(browsePath, { seed: true }).catch(showPickerError);
     });
-    function overlayOpen(panel) {
-      return Boolean(panel && !panel.hidden);
-    }
-    function setOverlayOpen(panel, btn, open) {
-      if (!panel || !btn) return;
-      panel.hidden = !open;
-      btn.setAttribute("aria-expanded", open ? "true" : "false");
-    }
-    function closeSidebarOverlays() {
-      setOverlayOpen(rolesPanelEl, openRolesBtn, false);
-    }
-    function toggleOverlay(panel, btn) {
-      const shouldOpen = panel && panel.hidden;
-      closeSidebarOverlays();
-      if (shouldOpen) {
-        setSettingsOpen(false);
-        setOverlayOpen(panel, btn, true);
-      }
-    }
-    if (openRolesBtn) {
-      openRolesBtn.addEventListener("click", () => {
-        toggleOverlay(rolesPanelEl, openRolesBtn);
-        if (rolesPanelEl && !rolesPanelEl.hidden) {
-          loadWorkspaceRoles().catch((err) => notify("error", err.message, { title: "Could not load roles" }));
-        }
-      });
-    }
-    if (closeRolesBtn) {
-      closeRolesBtn.addEventListener("click", () => setOverlayOpen(rolesPanelEl, openRolesBtn, false));
-    }
-
     document.getElementById("save-guidelines").addEventListener("click", async () => {
       try {
         const res = await fetch("/api/workspaces/guidelines", {
@@ -4308,43 +4939,166 @@
 
     function renderOrgRules(payload) {
       const list = document.getElementById("org-rules-list");
-      const personal = document.getElementById("personal-rules-list");
       const scopeSelect = document.getElementById("org-rule-scope");
       const draft = document.getElementById("org-rule-draft");
       if (list) list.replaceChildren();
-      if (personal) personal.replaceChildren();
       if (scopeSelect) scopeSelect.replaceChildren();
       let writable = 0;
+      let personalScope = null;
       for (const scope of payload.scopes || []) {
+        if (scope.scope_type === "identity") {
+          personalScope = scope;
+          continue;
+        }
         if (scope.scope_type === "project") continue;
-        const target = scope.scope_type === "identity" ? personal : list;
-        if (!target) continue;
+        if (!list) continue;
         const section = document.createElement("section");
         section.className = "rule-scope";
-        if (scope.scope_type !== "identity") {
-          const heading = document.createElement("h3");
-          heading.className = "rule-heading";
-          heading.textContent = scope.name;
-          section.append(heading);
-        }
+        const heading = document.createElement("h3");
+        heading.className = "rule-heading";
+        heading.textContent = scope.name;
+        section.append(heading);
         for (const rule of scope.rules || []) {
           section.append(editorRuleCard(rule, scope, payload.projects || []));
         }
         if (scope.can_write) {
           section.append(newRuleForm(scope));
-          if (scope.scope_type !== "identity") {
-            writable += 1;
-            if (scopeSelect) {
-              const option = document.createElement("option");
-              option.value = scope.scope_type + "\n" + scope.scope_id;
-              option.textContent = scope.name;
-              scopeSelect.append(option);
-            }
+          writable += 1;
+          if (scopeSelect) {
+            const option = document.createElement("option");
+            option.value = scope.scope_type + "\n" + scope.scope_id;
+            option.textContent = scope.name;
+            scopeSelect.append(option);
           }
         }
-        target.append(section);
+        list.append(section);
       }
+      renderPersonalRules(personalScope);
       if (draft) draft.hidden = writable === 0;
+    }
+
+    let personalRuleScope = null;
+    let personalRuleId = "";
+    let personalTab = "profile";
+
+    function showPersonalTab(name) {
+      const github = document.getElementById("personal-tab-github");
+      personalTab = name || "profile";
+      if (personalTab === "github" && github && github.hidden) personalTab = "profile";
+      for (const button of document.querySelectorAll(".personal-tab")) {
+        button.setAttribute("aria-pressed", button.dataset.personalTab === personalTab ? "true" : "false");
+      }
+      for (const panel of document.querySelectorAll(".personal-panel")) {
+        panel.hidden = panel.dataset.personalPanel !== personalTab;
+      }
+    }
+
+    function renderPersonalRules(scope) {
+      personalRuleScope = scope;
+      const list = document.getElementById("personal-rules-list");
+      const add = document.getElementById("add-personal-rule");
+      if (add) add.hidden = !(scope && scope.can_write);
+      if (!list) return;
+      list.replaceChildren();
+      const rules = scope && scope.rules ? scope.rules : [];
+      if (!rules.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No rules yet.";
+        list.append(empty);
+        return;
+      }
+      for (const rule of rules) {
+        const row = document.createElement("div");
+        row.className = "personal-rule-row";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = rule.name;
+        const view = document.createElement("button");
+        view.type = "button";
+        view.className = "secondary";
+        view.textContent = "View";
+        view.addEventListener("click", () => openPersonalRule("view", rule));
+        row.append(name, view);
+        if (rule.can_write) {
+          const edit = document.createElement("button");
+          edit.type = "button";
+          edit.className = "secondary";
+          edit.textContent = "Edit";
+          edit.addEventListener("click", () => openPersonalRule("edit", rule));
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "secondary";
+          remove.textContent = "Delete";
+          remove.addEventListener("click", () => {
+            if (!window.confirm("Delete this rule?")) return;
+            deleteRule(rule.id).catch(showPersonalRuleError);
+          });
+          row.append(edit, remove);
+        }
+        list.append(row);
+      }
+    }
+
+    function openPersonalRule(mode, rule) {
+      const dialog = document.getElementById("personal-rule-dialog");
+      const form = document.getElementById("personal-rule-form");
+      const view = document.getElementById("personal-rule-view");
+      const title = document.getElementById("personal-rule-title");
+      const error = document.getElementById("personal-rule-error");
+      personalRuleId = rule ? rule.id : "";
+      if (error) error.textContent = "";
+      const editing = mode !== "view";
+      if (form) form.hidden = !editing;
+      if (view) {
+        view.hidden = editing;
+        view.replaceChildren();
+        if (!editing) {
+          if (rule && rule.html) view.innerHTML = rule.html;
+          else {
+            const empty = document.createElement("p");
+            empty.className = "hint";
+            empty.textContent = "This rule has no text.";
+            view.append(empty);
+          }
+        }
+      }
+      if (title) {
+        title.textContent = mode === "view" ? (rule ? rule.name : "Rule") : (rule ? "Edit rule" : "New rule");
+      }
+      const name = document.getElementById("personal-rule-name");
+      const body = document.getElementById("personal-rule-body");
+      if (name) name.value = rule ? rule.name : "";
+      if (body) body.value = rule ? (rule.body || "") : "";
+      if (dialog) {
+        dialog.hidden = false;
+        dialog.classList.add("open");
+      }
+      if (editing && name) name.focus();
+    }
+
+    function closePersonalRule() {
+      const dialog = document.getElementById("personal-rule-dialog");
+      if (!dialog) return;
+      dialog.classList.remove("open");
+      dialog.hidden = true;
+      personalRuleId = "";
+    }
+
+    function showPersonalRuleError(err) {
+      const dialogError = document.getElementById("personal-rule-error");
+      const message = err && (err.message || String(err));
+      if (dialogError && !document.getElementById("personal-rule-dialog").hidden) {
+        dialogError.textContent = message;
+        return;
+      }
+      const slot = document.getElementById("personal-tab-error");
+      if (!slot) return;
+      slot.replaceChildren();
+      const notice = document.createElement("div");
+      notice.className = "notice error";
+      notice.textContent = message || "Could not save the rule";
+      slot.append(notice);
     }
 
     async function loadOrgRules() {
@@ -4357,7 +5111,7 @@
     }
 
     function showOrgSettingsError(err) {
-      const slot = document.getElementById("org-skills-error");
+      const slot = document.getElementById("org-tab-error");
       if (!slot) return;
       slot.replaceChildren();
       const notice = document.createElement("div");
@@ -4397,18 +5151,42 @@
       if (previous) select.value = previous;
     }
 
-    async function saveGitHubLogin(userId, githubLogin) {
-      const res = await fetch("/api/github/login", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId, github_login: githubLogin }),
-      });
+    async function connectGitHub() {
+      const res = await fetch("/api/github/connect");
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "failed to connect that GitHub login");
+      if (!res.ok) throw new Error(body.error || "GitHub sign-in is not ready");
+      window.location.assign(body.url);
+    }
+
+    async function disconnectGitHub() {
+      const res = await fetch("/api/github/login", { method: "DELETE" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "failed to disconnect GitHub");
       const slot = document.getElementById("github-app-error");
       if (slot) slot.replaceChildren();
       renderAccount(body);
-      notify("success", githubLogin.trim() ? "Connected " + githubLogin.trim() + "." : "Cleared the GitHub login.", { title: "GitHub" });
+      notify("success", "Disconnected GitHub.", { title: "GitHub" });
+    }
+
+    function consumeGitHubReturn() {
+      const params = new URLSearchParams(window.location.search);
+      const result = params.get("github");
+      if (!result) return "";
+      params.delete("github");
+      const next = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (next ? "?" + next : ""));
+      return result;
+    }
+
+    function githubReturnMessage(result) {
+      const messages = {
+        expired: "That GitHub connection expired. Try again.",
+        refused: "GitHub did not complete that sign-in.",
+        taken: "That GitHub login is already connected.",
+        unknown: "That GitHub account is not a person here. Sign in with email, then connect GitHub from Personal.",
+        email: "GitHub did not share an email for that account. Grant the app Email addresses, or sign in and connect GitHub from Personal.",
+      };
+      return messages[result] || "";
     }
 
     async function loadGitHubRepos() {
@@ -4469,78 +5247,11 @@
     function renderOrgSettings(body) {
       githubTeams = body.teams || [];
       fillGitHubSubjects();
-      const skillsEl = document.getElementById("org-skills");
       const rolesEl = document.getElementById("org-roles");
       const hint = document.getElementById("org-skills-hint");
-      if (hint) {
-        hint.textContent = body.can_manage
-          ? "Assign a bundled skill to the organization, a team, or a project."
-          : "An owner or admin assigns skills and enforces roles.";
-      }
-      if (skillsEl) {
-        skillsEl.replaceChildren();
-        const scopes = [{ scope_type: "tenant", scope_id: body.org_id || "", label: "Every project" }];
-        for (const team of body.teams || []) {
-          scopes.push({ scope_type: "team", scope_id: team.id, label: "Team " + team.name });
-        }
-        for (const project of body.projects || []) {
-          scopes.push({ scope_type: "project", scope_id: project.id, label: "Project " + project.name });
-        }
-        for (const skill of body.skills || []) {
-          const block = document.createElement("section");
-          block.className = "rule-scope";
-          const title = document.createElement("h3");
-          title.className = "rule-heading";
-          title.textContent = skill.name;
-          block.append(title);
-          const grants = (body.grants || []).filter((grant) => grant.skill_name === skill.name);
-          if (!grants.length) {
-            const empty = document.createElement("p");
-            empty.className = "hint";
-            empty.textContent = "Not assigned.";
-            block.append(empty);
-          }
-          for (const grant of grants) {
-            const row = document.createElement("div");
-            row.className = "account-user";
-            const label = document.createElement("span");
-            label.textContent = grant.label || grant.scope_type;
-            row.append(label);
-            if (body.can_manage) {
-              const remove = document.createElement("button");
-              remove.type = "button";
-              remove.className = "secondary";
-              remove.textContent = "Remove";
-              remove.addEventListener("click", () => {
-                saveOrgSkill(skill.name, grant.scope_type, grant.scope_id, false).catch(showOrgSettingsError);
-              });
-              row.append(remove);
-            }
-            block.append(row);
-          }
-          if (body.can_manage) {
-            const form = document.createElement("div");
-            form.className = "account-add";
-            const select = document.createElement("select");
-            for (const scope of scopes) {
-              const option = document.createElement("option");
-              option.value = scope.scope_type + "\n" + scope.scope_id;
-              option.textContent = scope.label;
-              select.append(option);
-            }
-            const assign = document.createElement("button");
-            assign.type = "button";
-            assign.className = "secondary";
-            assign.textContent = "Assign";
-            assign.addEventListener("click", () => {
-              const parts = select.value.split("\n");
-              saveOrgSkill(skill.name, parts[0], parts[1] || "", true).catch(showOrgSettingsError);
-            });
-            form.append(select, assign);
-            block.append(form);
-          }
-          skillsEl.append(block);
-        }
+      orgSettingsId = body.org_id || "";
+      if (hint && !body.can_manage) {
+        hint.textContent = "An owner or admin adds skill repositories and turns models on.";
       }
       if (rolesEl) {
         rolesEl.replaceChildren();
@@ -4562,10 +5273,372 @@
         }
       }
       renderOrgSkillRepos(body);
+      renderOrgCatalog(body);
+      showOrgTab(orgTab);
+    }
+
+    let orgTab = "people";
+
+    function showOrgTab(name) {
+      orgTab = name || "people";
+      for (const button of document.querySelectorAll(".org-tab")) {
+        button.setAttribute("aria-pressed", button.dataset.orgTab === orgTab ? "true" : "false");
+      }
+      for (const panel of document.querySelectorAll(".org-panel")) {
+        panel.hidden = panel.dataset.orgPanel !== orgTab;
+      }
+    }
+
+    let orgSettingsId = "";
+    let orgCatalog = {};
+    let endpointRemoveId = "";
+    const TRASH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z" fill="currentColor"></path></svg>`;
+
+    function fillCatalogSelect(select, options, blank) {
+      if (!select) return;
+      const previous = select.value;
+      select.replaceChildren();
+      if (blank) {
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = blank;
+        select.append(empty);
+      }
+      for (const item of options) {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.textContent = item.label || item.name || item.id;
+        if (item.base_url) option.dataset.baseUrl = item.base_url;
+        select.append(option);
+      }
+      if ([...select.options].some((option) => option.value === previous)) {
+        select.value = previous;
+      }
+    }
+
+    function orgCell(text, className) {
+      const cell = document.createElement("td");
+      if (className) cell.className = className;
+      cell.textContent = text == null ? "" : String(text);
+      return cell;
+    }
+
+    function orgActionsCell(nodes) {
+      const cell = document.createElement("td");
+      cell.className = "org-table-actions";
+      const row = document.createElement("div");
+      row.className = "org-row-actions";
+      for (const node of nodes) if (node) row.append(node);
+      cell.append(row);
+      return cell;
+    }
+
+    function orgTrashButton(attr, id, label) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary icon-button";
+      button.setAttribute(attr, id);
+      button.setAttribute("aria-label", label);
+      button.innerHTML = TRASH_ICON;
+      return button;
+    }
+
+    function orgSwitch(attr, id, on, label, manage) {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "org-switch";
+      box.checked = Boolean(on);
+      box.disabled = !manage;
+      box.setAttribute(attr, id);
+      box.setAttribute("aria-label", label);
+      return box;
+    }
+
+    function orgTable(host, headers, rows, empty) {
+      host.replaceChildren();
+      const table = document.createElement("table");
+      table.className = "org-table";
+      const headRow = document.createElement("tr");
+      for (const label of headers) {
+        const cell = document.createElement("th");
+        cell.textContent = label;
+        if (!label) cell.className = "org-table-actions";
+        headRow.append(cell);
+      }
+      const thead = document.createElement("thead");
+      thead.append(headRow);
+      const tbody = document.createElement("tbody");
+      if (!rows.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = headers.length;
+        cell.className = "muted";
+        cell.textContent = empty;
+        row.append(cell);
+        tbody.append(row);
+      }
+      for (const cells of rows) {
+        const row = document.createElement("tr");
+        for (const cell of cells) row.append(cell);
+        tbody.append(row);
+      }
+      table.append(thead, tbody);
+      host.append(table);
+    }
+
+    function kindLabel(body, kind) {
+      const found = (body.agent_kinds || []).find((item) => item.id === kind);
+      return found ? found.label : kind;
+    }
+
+    function renderOrgCatalog(body) {
+      orgCatalog = body || {};
+      for (const id of ["open-org-endpoint", "open-org-model", "open-org-agent"]) {
+        const button = document.getElementById(id);
+        if (button) button.hidden = !body.can_manage;
+      }
+      fillCatalogSelect(document.getElementById("org-endpoint-provider"), body.providers || [], "");
+      applyEndpointDefault();
+      fillCatalogSelect(document.getElementById("org-agent-kind"), body.agent_kinds || [], "");
+      const modelChoices = (body.models || []).map((model) => ({ id: model.id, label: model.name }));
+      fillCatalogSelect(document.getElementById("org-agent-model"), modelChoices, "No model");
+      renderEndpoints(body);
+      fillEndpointModels(body);
+      renderModelTable(body);
+      renderAgentTable(body);
+    }
+
+    function renderEndpoints(body) {
+      const list = document.getElementById("org-endpoints");
+      if (!list) return;
+      const rows = (body.endpoints || []).map((endpoint) => {
+        const count = (endpoint.model_names || []).length;
+        const actions = [];
+        if (body.can_manage) {
+          const refresh = document.createElement("button");
+          refresh.type = "button";
+          refresh.className = "secondary";
+          refresh.setAttribute("data-endpoint-sync", endpoint.id);
+          refresh.textContent = "Resync";
+          actions.push(refresh);
+          actions.push(orgTrashButton("data-endpoint-remove", endpoint.id, `Remove ${endpoint.name}`));
+        }
+        return [
+          orgCell(endpoint.name),
+          orgCell(endpoint.base_url || "—", "url"),
+          orgCell(String(count)),
+          orgActionsCell(actions),
+        ];
+      });
+      orgTable(list, ["Name", "Endpoint", "Models", ""], rows, "No endpoints yet.");
+    }
+
+    function renderModelTable(body) {
+      const list = document.getElementById("org-models");
+      if (!list) return;
+      const rows = (body.models || []).map((model) => {
+        const actions = body.can_manage
+          ? [orgTrashButton("data-model-remove", model.id, `Remove ${model.model_name}`)]
+          : [];
+        const enabled = document.createElement("td");
+        enabled.append(orgSwitch(
+          "data-model-enable",
+          model.id,
+          model.enabled,
+          `Use ${model.model_name}`,
+          body.can_manage
+        ));
+        return [
+          orgCell(model.endpoint_name || model.provider),
+          orgCell(model.model_name),
+          enabled,
+          orgActionsCell(actions),
+        ];
+      });
+      orgTable(list, ["Endpoint", "Model", "On", ""], rows, "No models yet.");
+    }
+
+    function renderAgentTable(body) {
+      const list = document.getElementById("org-agents");
+      if (!list) return;
+      const rows = (body.agents || []).map((agent) => {
+        const model = (body.models || []).find((item) => item.id === agent.model_id);
+        const actions = body.can_manage
+          ? [orgTrashButton("data-agent-remove", agent.id, `Remove ${agent.name}`)]
+          : [];
+        const enabled = document.createElement("td");
+        enabled.append(orgSwitch(
+          "data-agent-enable",
+          agent.id,
+          agent.enabled,
+          `Use ${agent.name}`,
+          body.can_manage
+        ));
+        return [
+          orgCell(agent.name),
+          orgCell(kindLabel(body, agent.kind)),
+          orgCell(model ? model.model_name : "—", "muted"),
+          enabled,
+          orgActionsCell(actions),
+        ];
+      });
+      orgTable(list, ["Name", "Agent", "Model", "On", ""], rows, "No agents yet.");
+    }
+
+    function fillEndpointModels(body) {
+      const endpointSelect = document.getElementById("org-model-endpoint");
+      const nameSelect = document.getElementById("org-model-model");
+      const endpoints = body.endpoints || [];
+      fillCatalogSelect(
+        endpointSelect,
+        endpoints.map((endpoint) => ({ id: endpoint.id, label: endpoint.name })),
+        "Choose an endpoint"
+      );
+      if (endpointSelect && !endpointSelect.value && endpoints.length) {
+        endpointSelect.value = endpoints[0].id;
+      }
+      function refill() {
+        const chosen = endpoints.find((endpoint) => endpoint.id === (endpointSelect ? endpointSelect.value : ""));
+        const names = chosen && chosen.model_names ? chosen.model_names : [];
+        fillCatalogSelect(
+          nameSelect,
+          names.map((name) => ({ id: name, label: name })),
+          names.length ? "" : "No models yet"
+        );
+      }
+      if (endpointSelect) endpointSelect.onchange = refill;
+      refill();
+    }
+
+    function openOrgDialog(id) {
+      const dialog = document.getElementById(id);
+      if (!dialog) return;
+      dialog.hidden = false;
+      dialog.classList.add("open");
+    }
+
+    function closeOrgDialog(id) {
+      const dialog = document.getElementById(id);
+      if (!dialog) return;
+      dialog.classList.remove("open");
+      dialog.hidden = true;
+    }
+
+    function askRemoveEndpoint(endpointId) {
+      const endpoint = (orgCatalog.endpoints || []).find((item) => item.id === endpointId);
+      endpointRemoveId = endpointId;
+      const copy = document.getElementById("endpoint-remove-copy");
+      const name = endpoint ? endpoint.name : "this endpoint";
+      if (copy) {
+        copy.textContent = `Remove ${name}? This takes it off the organization. A model that still uses it has to be removed first.`;
+      }
+      openOrgDialog("endpoint-remove-dialog");
+    }
+
+    async function setOrgEnabled(kind, id, enabled) {
+      const root = kind === "model" ? "models" : "agents";
+      const res = await fetch(`/api/org/${root}/${encodeURIComponent(id)}/enabled`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "could not update that switch");
+      renderOrgSettings(payload);
+    }
+
+    async function deleteOrgRow(kind, id) {
+      const root = kind === "model" ? "models" : "agents";
+      const res = await fetch(`/api/org/${root}/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "could not remove that row");
+      renderOrgSettings(payload);
+    }
+
+    async function addOrgEndpoint() {
+      const provider = document.getElementById("org-endpoint-provider");
+      const res = await fetch("/api/org/endpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: (document.getElementById("org-endpoint-name") || {}).value || "",
+          provider: provider ? provider.value : "",
+          base_url: (document.getElementById("org-endpoint-url") || {}).value || "",
+          api_key: (document.getElementById("org-endpoint-key") || {}).value || "",
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "could not check that endpoint");
+      const name = document.getElementById("org-endpoint-name");
+      const key = document.getElementById("org-endpoint-key");
+      if (name) name.value = "";
+      if (key) key.value = "";
+      closeOrgDialog("org-endpoint-dialog");
+      showOrgTab("models");
+      renderOrgSettings(payload);
+      if (payload.endpoint_warning) throw new Error(payload.endpoint_warning);
+    }
+
+    async function syncOrgEndpoint(endpointId) {
+      const res = await fetch(`/api/org/endpoints/${encodeURIComponent(endpointId)}/sync`, {
+        method: "POST",
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "could not refresh that endpoint");
+      showOrgTab("models");
+      renderOrgSettings(payload);
+      if (payload.endpoint_warning) throw new Error(payload.endpoint_warning);
+    }
+
+    async function deleteOrgEndpoint(endpointId) {
+      const res = await fetch(`/api/org/endpoints/${encodeURIComponent(endpointId)}`, {
+        method: "DELETE",
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "could not remove that endpoint");
+      showOrgTab("models");
+      renderOrgSettings(payload);
+    }
+
+    async function addOrgModel() {
+      const res = await fetch("/api/org/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: (document.getElementById("org-model-name") || {}).value || "",
+          endpoint_id: (document.getElementById("org-model-endpoint") || {}).value || "",
+          model_name: (document.getElementById("org-model-model") || {}).value || "",
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "could not add the model");
+      const name = document.getElementById("org-model-name");
+      if (name) name.value = "";
+      closeOrgDialog("org-model-dialog");
+      showOrgTab("models");
+      renderOrgSettings(payload);
+    }
+
+    async function addOrgAgent() {
+      const res = await fetch("/api/org/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: (document.getElementById("org-agent-name") || {}).value || "",
+          kind: (document.getElementById("org-agent-kind") || {}).value || "",
+          model_id: (document.getElementById("org-agent-model") || {}).value || "",
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "could not add the agent");
+      const name = document.getElementById("org-agent-name");
+      if (name) name.value = "";
+      closeOrgDialog("org-agent-dialog");
+      renderOrgSettings(payload);
     }
 
     async function loadOrgSettings() {
-      const slot = document.getElementById("org-skills-error");
+      const slot = document.getElementById("org-tab-error");
       if (slot) slot.replaceChildren();
       const res = await fetch("/api/org/settings");
       const body = await res.json();
@@ -4576,21 +5649,8 @@
     function renderOrgSkillRepos(body) {
       const list = document.getElementById("org-skill-repos");
       const form = document.getElementById("org-skill-repo-form");
-      const scope = document.getElementById("org-skill-repo-scope");
+      orgSettingsId = body.org_id || orgSettingsId;
       if (form) form.hidden = !body.can_manage;
-      if (scope) {
-        scope.replaceChildren();
-        const org = document.createElement("option");
-        org.value = "tenant\n" + (body.org_id || "");
-        org.textContent = "Organization";
-        scope.append(org);
-        for (const team of body.teams || []) {
-          const option = document.createElement("option");
-          option.value = "team\n" + team.id;
-          option.textContent = team.name;
-          scope.append(option);
-        }
-      }
       if (!list) return;
       list.replaceChildren();
       const repos = body.skill_repos || [];
@@ -4602,39 +5662,53 @@
         return;
       }
       for (const repo of repos) {
-        const row = document.createElement("div");
-        row.className = "skill-source-row";
-        const label = document.createElement("span");
+        const card = document.createElement("section");
+        card.className = "org-skill-repo";
+        const head = document.createElement("div");
+        head.className = "org-skill-head";
+        const title = document.createElement("strong");
         const short = repo.sha ? repo.sha.slice(0, 7) : "";
-        label.textContent = short ? `${repo.url} · ${short}` : repo.url;
-        label.title = repo.sha || repo.url;
-        row.append(label);
-        if (body.can_manage) {
+        title.textContent = repoLabel(repo.url, repo.url);
+        title.title = short ? `${repo.url} · ${short}` : repo.url;
+        head.append(title);
+        if (body.can_manage && repo.can_sync !== false) {
           const sync = document.createElement("button");
           sync.type = "button";
           sync.className = "secondary";
-          sync.dataset.repo = repo.id;
+          sync.setAttribute("data-skill-repo-sync", repo.id);
           sync.textContent = "Resync";
-          sync.addEventListener("click", () => {
-            resyncOrgSkillRepo(repo.id).catch(showOrgSettingsError);
-          });
-          row.append(sync);
+          head.append(sync);
         }
-        list.append(row);
+        card.append(head);
+        const loaded = repo.skills || [];
+        if (!loaded.length) {
+          const none = document.createElement("p");
+          none.className = "hint";
+          none.textContent = "No skills loaded yet.";
+          card.append(none);
+        } else {
+          const names = document.createElement("div");
+          names.className = "org-skill-names";
+          for (const name of loaded) {
+            const chip = document.createElement("span");
+            chip.className = "org-skill-chip";
+            chip.textContent = name;
+            names.append(chip);
+          }
+          card.append(names);
+        }
+        list.append(card);
       }
     }
 
     async function addOrgSkillRepo() {
-      const scope = document.getElementById("org-skill-repo-scope");
       const url = document.getElementById("org-skill-repo-url");
-      const value = (scope && scope.value) || "";
-      const parts = value.split("\n");
       const res = await fetch("/api/org/skill-repos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scope_type: parts[0] || "",
-          scope_id: parts[1] || "",
+          scope_type: "tenant",
+          scope_id: orgSettingsId,
           url: (url && url.value) || "",
         }),
       });
@@ -4653,28 +5727,134 @@
       renderOrgSettings(body);
     }
 
+    function applyEndpointDefault() {
+      const provider = document.getElementById("org-endpoint-provider");
+      const url = document.getElementById("org-endpoint-url");
+      if (!provider || !url) return;
+      const selected = provider.options[provider.selectedIndex];
+      const defaults = [...provider.options].map((option) => option.dataset.baseUrl || "");
+      if (!url.value || defaults.includes(url.value)) {
+        url.value = selected && selected.dataset.baseUrl ? selected.dataset.baseUrl : "";
+      }
+    }
+
+    const endpointProviderEl = document.getElementById("org-endpoint-provider");
+    if (endpointProviderEl) {
+      endpointProviderEl.addEventListener("change", applyEndpointDefault);
+    }
+    for (const button of document.querySelectorAll(".org-tab")) {
+      button.addEventListener("click", () => {
+        showOrgTab(button.dataset.orgTab);
+      });
+    }
+    const addOrgEndpointButton = document.getElementById("add-org-endpoint");
+    if (addOrgEndpointButton) {
+      addOrgEndpointButton.addEventListener("click", () => {
+        addOrgEndpoint().catch(showOrgSettingsError);
+      });
+    }
+    const addOrgModelButton = document.getElementById("add-org-model");
+    if (addOrgModelButton) {
+      addOrgModelButton.addEventListener("click", () => {
+        addOrgModel().catch(showOrgSettingsError);
+      });
+    }
+    const addOrgAgentButton = document.getElementById("add-org-agent");
+    if (addOrgAgentButton) {
+      addOrgAgentButton.addEventListener("click", () => {
+        addOrgAgent().catch(showOrgSettingsError);
+      });
+    }
+    const openOrgEndpointButton = document.getElementById("open-org-endpoint");
+    if (openOrgEndpointButton) {
+      openOrgEndpointButton.addEventListener("click", () => openOrgDialog("org-endpoint-dialog"));
+    }
+    const openOrgModelButton = document.getElementById("open-org-model");
+    if (openOrgModelButton) {
+      openOrgModelButton.addEventListener("click", () => {
+        fillEndpointModels(orgCatalog);
+        openOrgDialog("org-model-dialog");
+      });
+    }
+    const openOrgAgentButton = document.getElementById("open-org-agent");
+    if (openOrgAgentButton) {
+      openOrgAgentButton.addEventListener("click", () => openOrgDialog("org-agent-dialog"));
+    }
+    for (const id of ["cancel-org-endpoint", "cancel-org-model", "cancel-org-agent", "cancel-endpoint-remove"]) {
+      const button = document.getElementById(id);
+      if (!button) continue;
+      button.addEventListener("click", () => {
+        closeOrgDialog(button.closest(".modal-backdrop").id);
+      });
+    }
+    const confirmEndpointRemove = document.getElementById("confirm-endpoint-remove");
+    if (confirmEndpointRemove) {
+      confirmEndpointRemove.addEventListener("click", () => {
+        const endpointId = endpointRemoveId;
+        endpointRemoveId = "";
+        closeOrgDialog("endpoint-remove-dialog");
+        if (!endpointId) return;
+        deleteOrgEndpoint(endpointId).catch(showOrgSettingsError);
+      });
+    }
+    for (const id of ["org-endpoint-dialog", "org-model-dialog", "org-agent-dialog", "endpoint-remove-dialog"]) {
+      const dialog = document.getElementById(id);
+      if (!dialog) continue;
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) closeOrgDialog(id);
+      });
+    }
+    const modelsPanel = document.getElementById("org-panel-models");
+    if (modelsPanel) {
+      modelsPanel.addEventListener("click", (event) => {
+        const sync = event.target.closest("[data-endpoint-sync]");
+        if (sync) {
+          syncOrgEndpoint(sync.getAttribute("data-endpoint-sync")).catch(showOrgSettingsError);
+          return;
+        }
+        const removeEndpoint = event.target.closest("[data-endpoint-remove]");
+        if (removeEndpoint) {
+          askRemoveEndpoint(removeEndpoint.getAttribute("data-endpoint-remove"));
+          return;
+        }
+        const removeModel = event.target.closest("[data-model-remove]");
+        if (removeModel) {
+          deleteOrgRow("model", removeModel.getAttribute("data-model-remove")).catch(showOrgSettingsError);
+          return;
+        }
+        const removeAgent = event.target.closest("[data-agent-remove]");
+        if (removeAgent) {
+          deleteOrgRow("agent", removeAgent.getAttribute("data-agent-remove")).catch(showOrgSettingsError);
+        }
+      });
+      modelsPanel.addEventListener("change", (event) => {
+        const model = event.target.closest("[data-model-enable]");
+        if (model) {
+          setOrgEnabled("model", model.getAttribute("data-model-enable"), model.checked)
+            .catch(showOrgSettingsError);
+          return;
+        }
+        const agent = event.target.closest("[data-agent-enable]");
+        if (agent) {
+          setOrgEnabled("agent", agent.getAttribute("data-agent-enable"), agent.checked)
+            .catch(showOrgSettingsError);
+        }
+      });
+    }
+    const orgSkillRepos = document.getElementById("org-skill-repos");
+    if (orgSkillRepos) {
+      orgSkillRepos.addEventListener("click", (event) => {
+        const sync = event.target.closest("[data-skill-repo-sync]");
+        if (!sync) return;
+        resyncOrgSkillRepo(sync.getAttribute("data-skill-repo-sync")).catch(showOrgSettingsError);
+      });
+    }
+
     const addOrgSkillRepoButton = document.getElementById("add-org-skill-repo");
     if (addOrgSkillRepoButton) {
       addOrgSkillRepoButton.addEventListener("click", () => {
         addOrgSkillRepo().catch(showOrgSettingsError);
       });
-    }
-
-    async function saveOrgSkill(name, scopeType, scopeId, assigned) {
-      const res = await fetch("/api/org/skills", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          skill_name: name,
-          scope_type: scopeType,
-          scope_id: scopeId,
-          assigned: assigned,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "could not update the skill");
-      renderOrgSettings(body);
-      if (state.section === "skills") loadWorkspaceSkills();
     }
 
     async function saveOrgRole(name, enforced) {
@@ -4882,20 +6062,38 @@
     }
     let skillsSearchTimeout = null;
     let skillsIdleStatus = "";
+    function skillRowMatches(row, term) {
+      const title = row.querySelector("strong");
+      const desc = row.querySelector("p");
+      const text = [title ? title.textContent : "", desc ? desc.textContent : ""].join(" ").toLowerCase();
+      return !term || text.includes(term);
+    }
     function filterSkills(query) {
       const term = (query || "").toLowerCase().trim();
-      const rows = workspaceSkillsEl.querySelectorAll(".skill-row");
       let visibleCount = 0;
-      for (const row of rows) {
-        const title = row.querySelector("strong");
-        const desc = row.querySelector("p");
-        const text = [title?.textContent, desc?.textContent].join(" ").toLowerCase();
-        if (text.includes(term)) {
-          row.classList.remove("hidden");
-          visibleCount++;
-        } else {
-          row.classList.add("hidden");
+      for (const group of workspaceSkillsEl.querySelectorAll(":scope > .skill-repo")) {
+        const repoText = String(group.dataset.repo || "").toLowerCase();
+        const repoMatches = Boolean(term) && repoText.includes(term);
+        const opened = group.dataset.open === "true";
+        let matches = 0;
+        for (const row of group.querySelectorAll(".skill-row")) {
+          const match = repoMatches || skillRowMatches(row, term);
+          row.classList.toggle("hidden", Boolean(term) && !match);
+          if (match) matches += 1;
+          if (match && (term || opened)) visibleCount += 1;
         }
+        const folded = !term && !opened;
+        group.classList.toggle("hidden", Boolean(term) && matches === 0);
+        group.classList.toggle("folded", folded);
+        const fold = group.querySelector(".skill-repo-fold");
+        if (fold) fold.setAttribute("aria-expanded", folded ? "false" : "true");
+        const mark = group.querySelector(".skill-repo-mark");
+        if (mark) mark.textContent = folded ? "▸" : "▾";
+      }
+      for (const row of workspaceSkillsEl.querySelectorAll(":scope > .skill-row")) {
+        const match = skillRowMatches(row, term);
+        row.classList.toggle("hidden", !match);
+        if (match) visibleCount += 1;
       }
       if (!skillsStatusEl) return;
       skillsStatusEl.textContent = term
@@ -4973,57 +6171,108 @@
         skillInfoBodyEl.append(fail);
       }
     }
+    function appendSkillRow(parent, skill) {
+      const row = document.createElement("div");
+      row.className = "skill-row";
+      const locked = skill.origin === "bundled";
+      let box = null;
+      if (!locked) {
+        box = document.createElement("input");
+        box.type = "checkbox";
+        box.id = `skill-enable-${skill.name}`;
+        box.checked = Boolean(skill.enabled);
+        box.dataset.skill = skill.name;
+      }
+      const copy = document.createElement(locked ? "div" : "label");
+      copy.className = "skill-row-copy";
+      if (box) copy.htmlFor = box.id;
+      const title = document.createElement("strong");
+      title.textContent = skill.name;
+      const desc = document.createElement("p");
+      desc.textContent = locked
+        ? "Assigned from the organization."
+        : (skill.summary || skill.description || "No description.");
+      desc.title = skill.description || skill.summary || "";
+      copy.append(title, desc);
+      const info = document.createElement("button");
+      info.type = "button";
+      info.className = "skill-info";
+      info.dataset.skill = skill.name;
+      info.setAttribute("aria-label", `About ${skill.name}`);
+      info.setAttribute("aria-expanded", "false");
+      info.setAttribute("aria-controls", "skill-info-pop");
+      info.innerHTML = SKILL_INFO_ICON;
+      if (box) row.append(box);
+      row.append(copy, info);
+      parent.append(row);
+    }
     function renderWorkspaceSkills(body) {
       const skills = (body.skills || []).filter((skill) => {
         return skill.assigned || skill.origin !== "bundled";
       });
       const sources = body.sources || [];
+      const loose = [];
+      const grouped = new Map();
+      for (const skill of skills) {
+        const url = String(skill.source_url || "").trim();
+        if (!url) {
+          loose.push(skill);
+          continue;
+        }
+        if (!grouped.has(url)) grouped.set(url, []);
+        grouped.get(url).push(skill);
+      }
+      const repos = [...grouped.keys()].sort((left, right) => {
+        return repoLabel(left, left).localeCompare(repoLabel(right, right));
+      });
       state.assignedSkills = body.assigned || [];
       closeSkillInfo();
       workspaceSkillsEl.replaceChildren();
       if (!skills.length) {
         skillsIdleStatus = "No skills are assigned to this project.";
       } else {
-        const names = skills.map((skill) => skill.name);
-        skillsIdleStatus = names.join(", ");
+        const bits = loose.map((skill) => skill.name);
+        for (const url of repos) {
+          bits.push(`${repoLabel(url, url)} (${grouped.get(url).length})`);
+        }
+        skillsIdleStatus = bits.join(", ");
       }
       if (skillsStatusEl && !(skillsSearchEl?.value || "").trim()) {
         skillsStatusEl.textContent = skillsIdleStatus;
       }
-      for (const skill of skills) {
-        const row = document.createElement("div");
-        row.className = "skill-row";
-        const locked = skill.origin === "bundled";
-        let box = null;
-        if (!locked) {
-          box = document.createElement("input");
-          box.type = "checkbox";
-          box.id = `skill-enable-${skill.name}`;
-          box.checked = Boolean(skill.enabled);
-          box.dataset.skill = skill.name;
-        }
-        const copy = document.createElement(locked ? "div" : "label");
-        copy.className = "skill-row-copy";
-        if (box) copy.htmlFor = box.id;
-        const title = document.createElement("strong");
-        title.textContent = skill.name;
-        const desc = document.createElement("p");
-        desc.textContent = locked
-          ? "Assigned from the organization."
-          : (skill.summary || skill.description || "No description.");
-        desc.title = skill.description || skill.summary || "";
-        copy.append(title, desc);
-        const info = document.createElement("button");
-        info.type = "button";
-        info.className = "skill-info";
-        info.dataset.skill = skill.name;
-        info.setAttribute("aria-label", `About ${skill.name}`);
-        info.setAttribute("aria-expanded", "false");
-        info.setAttribute("aria-controls", "skill-info-pop");
-        info.innerHTML = SKILL_INFO_ICON;
-        if (box) row.append(box);
-        row.append(copy, info);
-        workspaceSkillsEl.append(row);
+      for (const skill of loose) appendSkillRow(workspaceSkillsEl, skill);
+      for (const url of repos) {
+        const items = grouped.get(url);
+        const label = repoLabel(url, url);
+        const opened = Boolean(state.skillRepoOpen[url]);
+        const group = document.createElement("div");
+        group.className = opened ? "skill-repo" : "skill-repo folded";
+        group.dataset.url = url;
+        group.dataset.repo = label;
+        group.dataset.open = opened ? "true" : "false";
+        const fold = document.createElement("button");
+        fold.type = "button";
+        fold.className = "skill-repo-fold";
+        fold.setAttribute("data-skill-repo", url);
+        fold.setAttribute("aria-expanded", opened ? "true" : "false");
+        const heading = document.createElement("span");
+        heading.className = "skill-repo-title";
+        const mark = document.createElement("span");
+        mark.className = "skill-repo-mark";
+        mark.setAttribute("aria-hidden", "true");
+        mark.textContent = opened ? "▾" : "▸";
+        const name = document.createElement("span");
+        name.textContent = label;
+        heading.append(mark, name);
+        const count = document.createElement("span");
+        count.className = "skill-repo-count";
+        count.textContent = String(items.length);
+        fold.append(heading, count);
+        const list = document.createElement("div");
+        list.className = "skill-repo-body";
+        for (const skill of items) appendSkillRow(list, skill);
+        group.append(fold, list);
+        workspaceSkillsEl.append(group);
       }
       filterSkills(skillsSearchEl?.value);
       skillSourcesEl.replaceChildren();
@@ -5042,6 +6291,14 @@
           sync.dataset.slug = source.id || source.slug;
           sync.textContent = "Resync";
           row.append(sync);
+        }
+        if (source.scope_type === "project" && source.can_sync !== false) {
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "secondary";
+          remove.setAttribute("data-skill-source-remove", source.id || source.slug);
+          remove.textContent = "Remove";
+          row.append(remove);
         }
         skillSourcesEl.append(row);
       }
@@ -5080,6 +6337,16 @@
       saveEnabledSkills().catch((err) => notify("error", err.message, { title: "Could not update skills" }));
     });
     workspaceSkillsEl.addEventListener("click", (event) => {
+      const fold = event.target.closest("[data-skill-repo]");
+      if (fold) {
+        if ((skillsSearchEl?.value || "").trim()) return;
+        const url = fold.getAttribute("data-skill-repo");
+        state.skillRepoOpen[url] = !state.skillRepoOpen[url];
+        const group = fold.closest(".skill-repo");
+        if (group) group.dataset.open = state.skillRepoOpen[url] ? "true" : "false";
+        filterSkills("");
+        return;
+      }
       const info = event.target.closest(".skill-info");
       if (!info) return;
       event.preventDefault();
@@ -5107,6 +6374,26 @@
       }
     });
     skillSourcesEl.addEventListener("click", async (event) => {
+      const remove = event.target.closest("[data-skill-source-remove]");
+      if (remove) {
+        try {
+          const res = await fetch("/api/workspaces/skills/sources/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              path: workspaceEl.value,
+              slug: remove.getAttribute("data-skill-source-remove"),
+            }),
+          });
+          const body = await res.json();
+          if (!res.ok) throw new Error(body.error || "failed to remove the skill repository");
+          renderWorkspaceSkills(body);
+          notify("success", "Removed the skill repository from this project.", { title: "Skills" });
+        } catch (err) {
+          notify("error", err.message, { title: "Could not remove the skill repository" });
+        }
+        return;
+      }
       const sync = event.target.closest(".skill-sync");
       if (!sync) return;
       try {
@@ -5183,8 +6470,50 @@
     document.getElementById("add-user").addEventListener("click", () => {
       addAccountUser().catch(showAccountError);
     });
-    document.getElementById("save-github-app").addEventListener("click", () => {
-      saveGitHubApp().catch(showGitHubError);
+    document.getElementById("org-team-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      addOrgTeam().catch(showTeamError);
+    });
+    document.getElementById("team-member-add").addEventListener("click", () => {
+      addChosenTeamMembers().catch((err) => {
+        const slot = document.getElementById("team-member-error");
+        if (slot) slot.textContent = err && (err.message || String(err));
+      });
+    });
+    document.getElementById("team-member-close").addEventListener("click", closeTeamPicker);
+    document.getElementById("team-member-picker").addEventListener("click", (event) => {
+      if (event.target.id === "team-member-picker") closeTeamPicker();
+    });
+    document.getElementById("team-member-search").addEventListener("input", renderTeamChoices);
+    for (const button of document.querySelectorAll(".personal-tab")) {
+      button.addEventListener("click", () => showPersonalTab(button.dataset.personalTab));
+    }
+    document.getElementById("add-personal-rule").addEventListener("click", () => {
+      if (!personalRuleScope || !personalRuleScope.can_write) return;
+      openPersonalRule("create");
+    });
+    document.getElementById("personal-rule-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const name = document.getElementById("personal-rule-name").value;
+      const text = document.getElementById("personal-rule-body").value;
+      const saving = personalRuleId
+        ? saveExistingRule(personalRuleId, name, text)
+        : createRule(personalRuleScope, name, text);
+      saving.then(() => closePersonalRule()).catch(showPersonalRuleError);
+    });
+    document.getElementById("personal-rule-close").addEventListener("click", closePersonalRule);
+    document.getElementById("personal-rule-dialog").addEventListener("click", (event) => {
+      if (event.target.id === "personal-rule-dialog") closePersonalRule();
+    });
+    document.getElementById("github-connect").addEventListener("click", () => {
+      const current = (githubAccount && githubAccount.users || []).find((user) => {
+        return user.id === githubAccount.current_user_id;
+      });
+      const action = current && current.github_login ? disconnectGitHub() : connectGitHub();
+      action.catch(showGitHubError);
+    });
+    document.getElementById("sign-out").addEventListener("click", () => {
+      signOut().catch(showAccountError);
     });
     document.getElementById("check-github-installations").addEventListener("click", () => {
       loadGitHubInstallations().catch(showGitHubError);
@@ -5219,18 +6548,23 @@
       setAccountMenuOpen(false);
       setSettingsOpen(true);
     });
+    document.getElementById("open-crossing").addEventListener("click", () => {
+      const button = document.getElementById("open-crossing");
+      window.location.assign(button.dataset.crossingUrl || "/crossingguard");
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      const ruleDialog = document.getElementById("personal-rule-dialog");
+      if (ruleDialog && ruleDialog.classList.contains("open")) {
+        closePersonalRule();
+        return;
+      }
       if (pickerEl.classList.contains("open")) {
         closePicker();
         return;
       }
       if (liveConsoleEl && liveConsoleEl.classList.contains("open")) {
         setLiveConsoleOpen(false);
-        return;
-      }
-      if (overlayOpen(rolesPanelEl)) {
-        closeSidebarOverlays();
         return;
       }
       if (state.section === "skills" && skillInfoPopEl && !skillInfoPopEl.hidden) {
@@ -5403,13 +6737,6 @@
     document.addEventListener("click", (event) => {
       if (accountMenuOpen() && !settingsDockEl.contains(event.target)) setAccountMenuOpen(false);
       if (settingsOpen() && !settingsDockEl.contains(event.target)) setSettingsOpen(false);
-      if (
-        overlayOpen(rolesPanelEl)
-        && !rolesPanelEl.contains(event.target)
-        && !(openRolesBtn && openRolesBtn.contains(event.target))
-      ) {
-        setOverlayOpen(rolesPanelEl, openRolesBtn, false);
-      }
       if (!notifyPanelOpen()) return;
       if (notifyDockEl.contains(event.target)) return;
       setNotifyPanel(false);
@@ -5540,15 +6867,12 @@
 
     function sameWorkspaceRun(task, entry) {
       if (entry.id && task.id && String(entry.id) === String(task.id)) return true;
-      if (
-        task.commit_sha
-        && entry.commit_sha
-        && task.commit_sha === entry.commit_sha
-        && (task.goal || "") === (entry.goal || "")
-      ) return true;
+      const goal = task.goal || "";
+      if (!goal || goal !== (entry.goal || "")) return false;
+      if (task.commit_sha && entry.commit_sha && task.commit_sha === entry.commit_sha) return true;
+      if (task.created_at && entry.created_at && task.created_at === entry.created_at) return true;
       return Boolean(
-        (task.goal || "") === (entry.goal || "")
-        && task.summary
+        task.summary
         && entry.summary
         && task.summary === entry.summary
         && task.status === entry.status
@@ -5571,6 +6895,7 @@
       const history = [];
       historyItems().forEach((entry, index) => {
         if (tasks.some((run) => sameWorkspaceRun(run.item, entry))) return;
+        if (history.some((run) => sameWorkspaceRun(run.item, entry))) return;
         const identity = [
           entry.id || "",
           entry.created_at || "",
@@ -7027,8 +8352,19 @@
       return id === focus || state.openSteps.has(id);
     }
 
-    function replyBox(prompt) {
-      return `<div class="reply-box"><p class="reply-label">${escapeHtml(prompt)}</p><textarea class="reply-note" rows="3" spellcheck="false" placeholder="What should change, or the answer."></textarea><div class="change-actions"><button type="button" data-reply-continue="1">Continue</button></div></div>`;
+    function githubCommitBlocked(item) {
+      if (!githubAccount) return false;
+      const current = (githubAccount.users || []).find((user) => user.id === githubAccount.current_user_id);
+      if (current && current.github_login) return false;
+      const path = String((item && item.workspace) || (workspaceEl && workspaceEl.value) || "");
+      const listed = (state.workspaceCatalog || []).find((ws) => ws.path === path);
+      if (listed) return workspaceType(listed) === "github";
+      return Boolean(workspaceKindEl && workspaceKindEl.dataset.kind === "github" && path === (workspaceEl && workspaceEl.value));
+    }
+
+    function replyBox(prompt, taskId) {
+      const taskAttr = taskId ? ` data-task-id="${escapeHtml(taskId)}"` : "";
+      return `<div class="reply-box"><p class="reply-label">${escapeHtml(prompt)}</p><textarea class="reply-note" rows="3" spellcheck="false" placeholder="What should change, or the answer."></textarea><div class="change-actions"><button type="button" data-reply-continue="1"${taskAttr}>Continue</button></div></div>`;
     }
 
     function changeBoardHtml(item) {
@@ -7044,6 +8380,7 @@
       const failed = status === "failed" || status === "error";
       const waiting = status === "waiting";
       const running = status === "running";
+      const taskAttr = item.id ? ` data-task-id="${escapeHtml(item.id)}"` : "";
       const triageAuto = item.triage_gate === "auto";
       const approvalAuto = item.approval_gate === "auto";
       const focus = focusStep(item, rank, evidence);
@@ -7123,7 +8460,7 @@
         else if (pill[0] === "Skipped") summary = skipped;
         const sent = entry && (entry.verdict === "send_back" || entry.verdict === "block");
         const canReply = sent && (failed || status === "error" || (waiting && stage === "reply"));
-        const reply = canReply ? replyBox("Say what should change, then continue.") : "";
+        const reply = canReply ? replyBox("Say what should change, then continue.", item.id) : "";
         const heading = sent ? "<h3>Why it was sent back</h3>" : "";
         return `${heading}<p class="step-copy">${escapeHtml(summary)}</p>${reply}${stepStats([
           ["State", status || stage],
@@ -7144,7 +8481,7 @@
 
       let triageBody = `<p class="step-copy">Waiting for a plan to review.</p>`;
       if (waiting && stage === "triage" && item.id) {
-        triageBody = `<p class="step-copy">The plan is ready. Build it, or hand it to a person.</p><div class="change-actions"><button type="button" data-change-decision="build">Build it</button><button type="button" class="secondary" data-change-decision="hand_off">Hand off</button></div>`;
+        triageBody = `<p class="step-copy">The plan is ready. Build it, or hand it to a person.</p><div class="change-actions"><button type="button" data-change-decision="build"${taskAttr}>Build it</button><button type="button" class="secondary" data-change-decision="hand_off"${taskAttr}>Hand off</button></div>`;
       } else if (stage === "handed_off" || status === "handed_off") {
         triageBody = `<p class="hint">Handed to a person. Nothing was built.</p>`;
       } else if (past(2)) {
@@ -7153,7 +8490,7 @@
 
       let builderBody = `<p class="step-copy">The builder has not started.</p>`;
       if (waiting && stage === "ask") {
-        builderBody = `<p class="step-copy">${escapeHtml(item.reason || item.summary || "The builder needs an answer.")}</p>${replyBox("Answer so the builder can continue.")}`;
+        builderBody = `<p class="step-copy">${escapeHtml(item.reason || item.summary || "The builder needs an answer.")}</p>${replyBox("Answer so the builder can continue.", item.id)}`;
       } else if (past(3)) builderBody = `<p class="step-copy">The builder changed the tree.</p>`;
       else if (here(3)) builderBody = `<p class="step-copy">The builder is changing the tree.</p>`;
       if (!(waiting && stage === "ask")) builderBody += stepLog(item, ["file"]);
@@ -7165,8 +8502,10 @@
       const qaBody = `${reviewBody(qaEntry, qaPill, "QA did not run.", item)}${qaCriteria}${stepLog(item, ["review", "test", "lint", "ui"])}`;
 
       let approvalBody = `<p class="step-copy">Waiting until the reviews finish.</p>`;
-      if (waiting && stage === "approval" && item.id) {
-        approvalBody = `<p class="step-copy">The reviews are in. Approve the change, or write what to change and send it back.</p><textarea class="reply-note" rows="3" spellcheck="false" placeholder="What should the builder change?"></textarea><div class="change-actions"><button type="button" data-change-decision="approve">Approve</button><button type="button" class="secondary" data-change-decision="send_back">Send back</button></div>`;
+      if (waiting && stage === "approval" && item.id && githubCommitBlocked(item)) {
+        approvalBody = `<p class="step-copy">Connect GitHub before approving this commit.</p><div class="change-actions"><button type="button" class="secondary" data-change-decision="send_back"${taskAttr}>Send back</button></div>`;
+      } else if (waiting && stage === "approval" && item.id) {
+        approvalBody = `<p class="step-copy">The reviews are in. Approve the change, or write what to change and send it back.</p><textarea class="reply-note" rows="3" spellcheck="false" placeholder="What should the builder change?"></textarea><div class="change-actions"><button type="button" data-change-decision="approve"${taskAttr}>Approve</button><button type="button" class="secondary" data-change-decision="send_back"${taskAttr}>Send back</button></div>`;
       } else if (past(5)) {
         approvalBody = `<p class="step-copy">${approvalAuto ? "Approval ran on its own." : "A person approved the change."}</p>`;
       } else if (approvalPill[0] === "Skipped") {
@@ -7247,27 +8586,6 @@
         lineStats,
         screenshotEvents(events).length,
       );
-    }
-
-    function serverOptionLabel(server, url) {
-      if (typeof server === "object" && server && server.alias && String(server.alias).trim()) {
-        return String(server.alias).trim();
-      }
-      try {
-        return new URL(url).host;
-      } catch (_err) {
-        return url;
-      }
-    }
-
-    function serverDisplayName(server) {
-      if (typeof server === "object" && server !== null) {
-        const url = server.url || "";
-        const alias = server.alias;
-        if (alias && String(alias).trim()) return `${alias} (${url})`;
-        return url;
-      }
-      return String(server);
     }
 
     const FOLLOW_PX = 80;
@@ -7375,9 +8693,19 @@
       if (page) window.scrollTo(page.x, page.y);
     }
 
-    function inboxBucket(status) {
+    function jobSection(entry) {
+      const status = entry.status || "";
       if (status === "waiting") return "waiting";
       if (status === "running" || status === "queued") return "progress";
+      const item = entry.item || {};
+      const url = prUrl(item);
+      const pull = url ? prStateOf(url) : "";
+      if (url && pull !== "merged" && pull !== "closed" && !item.merged) {
+        if (status === "success" || item.published || pull === "open") return "pull";
+      }
+      if (status === "failed" || status === "error") {
+        return String(item.fault || "").trim() ? "stuck" : "failed";
+      }
       return "done";
     }
 
@@ -7392,6 +8720,7 @@
       const history = [];
       historyItems().forEach((entry, index) => {
         if (tasks.some((run) => sameWorkspaceRun(run.item, entry))) return;
+        if (history.some((run) => sameWorkspaceRun(run.item, entry))) return;
         history.push({
           kind: "history",
           item: entry,
@@ -7403,32 +8732,87 @@
       return tasks.concat(history);
     }
 
-    function inboxRowHtml(entry, items) {
+    function inboxStepLabel(entry, section) {
+      const task = entry.item || {};
+      if (section === "pull") return prLabel(prUrl(task));
+      if (section === "stuck") return "Can't retry";
+      if (section === "failed") return "Failed";
+      if (section === "done") {
+        const pull = prStateOf(prUrl(task));
+        if (task.merged || pull === "merged") return "Merged";
+        if (pull === "closed") return "Closed";
+        if (entry.status === "skipped") return "Skipped";
+        return "Done";
+      }
+      if (entry.status === "waiting") return stageStepLabel(task.stage);
+      return stageStepLabel(task.stage || entry.status);
+    }
+
+    function inboxActionsHtml(entry, section) {
+      const key = escapeHtml(entry.key);
+      if (section === "pull") {
+        const url = escapeHtml(prUrl(entry.item));
+        const workspace = escapeHtml(entry.workspace || (entry.item && entry.item.workspace) || "");
+        return `<div class="inbox-actions"><button type="button" data-merge-url="${url}" data-merge-workspace="${workspace}">Merge</button><button type="button" class="secondary" data-request-changes="${key}">Request changes</button></div>`;
+      }
+      if (section === "failed") {
+        const button = entry.kind === "task"
+          ? `<button type="button" class="secondary" data-rerun-id="${escapeHtml(entry.item.id)}">Rerun</button>`
+          : `<button type="button" class="secondary" data-history-rerun="${key}">Rerun</button>`;
+        return `<div class="inbox-actions">${button}</div>`;
+      }
+      return "";
+    }
+
+    function inboxRowHtml(entry, items, section) {
       const task = entry.item;
       const selected = entry.kind === "task"
         ? (state.selected === task.id ? " selected" : "")
         : (entry.key === state.selectedRunKey ? " selected" : "");
-      const step = entry.status === "waiting"
-        ? stageStepLabel(task.stage)
-        : stageStepLabel(task.stage || entry.status);
+      const step = inboxStepLabel(entry, section);
       const project = projectLabel(entry.workspace || task.workspace, items);
-      if (entry.kind === "history") {
-        return `
-          <button type="button" class="inbox-item${selected}" data-run-key="${escapeHtml(entry.key)}" title="${escapeHtml(entry.workspace || "")}">
+      const title = escapeHtml(String((task && task.fault) || entry.workspace || ""));
+      const button = entry.kind === "history"
+        ? `<button type="button" class="inbox-item${selected}" data-run-key="${escapeHtml(entry.key)}" title="${title}">
             <span class="inbox-project">${escapeHtml(project)}</span>
             <span class="inbox-step">${escapeHtml(step)}</span>
             <span class="inbox-goal">${escapeHtml(goalHeadline(task))}</span>
-          </button>
-        `;
-      }
-      return `
-        <button type="button" class="inbox-item${selected}" data-inbox-id="${escapeHtml(task.id)}" data-inbox-workspace="${escapeHtml(task.workspace || "")}" title="${escapeHtml(task.workspace || "")}">
-          <span class="inbox-project">${escapeHtml(project)}</span>
-          <span class="inbox-step">${escapeHtml(step)}</span>
-          <span class="inbox-goal">${escapeHtml(goalHeadline(task))}</span>
-        </button>
-      `;
+          </button>`
+        : `<button type="button" class="inbox-item${selected}" data-inbox-id="${escapeHtml(task.id)}" data-inbox-workspace="${escapeHtml(task.workspace || "")}" title="${title}">
+            <span class="inbox-project">${escapeHtml(project)}</span>
+            <span class="inbox-step">${escapeHtml(step)}</span>
+            <span class="inbox-goal">${escapeHtml(goalHeadline(task))}</span>
+          </button>`;
+      return `<div class="inbox-row">${button}${inboxActionsHtml(entry, section)}</div>`;
     }
+
+    function loadInboxFold() {
+      try {
+        const saved = JSON.parse(localStorage.getItem("lbw-inbox-fold") || "{}");
+        if (saved && typeof saved === "object" && !Array.isArray(saved)) state.inboxFold = saved;
+      } catch (_err) {
+        state.inboxFold = {};
+      }
+    }
+
+    function inboxFolded(bucket, count) {
+      if (Object.prototype.hasOwnProperty.call(state.inboxFold, bucket)) {
+        return Boolean(state.inboxFold[bucket]);
+      }
+      return count === 0;
+    }
+
+    function toggleInboxFold(bucket, count) {
+      state.inboxFold[bucket] = !inboxFolded(bucket, count);
+      try {
+        localStorage.setItem("lbw-inbox-fold", JSON.stringify(state.inboxFold));
+      } catch (_err) {
+        /* keep the choice for this page */
+      }
+      renderInbox();
+    }
+
+    loadInboxFold();
 
     function renderInbox() {
       const count = document.getElementById("inbox-count");
@@ -7443,18 +8827,30 @@
         statusMatches(entry.status, state.statusFilter) && runMatchesSearch(entry, state.search)
       ));
       const groups = [
-        ["waiting", "Waiting for you", "Nothing is waiting for you."],
-        ["progress", "In progress", "Nothing is running."],
-        ["done", "Done", "Nothing is finished yet."],
+        ["waiting", "Waiting for you", "Nothing is waiting for you.", true],
+        ["progress", "In progress", "Nothing is running.", true],
+        ["pull", "Pull requests", "No pull request is waiting.", true],
+        ["done", "Done", "Nothing is finished yet.", true],
+        ["stuck", "Can't retry", "No failed job is stuck.", true],
+        ["failed", "Failed", "No failed job can be rerun.", false],
       ];
-      listEl.innerHTML = `<div class="inbox">${groups.map(([bucket, title, empty]) => {
-        const rows = items.filter((entry) => inboxBucket(entry.status) === bucket);
-        const body = rows.length
-          ? rows.map((entry) => inboxRowHtml(entry, items)).join("")
-          : `<p class="inbox-empty">${empty}</p>`;
+      listEl.innerHTML = `<div class="inbox">${groups.map(([bucket, title, empty, always]) => {
+        const rows = items.filter((entry) => jobSection(entry) === bucket);
+        if (!rows.length && !always) return "";
+        const folded = inboxFolded(bucket, rows.length);
+        const body = folded
+          ? ""
+          : (rows.length
+            ? rows.map((entry) => inboxRowHtml(entry, items, bucket)).join("")
+            : `<p class="inbox-empty">${empty}</p>`);
         return `
-          <section class="inbox-group">
-            <h3>${title}<span class="inbox-count">${rows.length}</span></h3>
+          <section class="inbox-group inbox-${bucket}${folded ? " folded" : ""}">
+            <h3>
+              <button type="button" class="inbox-fold" data-inbox-fold="${bucket}" aria-expanded="${folded ? "false" : "true"}">
+                <span class="inbox-fold-title"><span class="inbox-fold-mark" aria-hidden="true">${folded ? "▸" : "▾"}</span>${title}</span>
+                <span class="inbox-count">${rows.length}</span>
+              </button>
+            </h3>
             ${body}
           </section>
         `;
@@ -7587,6 +8983,7 @@
       const selectedHistory = selectedRun && selectedRun.kind === "history" ? selectedRun.item : null;
       state.selected = selected ? selected.id : null;
       state.selectedHistoryKey = selectedHistory ? selectedRun.key.slice("history:".length) : "";
+      paintViewedBranch();
       renderInbox();
       const live = Boolean(selected && selected.status === "running");
       const itemKey = selected
@@ -7764,6 +9161,37 @@
     }
 
     listEl.addEventListener("click", (event) => {
+      const fold = event.target.closest("[data-inbox-fold]");
+      if (fold) {
+        event.preventDefault();
+        event.stopPropagation();
+        const section = fold.closest(".inbox-group");
+        const countEl = section ? section.querySelector(".inbox-count") : null;
+        const count = Number(countEl && countEl.textContent) || 0;
+        toggleInboxFold(fold.dataset.inboxFold, count);
+        return;
+      }
+      const merge = event.target.closest("[data-merge-url]");
+      if (merge) {
+        event.preventDefault();
+        event.stopPropagation();
+        mergePull(merge.dataset.mergeUrl, merge.dataset.mergeWorkspace, merge);
+        return;
+      }
+      const requestChanges = event.target.closest("[data-request-changes]");
+      if (requestChanges) {
+        event.preventDefault();
+        event.stopPropagation();
+        const entry = inboxEntries().find((item) => item.key === requestChanges.dataset.requestChanges);
+        if (entry) {
+          showRerunGoalPicker({
+            kind: entry.kind === "task" ? "task" : "history",
+            entry: entry.item,
+            purpose: "changes",
+          });
+        }
+        return;
+      }
       const inboxItem = event.target.closest("[data-inbox-id]");
       if (inboxItem) {
         event.preventDefault();
@@ -7977,9 +9405,10 @@
     applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
 
     let githubIssuesReady = false;
+    let sessionReady = false;
 
     function showSection(name) {
-      const allowed = ["proposals", "changes", "releases", "rules", "skills", "schedules", "personal", "organization"];
+      const allowed = ["proposals", "changes", "releases", "rules", "skills", "roles", "schedules", "personal", "organization"];
       const next = allowed.includes(name) ? name : "proposals";
       state.section = next;
       if (next !== "skills") closeSkillInfo();
@@ -7990,6 +9419,9 @@
         loadAppliedRules().catch((err) => notify("error", err.message, { title: "Could not load rules" }));
       }
       if (next === "skills") loadWorkspaceSkills();
+      if (next === "roles") {
+        loadWorkspaceRoles().catch((err) => notify("error", err.message, { title: "Could not load roles" }));
+      }
       if (next === "schedules") {
         refreshSchedules().catch((err) => showNotice(scheduleErrorEl, "error", err.message));
       }
@@ -7997,7 +9429,7 @@
         githubIssuesKey = "";
         loadGitHubIssues(workspaceEl.value);
       }
-      if (next === "personal" || next === "organization") loadAccountPages();
+      if (sessionReady && (next === "personal" || next === "organization")) loadAccountPages();
       document.querySelectorAll("[data-rail]").forEach((button) => {
         button.setAttribute("aria-pressed", button.dataset.rail === next ? "true" : "false");
       });
@@ -8053,14 +9485,6 @@
       return { context_window: rounded };
     }
 
-    function readContextWindow() {
-      try {
-        return contextWindowPayload().context_window || null;
-      } catch (err) {
-        return null;
-      }
-    }
-
     async function queueTask(payload, notice) {
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -8086,7 +9510,18 @@
     function showRerunGoalPicker(pending) {
       if (!rerunGoalPickerEl || !rerunNewGoalInput || !pending) return;
       pendingUpdate = pending;
-      rerunNewGoalInput.value = pending.entry.goal || "";
+      const asking = pending.purpose === "changes";
+      const title = document.getElementById("rerun-goal-picker-title");
+      const hint = document.getElementById("rerun-goal-hint");
+      const submit = document.getElementById("rerun-with-goal");
+      if (title) title.textContent = asking ? "Request changes" : "Update this run";
+      if (hint) {
+        hint.textContent = asking
+          ? "Write what should change. The next run continues on this pull request."
+          : "Edit the goal to add context. The new run continues on the same branch and updates its pull request when one exists.";
+      }
+      if (submit) submit.textContent = asking ? "Send feedback" : "Update run";
+      rerunNewGoalInput.value = asking ? "" : (pending.entry.goal || "");
       rerunGoalPickerEl.hidden = false;
       rerunGoalPickerEl.classList.add("open");
       rerunNewGoalInput.focus();
@@ -8100,10 +9535,37 @@
       if (rerunNewGoalInput) rerunNewGoalInput.value = "";
     }
 
+    async function mergePull(url, workspace, button) {
+      if (!url) return;
+      if (button) button.disabled = true;
+      try {
+        const res = await fetch("/api/pulls/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, workspace }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || "Could not merge");
+        state.prStates[url] = "merged";
+        notify("success", prLabel(url), { title: "Merged" });
+        render();
+      } catch (err) {
+        if (button) button.disabled = false;
+        notify("error", err.message, { title: "Could not merge" });
+      }
+    }
+
     async function submitRerunGoal() {
       const pending = pendingUpdate;
       if (!pending) return;
-      const revised = (rerunNewGoalInput && rerunNewGoalInput.value.trim()) || pending.entry.goal || "";
+      const note = (rerunNewGoalInput && rerunNewGoalInput.value.trim()) || "";
+      if (pending.purpose === "changes" && !note) {
+        notify("error", "Write what should change.", { title: "Need feedback" });
+        return;
+      }
+      const revised = pending.purpose === "changes"
+        ? `${pending.entry.goal || ""}\n\n${note}`.trim()
+        : (note || pending.entry.goal || "");
       hideRerunGoalPicker();
       if (pending.kind === "history") {
         await rerunHistoryEntry(pending.entry, revised);
@@ -8158,10 +9620,9 @@
       try {
         await queueTask(
           {
-            workspace: document.getElementById("workspace").value,
+            workspace: entry.workspace || document.getElementById("workspace").value,
             goal: revised,
-            base_url: document.getElementById("base-url").value,
-            model: document.getElementById("model").value,
+            ...selectedModelPayload(),
             auto_commit: document.getElementById("auto-commit").checked,
             create_pr: hasPr || document.getElementById("create-pr").checked,
             ...contextWindowPayload(),
@@ -8230,8 +9691,9 @@
         return;
       }
       const button = event.target.closest("[data-change-decision]");
-      if (!button || !state.selected) return;
-      decideChange(state.selected, button.dataset.changeDecision, button);
+      const taskId = button ? (button.dataset.taskId || state.selected) : "";
+      if (!button || !taskId) return;
+      decideChange(taskId, button.dataset.changeDecision, button);
     });
 
     runDetailEl.addEventListener("toggle", (event) => {
@@ -8250,19 +9712,22 @@
     async function continueChange(note, button) {
       button.disabled = true;
       const tasks = (state.tasks || []).concat(state.allTasks || []);
-      const task = tasks.find((item) => item.id === state.selected);
+      const taskId = (button && button.dataset.taskId) || state.selected;
+      const task = tasks.find((item) => item.id === taskId);
       try {
-        if (task) {
-          const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/decide`, {
+        if (taskId) {
+          const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/decide`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ decision: "continue", note }),
           });
           const body = await res.json();
-          if (!res.ok) throw new Error(body.error || "could not continue the change");
-          notify("info", goalHeadline(body), { title: "Continuing" });
-          await refresh();
-          return;
+          if (res.ok) {
+            notify("info", goalHeadline(body), { title: "Continuing" });
+            await refresh();
+            return;
+          }
+          if (task) throw new Error(body.error || "could not continue the change");
         }
         const run = workspaceRuns().find((item) => item.key === state.selectedRunKey && item.kind === "history");
         if (!run) throw new Error("This change is no longer open.");
@@ -8315,8 +9780,7 @@
         await queueTask({
           workspace: document.getElementById("workspace").value,
           goal: document.getElementById("goal").value,
-          base_url: document.getElementById("base-url").value,
-          model: document.getElementById("model").value,
+          ...selectedModelPayload(),
           ...contextWindowPayload(),
           auto_commit: document.getElementById("auto-commit").checked,
           create_pr: document.getElementById("create-pr").checked
@@ -8365,116 +9829,46 @@
       }
     });
 
-    async function loadModels(announceEmpty = true) {
+    function selectedModelPayload() {
       const select = document.getElementById("model");
-      const baseUrlEl = document.getElementById("base-url");
-      const loadBtn = document.getElementById("load-models");
+      const modelId = select ? select.value : "";
+      if (!modelId) {
+        throw new Error("Add a model in organization settings and grant it to this project.");
+      }
+      return { model_id: modelId };
+    }
+
+    async function loadGrantedModels() {
+      const select = document.getElementById("model");
+      if (!select) return;
       const previous = select.value;
-      const baseUrl = baseUrlEl.value.trim();
+      const workspace = (document.getElementById("workspace") || {}).value || "";
       try {
-        loadBtn.disabled = true;
-        const res = await fetch("/api/models", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            base_url: baseUrl || undefined,
-            model: previous || undefined,
-          }),
-        });
+        const res = await fetch("/api/org/models?workspace=" + encodeURIComponent(workspace));
         const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "failed to list models");
-        if (body.base_url) baseUrlEl.value = body.base_url;
-        if (Array.isArray(body.servers)) renderServers(body.servers, body.base_url);
+        if (!res.ok) throw new Error(body.error || "Could not list models");
         const models = body.models || [];
-        const selected = body.last_model || previous || body.default || "";
         select.replaceChildren();
-        for (const name of models) {
+        if (!models.length) {
           const option = document.createElement("option");
-          option.value = name;
-          option.textContent = name;
-          if (name === selected) option.selected = true;
+          option.value = "";
+          option.textContent = "No models granted";
           select.append(option);
+          select.disabled = true;
+          return;
         }
-        if (!select.options.length && selected) {
+        select.disabled = false;
+        for (const model of models) {
           const option = document.createElement("option");
-          option.value = selected;
-          option.textContent = selected;
-          option.selected = true;
+          option.value = model.id;
+          const host = model.endpoint_name ? " · " + model.endpoint_name : "";
+          option.textContent = (model.name || model.model_name) + host;
+          if (model.id === previous) option.selected = true;
           select.append(option);
-        }
-        rememberContextWindow(
-          select.value || selected,
-          readContextWindow() || body.context_window,
-        );
-        if (!models.length && announceEmpty) {
-          showNotice(errorEl, "warning", "No models returned from that LLM server.");
-          notify("warning", "No models returned from that LLM server.");
-        } else if (models.length) {
-          clearNotice(errorEl);
-          if (announceEmpty) {
-            notify("success", `Loaded ${models.length} model${models.length === 1 ? "" : "s"}.`);
-          }
         }
       } catch (err) {
         showNotice(errorEl, "error", err.message);
-        if (announceEmpty) notify("error", err.message, { title: "Could not load models" });
-      } finally {
-        loadBtn.disabled = false;
       }
-    }
-
-    function renderServers(servers, selected) {
-      const historyEl = document.getElementById("server-history");
-      const current = selected || document.getElementById("base-url").value;
-      historyEl.replaceChildren();
-      const seen = new Set();
-      for (const server of servers || []) {
-        // Handle both dict format {url, alias} and string URL
-        const url = (typeof server === "object" && server !== null) ? server.url : server;
-        if (!url || seen.has(url)) continue;
-        seen.add(url);
-        const option = document.createElement("option");
-        option.value = url;
-        option.title = url;
-        option.textContent = serverOptionLabel(server, url);
-        if (url === current) option.selected = true;
-        historyEl.append(option);
-      }
-      if (current && !seen.has(current)) {
-        const option = document.createElement("option");
-        option.value = current;
-        option.textContent = current;
-        option.selected = true;
-        historyEl.prepend(option);
-      }
-    }
-
-    document.getElementById("server-history").addEventListener("change", () => {
-      document.getElementById("base-url").value = document.getElementById("server-history").value;
-      loadModels(true);
-    });
-    document.getElementById("load-models").addEventListener("click", () => loadModels(true));
-    document.getElementById("base-url").addEventListener("change", () => loadModels(true));
-    document.getElementById("model").addEventListener("change", () => loadModels(false));
-
-    const llmServerToggle = document.getElementById("llm-server-toggle");
-    const llmServerFields = document.getElementById("llm-server-fields");
-    if (llmServerToggle && llmServerFields) {
-      function syncServerToggle(expanded) {
-        llmServerToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-        llmServerToggle.title = expanded ? "Collapse server settings" : "Expand server settings";
-      }
-      syncServerToggle(!llmServerFields.hasAttribute("hidden"));
-      llmServerToggle.addEventListener("click", () => {
-        const hidden = llmServerFields.hasAttribute("hidden");
-        if (hidden) {
-          llmServerFields.removeAttribute("hidden");
-          syncServerToggle(true);
-        } else {
-          llmServerFields.setAttribute("hidden", "");
-          syncServerToggle(false);
-        }
-      });
     }
 
     // GitHub issues for the current workspace remote
@@ -9130,12 +10524,132 @@
       setScheduleView("agenda");
     }
 
-    initSchedules();
-    renderNotificationHistory();
-    syncKeepImproving();
-    refresh();
-    loadBranches();
-    loadRecentWorkspaces().catch(() => {});
+    function waitForAuth(status, githubMessage) {
+      const gate = document.getElementById("auth-gate");
+      const setup = Boolean(status.setup);
+      const nameRow = document.getElementById("auth-name-row");
+      const title = document.getElementById("auth-title");
+      const hint = document.getElementById("auth-hint");
+      const submit = document.getElementById("auth-submit");
+      const error = document.getElementById("auth-error");
+      const orgRow = document.getElementById("auth-org-row");
+      const signup = document.getElementById("auth-signup");
+      let creating = false;
+      if (gate) gate.hidden = false;
+      if (nameRow) nameRow.hidden = !setup;
+      if (orgRow) orgRow.hidden = true;
+      if (signup) signup.hidden = setup;
+      if (title) title.textContent = setup ? "Create the admin account" : "Sign in";
+      if (hint) {
+        hint.textContent = setup
+          ? "This install has no admin yet. Choose the email and password that will sign in as the owner."
+          : "Use the email and password for this install.";
+        if (!setup && status.provider && status.provider !== "password") {
+          hint.textContent = "Sign-in matches this person by email. This organization uses "
+            + status.provider + ".";
+        }
+      }
+      if (submit) submit.textContent = setup ? "Create account" : "Sign in";
+      const ssoLink = document.getElementById("auth-sso");
+      const githubLink = document.getElementById("auth-github");
+      if (ssoLink) ssoLink.hidden = setup || !status.provider || status.provider === "password";
+      if (githubLink) githubLink.hidden = setup || !status.github;
+      if (error && githubMessage) error.textContent = githubMessage;
+      function showSignup(next) {
+        creating = next;
+        if (nameRow) nameRow.hidden = setup ? false : !creating;
+        if (orgRow) orgRow.hidden = !creating;
+        if (title) title.textContent = creating ? "Create an organization" : "Sign in";
+        if (hint && !setup) {
+          hint.textContent = creating
+            ? "This creates an organization and its owner. The owner is not an LBW engineer."
+            : "Use the email and password for this install.";
+        }
+        if (submit) submit.textContent = creating ? "Create organization" : "Sign in";
+        if (signup) signup.textContent = creating ? "Sign in instead" : "Create an organization";
+      }
+      if (signup) {
+        signup.addEventListener("click", () => {
+          if (error) error.textContent = "";
+          showSignup(!creating);
+        });
+      }
+      return new Promise((resolve) => {
+        document.getElementById("auth-form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (error) error.textContent = "";
+          const payload = {
+            email: document.getElementById("auth-email").value,
+            password: document.getElementById("auth-password").value,
+          };
+          let path = "/api/auth/login";
+          if (setup) {
+            payload.name = document.getElementById("auth-name").value;
+            path = "/api/auth/setup";
+          } else if (creating) {
+            payload.name = document.getElementById("auth-name").value;
+            payload.organization = document.getElementById("auth-org").value;
+            path = "/api/auth/signup";
+          }
+          const res = await fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const body = await res.json();
+          if (!res.ok) {
+            if (error) error.textContent = body.error || "Could not sign in";
+            return;
+          }
+          if (gate) gate.hidden = true;
+          resolve();
+        });
+      });
+    }
+
+    async function signOut() {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.assign("/");
+    }
+
+    async function startApp() {
+      const githubResult = consumeGitHubReturn();
+      let status = { setup: false, signed_in: true };
+      try {
+        const res = await fetch("/api/auth/status");
+        status = await res.json();
+      } catch (err) {
+        status = { setup: false, signed_in: true };
+      }
+      if (status.setup || !status.signed_in) {
+        await waitForAuth(status, githubReturnMessage(githubResult));
+      }
+      const gate = document.getElementById("auth-gate");
+      if (gate) gate.hidden = true;
+      sessionReady = true;
+      if (state.section === "personal" || state.section === "organization") loadAccountPages();
+      if (status.signed_in && githubResult === "connected") {
+        showSection("organization");
+        notify("success", "GitHub account connected.", { title: "GitHub" });
+      } else if (status.signed_in) {
+        const githubMessage = githubReturnMessage(githubResult);
+        if (githubMessage) notify("error", githubMessage, { title: "GitHub" });
+      }
+      initSchedules();
+      renderNotificationHistory();
+      syncKeepImproving();
+      refresh();
+      loadAccount().catch(() => {});
+      loadBranches();
+      loadRecentWorkspaces().catch(() => {});
+      loadGrantedModels();
+      setInterval(refresh, 1000);
+      setInterval(() => {
+        if (state.tasks.some(task => task.status === "running")) render();
+      }, 1000);
+    }
+
+    startApp();
     const contextWindowEl = document.getElementById("context-window");
     if (contextWindowEl && !contextWindowEl.value.trim()) {
       try {
@@ -9156,11 +10670,6 @@
         }
       });
     }
-    loadModels(false);
-    setInterval(refresh, 1000);
-    setInterval(() => {
-      if (state.tasks.some(task => task.status === "running")) render();
-    }, 1000);
   </script>
 </body>
 </html>

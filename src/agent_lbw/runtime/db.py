@@ -51,6 +51,18 @@ class Database:
         self.raw.close()
 
 
+def database_configured(root: Path, database_url: str = "") -> bool:
+    """True when a database file or a Postgres URL is already there to read."""
+    url = (database_url or "").strip()
+    if url.startswith("postgres://") or url.startswith("postgresql://"):
+        return True
+    try:
+        path = sqlite_path(root, database_url)
+    except ValueError:
+        return False
+    return path is not None and path.is_file()
+
+
 def sqlite_path(root: Path, database_url: str = "") -> Path | None:
     """The local database file, or None when this install uses Postgres."""
     url = database_url.strip()

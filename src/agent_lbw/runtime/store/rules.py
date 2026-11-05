@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_lbw.runtime.db import Database
+from agent_lbw.runtime.skills import render_skill_html
 from agent_lbw.runtime.store.names import clean_name, new_id
 from agent_lbw.runtime.store.projects import can_access, ensure_project, require_project
 from agent_lbw.tools.kiwi import KiwiError
@@ -508,6 +509,7 @@ def _public(
         "id": row["id"],
         "name": row["name"],
         "body": body,
+        "html": render_skill_html(body),
         "scope_type": row["scope_type"],
         "scope_id": row["scope_id"],
         "can_write": can_write_scope(

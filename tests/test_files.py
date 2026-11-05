@@ -10,6 +10,21 @@ def _tool(workspace: Workspace, name: str):
     return next(tool for tool in file_tools(workspace) if tool.name == name)
 
 
+def test_write_file_rejects_a_config_command_with_a_bare_colon(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    config = tmp_path / ".lbw" / "config.yaml"
+    config.parent.mkdir()
+    config.write_text("name: demo\n", encoding="utf-8")
+    command = "python3 -c \"with Server(('', PORT), Handler) as httpd: print('up')\""
+    result = _tool(workspace, "write_file").handler(
+        path=".lbw/config.yaml",
+        content=f"name: demo\npreview_command: {command}\n",
+    )
+    assert not result.ok
+    assert "configure_project" in result.output
+    assert config.read_text(encoding="utf-8") == "name: demo\n"
+
+
 def test_write_and_read_roundtrip(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     written = _tool(workspace, "write_file").handler(path="hello.txt", content="hi\n")

@@ -8,5 +8,8 @@ run. `rules` indexes a rule whose text lives in that scope's KiwiFS space.
 skills and enforced roles an organization applies down to teams and projects.
 `skill_repos` indexes a cloned skill repository. Its files and commit live in
 a KiwiFS space named from the organization, team, and project ids.
+`catalog` stores bring-your-own endpoints, the model names they returned,
+and the agents that may build with a chosen model. A grant on a project, a
+team, or a person is what allows use.
 Model context stays in the run directory.
 """

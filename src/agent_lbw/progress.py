@@ -151,11 +151,17 @@ def public_run_item(item: dict[str, Any] | object) -> dict[str, Any] | object:
     """Copy a run or history payload without LLM transcripts in events."""
     if not isinstance(item, dict):
         return item
-    events = item.get("events")
-    if not isinstance(events, list):
-        return item
     slim = dict(item)
-    slim["events"] = [public_event(event) for event in events]
+    events = item.get("events")
+    if isinstance(events, list):
+        slim["events"] = [public_event(event) for event in events]
+    from agent_lbw.runtime.store.tasks import fault_for
+
+    slim["fault"] = fault_for(
+        status=str(slim.get("status") or ""),
+        reason=str(slim.get("reason") or ""),
+        error=str(slim.get("error") or ""),
+    )
     return slim
 
 

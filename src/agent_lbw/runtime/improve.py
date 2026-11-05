@@ -92,7 +92,12 @@ from agent_lbw.tools.git import (
     upstream_state,
 )
 from agent_lbw.tools.kiwi import resolve_kiwifs_prefix
-from agent_lbw.tools.lint import apply_ruff_autofix, current_lint_result, run_project_lint
+from agent_lbw.tools.lint import (
+    apply_ruff_autofix,
+    current_lint_result,
+    ruff_unavailable,
+    run_project_lint,
+)
 from agent_lbw.tools.tests import current_test_result, run_project_tests, runner_unavailable
 
 log = logging.getLogger("lbw")
@@ -363,7 +368,20 @@ def _run_cycle(
     plan_text = ""
     criteria: list[str] = []
     workspace = Workspace(workspace_path)
-    project = load_project(workspace.root)
+    try:
+        project = load_project(workspace.root)
+    except ValueError as exc:
+        log_progress(str(exc))
+        return CycleResult(
+            status="failed",
+            goal=goal,
+            summary=None,
+            tests_passed=None,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason=str(exc),
+        )
     if normalized_decision == "hand_off":
         log_progress("Handing this change to a person. Nothing will be built.")
         result = CycleResult(
@@ -391,6 +409,7 @@ def _run_cycle(
             held_summary or "",
             allow_create_pr=allow_create_pr,
             mark_checkbox=mark_checkbox,
+            store_root=store_root,
         )
     stay_here = goal_keeps_current_branch(goal) and not (base_branch or "").strip()
     if not keep_branch and not stay_here and (workspace.root / ".git").exists():
@@ -862,6 +881,8 @@ def _run_cycle(
             workspace,
             message,
             env=_git_env(settings),
+            store_root=store_root,
+            database_url=settings.database_url,
         )
         if not commit.ok:
             log_progress("Commit failed.")
@@ -885,7 +906,7 @@ def _run_cycle(
     github_token = None
     if allow_create_pr:
         github_token = _github_token(store_root, settings.database_url)
-        published, pr_url, failed = _publish_pull_request(
+        published, pr_url, failed, committed = _publish_pull_request(
             workspace,
             project,
             selected_goal,
@@ -895,7 +916,10 @@ def _run_cycle(
             committed=committed,
             screenshot_files=screenshot_files,
             token=github_token,
+            settings=settings,
+            store_root=store_root,
         )
+        sha = current_sha(workspace) or sha
         if failed is not None:
             return failed
 
@@ -1170,6 +1194,7 @@ def _publish_held(
     *,
     allow_create_pr: bool,
     mark_checkbox: bool,
+    store_root: Path | None = None,
 ) -> CycleResult:
     """Commit and publish work a person already approved. Does not run the builder."""
     selected = goal.strip() or "Approved change"
@@ -1215,7 +1240,11 @@ def _publish_held(
             log_progress(f"On branch {branched.output}")
         log_progress("Committing the approved change...")
         commit = commit_changes(
-            workspace, _commit_message(selected, summary), env=_git_env(settings)
+            workspace,
+            _commit_message(selected, summary),
+            env=_git_env(settings),
+            store_root=store_root,
+            database_url=settings.database_url,
         )
         if not commit.ok:
             result = CycleResult(
@@ -1238,7 +1267,8 @@ def _publish_held(
     published = False
     pr_url = None
     if allow_create_pr:
-        published, pr_url, failed = _publish_pull_request(
+        github_token = _github_token(store_root, settings.database_url)
+        published, pr_url, failed, committed = _publish_pull_request(
             workspace,
             project,
             selected,
@@ -1247,7 +1277,11 @@ def _publish_held(
             sha=sha,
             committed=committed,
             screenshot_files=[],
+            token=github_token,
+            settings=settings,
+            store_root=store_root,
         )
+        sha = current_sha(workspace) or sha
         if failed is not None:
             return failed
     if committed and mark_checkbox:
@@ -1336,8 +1370,14 @@ def _publish_pull_request(
     committed: bool,
     screenshot_files: list[Path],
     token: str | None = None,
-) -> tuple[bool, str | None, CycleResult | None]:
-    """Push the current feature branch and open a PR if this branch does not already have one."""
+    settings: Settings | None = None,
+    store_root: Path | None = None,
+) -> tuple[bool, str | None, CycleResult | None, bool]:
+    """Commit project changes, push that branch, then open or update the pull request.
+
+    The pull request is not opened until the push succeeds. ``.lbw/`` and
+    ``history.json`` stay out of the commit. A protected branch is not pushed.
+    """
     branch = current_branch(workspace)
     if is_protected_branch(branch):
         if committed:
@@ -1354,16 +1394,42 @@ def _publish_pull_request(
             )
             _write_run_log(workspace.root, result)
             _append_to_history(workspace.root, result)
-            return False, None, result
-        return False, None, None
+            return False, None, result, committed
+        return False, None, None, committed
+    if settings is not None and settings.auto_commit and has_changes(workspace):
+        log_progress("Committing changes before the push...")
+        commit = commit_changes(
+            workspace,
+            _commit_message(goal, summary),
+            env=_git_env(settings),
+            store_root=store_root,
+            database_url=settings.database_url,
+        )
+        if not commit.ok:
+            result = CycleResult(
+                status="failed",
+                goal=goal,
+                summary=_failure_notes(f"commit failed: {commit.output}", summary),
+                tests_passed=tests_passed,
+                committed=False,
+                published=False,
+                commit_sha=sha,
+                reason=f"commit failed: {commit.output}",
+            )
+            _write_run_log(workspace.root, result)
+            _append_to_history(workspace.root, result)
+            return False, None, result, False
+        committed = True
+        sha = current_sha(workspace)
+        log_progress(f"Committed SHA: {sha}")
     existing = existing_pull_request(workspace, token=token)
     base = default_base_branch(workspace, project.publish_branch)
     if not committed and commits_ahead_of_base(workspace, base) <= 0:
         if existing:
             log_progress(f"Branch already has pull request {existing}")
             record_event(kind="pr", url=existing, message="existing pull request")
-            return True, existing, None
-        return False, None, None
+            return True, existing, None, committed
+        return False, None, None, committed
     log_progress(f"Pushing branch {branch}...")
     pushed = push_changes(workspace, project.publish_remote, branch, token)
     if not pushed.ok:
@@ -1380,7 +1446,7 @@ def _publish_pull_request(
         )
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
-        return False, None, result
+        return False, None, result, committed
     if existing:
         log_progress(f"Updating pull request {existing}")
         updated = update_pull_request(
@@ -1408,7 +1474,7 @@ def _publish_pull_request(
                 f"Pushed the branch; pull request text was not refreshed: {updated.output}"
             )
         record_event(kind="pr", url=existing, message=updated.output or "existing pull request")
-        return True, existing, None
+        return True, existing, None, committed
     log_progress("Opening pull request...")
     pr = create_pull_request(
         workspace,
@@ -1444,11 +1510,11 @@ def _publish_pull_request(
         )
         _write_run_log(workspace.root, result)
         _append_to_history(workspace.root, result)
-        return False, None, result
+        return False, None, result, committed
     log_progress(pr.output)
     if pr_url:
         record_event(kind="pr", url=pr_url, message=pr.output)
-    return True, pr_url, None
+    return True, pr_url, None, committed
 
 
 def _handle_empty_diff(
@@ -1485,8 +1551,9 @@ def _handle_empty_diff(
     if verdict.met or is_open_pr_goal(goal):
         published = False
         pr_url = None
+        published_commit = False
         if allow_create_pr:
-            published, pr_url, failed = _publish_pull_request(
+            published, pr_url, failed, published_commit = _publish_pull_request(
                 workspace,
                 project,
                 goal,
@@ -1495,7 +1562,10 @@ def _handle_empty_diff(
                 sha=sha,
                 committed=False,
                 screenshot_files=[],
+                settings=settings,
             )
+            if published_commit:
+                sha = current_sha(workspace) or sha
             if failed is not None:
                 return _EmptyDiffOutcome(result=failed, summary=summary, tests_passed=tests_passed)
         if verdict.met or published:
@@ -1517,7 +1587,7 @@ def _handle_empty_diff(
                 goal=goal,
                 summary=cycle_summary,
                 tests_passed=tests_passed,
-                committed=False,
+                committed=published_commit,
                 published=published,
                 commit_sha=sha,
                 reason=reason,
@@ -1894,7 +1964,10 @@ def _ensure_goal_met(
         previous_reason = review_reason(verdict)
         attempts += 1
         log_progress(f"Goal retry {attempts}/{limit}: {review_reason(verdict)}")
-        project = load_project(workspace.root)
+        try:
+            project = load_project(workspace.root)
+        except ValueError as exc:
+            log_progress(str(exc))
         work_diff = collect_work_diff(workspace, sha_before, goal=goal)
         named_files = format_goal_files(workspace.root, goal)
         repeated = bool(verdict.ui_errors) and tuple(verdict.ui_errors) == last_errors
@@ -2605,6 +2678,9 @@ def _ensure_lint(
     lint_after = _maybe_lint(workspace, project, settings, phase="after")
     if lint_after is None or lint_after.ok:
         return lint_after
+    if ruff_unavailable(lint_after.output or ""):
+        log_progress("Lint did not start because ruff is not installed.")
+        return lint_after
     log_progress("Lint failed; applying automatic fixes, then repairing remaining errors.")
     lint_command = project.lint_command or load_project(workspace.root).lint_command
     if apply_ruff_autofix(
@@ -2934,7 +3010,8 @@ def _write_run_log(root: Path, result: CycleResult) -> None:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = runs / f"{stamp}.json"
     payload = asdict(result)
-    payload.setdefault("id", stamp)
+    task_id = _TASK_ID.get()
+    payload["id"] = task_id or stamp
     payload.setdefault("created_at", result.created_at)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 

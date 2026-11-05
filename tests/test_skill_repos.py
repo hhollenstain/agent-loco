@@ -87,6 +87,7 @@ def test_repo_skills_stay_in_the_org_team_and_project_space(
     assert added.status_code == 200
     repo = next(item for item in added.json()["skill_repos"] if item["scope_id"] == team_id)
     assert repo["sha"]
+    assert "code-review" in repo["skills"]
     assert repo["space"] == skill_space(added.json()["org_id"], team_id=team_id)
     assert "Acme" not in repo["space"]
     assert "Northwind" not in repo["space"]
@@ -129,6 +130,20 @@ def test_repo_skills_stay_in_the_org_team_and_project_space(
     only_beta = client.get("/api/workspaces/skills", params={"path": str(beta)})
     assert "alpha-only" in [item["name"] for item in only_alpha.json()["skills"]]
     assert "alpha-only" not in [item["name"] for item in only_beta.json()["skills"]]
+    assert "data-skill-source-remove" in page.text
+
+    kept = client.post(
+        "/api/workspaces/skills/sources/remove",
+        json={"path": str(alpha), "slug": repo["id"]},
+    )
+    assert kept.status_code == 403
+    removed = client.post(
+        "/api/workspaces/skills/sources/remove",
+        json={"path": str(alpha), "slug": project_repo["id"]},
+    )
+    assert removed.status_code == 200
+    assert "alpha-only" not in [item["name"] for item in removed.json()["skills"]]
+    assert "code-review" in [item["name"] for item in removed.json()["skills"]]
 
     extra = remote / "skills" / "follow-up"
     extra.mkdir()

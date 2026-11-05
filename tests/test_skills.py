@@ -16,6 +16,8 @@ from agent_lbw.runtime.skills import (
     parse_skill_markdown,
     render_skill_html,
     save_enabled_skills,
+    skill_documents,
+    skill_markdown_for_kiwi,
     sources_root,
     sync_skill_source,
 )
@@ -49,6 +51,28 @@ def test_parse_skill_markdown_reads_frontmatter() -> None:
     assert "failing test" in body
 
 
+def test_skill_markdown_quotes_a_colon_for_kiwi(tmp_path: Path) -> None:
+    raw = (
+        "---\nname: review\ndescription: Use when: the change is ready\n---\n\nLook at the diff.\n"
+    )
+    stored = skill_markdown_for_kiwi(raw)
+    name, description, body = parse_skill_markdown(stored, fallback_name="review")
+    assert name == "review"
+    assert description == "Use when: the change is ready"
+    assert "Look at the diff." in body
+    assert "description: Use when: the change is ready\n" not in stored
+
+    folded = "---\nname: review\ndescription: >-\n  Use when: the change is ready\n---\n\nBody.\n"
+    assert skill_markdown_for_kiwi(folded) == folded
+
+    skill = tmp_path / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(raw, encoding="utf-8")
+    documents = skill_documents(tmp_path)
+    assert documents[0][0] == "skills/review/SKILL.md"
+    assert documents[0][1] == stored
+
+
 def test_render_skill_html_formats_markdown() -> None:
     html = render_skill_html("# Loop\n\nWrite a **failing** test and call `run_tests`.\n")
     assert "<h1>Loop</h1>" in html
@@ -72,6 +96,19 @@ def test_skill_summary_uses_first_sentence() -> None:
     clipped = skill_summary(long_one)
     assert clipped.endswith("…")
     assert len(clipped) <= 72
+
+
+def test_bundled_style_skill_is_discoverable(tmp_path: Path) -> None:
+    skill_path = bundled_skills_root() / "style" / "SKILL.md"
+    assert skill_path.is_file()
+    skills = {item.name: item for item in list_skills(tmp_path)}
+    assert "style" in skills
+    assert skills["style"].origin == "bundled"
+    body = skills["style"].body.lower()
+    assert "when an engineer changes the style" in body
+    assert "themes.css" in body
+    assert "updates this skill in" in body
+    assert "same change" in body
 
 
 def test_bundled_ui_skill_is_discoverable(tmp_path: Path) -> None:

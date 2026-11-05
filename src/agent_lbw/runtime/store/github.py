@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
+import secrets
 import time
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
 from cryptography.hazmat.primitives import hashes, serialization
@@ -18,9 +21,14 @@ from agent_lbw.runtime.store.install import require_account
 from agent_lbw.runtime.store.tasks import tenant_dek
 
 _API = "https://api.github.com"
+_AUTHORIZE = "https://github.com/login/oauth/authorize"
+_TOKEN_URL = "https://github.com/login/oauth/access_token"
 _TOKEN_TTL = 45 * 60
+_CONNECT_TTL = 10 * 60
 _SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,98})$")
+_CLIENT_ID = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 _tokens: dict[tuple[str, str, str], tuple[float, str]] = {}
+_pending: dict[str, tuple[float, str, str, str]] = {}
 
 
 class GitHubAppError(Exception):
@@ -33,7 +41,13 @@ def github_app_view(db: Database) -> dict:
     if row is None:
         view = _view("", "", "")
     else:
-        view = _view(row["app_id"], row["installation_id"] or "", row["account_login"] or "")
+        view = _view(
+            row["app_id"],
+            row["installation_id"] or "",
+            row["account_login"] or "",
+            client_id=str(row["client_id"] or ""),
+            has_client_secret=bool(row["client_secret_ciphertext"]),
+        )
     view["installations"] = saved_installations(db)
     return view
 
@@ -78,11 +92,8 @@ def github_app_state(db: Database, root: Path) -> dict:
 def install_url(db: Database, root: Path) -> str:
     """Where an owner installs this app on a GitHub account or organization."""
     try:
-        creds = _credentials(db, root, require_account(db)["org"]["id"])
-        payload = _github_json("GET", "/app", jwt=_jwt(creds))
+        payload = _app_payload(db, root, require_account(db)["org"]["id"])
     except (GitHubAppError, ValueError):
-        return ""
-    if not isinstance(payload, dict):
         return ""
     slug = str(payload.get("slug") or "")
     if _SLUG.fullmatch(slug) is None:
@@ -90,7 +101,9 @@ def install_url(db: Database, root: Path) -> str:
     return f"https://github.com/apps/{slug}/installations/new"
 
 
-def save_github_app(db: Database, root: Path, *, app_id: str, private_key: str) -> dict:
+def save_github_app(
+    db: Database, root: Path, *, app_id: str, private_key: str, client_secret: str = ""
+) -> dict:
     account = _require_manager(db)
     clean_id = app_id.strip()
     if not clean_id.isdigit() or len(clean_id) > 20:
@@ -105,26 +118,45 @@ def save_github_app(db: Database, root: Path, *, app_id: str, private_key: str) 
         ciphertext = existing["private_key_ciphertext"]
     else:
         raise ValueError("paste the app's private key")
+    secret = _clean_secret(client_secret)
     same_app = existing is not None and existing["app_id"] == clean_id
+    if secret:
+        secret_ciphertext = seal(tenant_dek(db, root, tenant_id), secret)
+    elif same_app and existing["client_secret_ciphertext"]:
+        secret_ciphertext = existing["client_secret_ciphertext"]
+    else:
+        secret_ciphertext = None
     installation_id = existing["installation_id"] if same_app else None
     account_login = existing["account_login"] if same_app else None
     account_type = existing["account_type"] if same_app else None
+    client_id = existing["client_id"] if same_app else None
     if not same_app:
         db.execute("DELETE FROM github_installations WHERE tenant_id = ?", (tenant_id,))
     db.execute(
         """
             INSERT INTO github_apps (
                 tenant_id, app_id, private_key_ciphertext, installation_id,
-                account_login, account_type
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                account_login, account_type, client_id, client_secret_ciphertext
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (tenant_id) DO UPDATE SET
                 app_id = excluded.app_id,
                 private_key_ciphertext = excluded.private_key_ciphertext,
                 installation_id = excluded.installation_id,
                 account_login = excluded.account_login,
-                account_type = excluded.account_type
+                account_type = excluded.account_type,
+                client_id = excluded.client_id,
+                client_secret_ciphertext = excluded.client_secret_ciphertext
             """,
-        (tenant_id, clean_id, ciphertext, installation_id, account_login, account_type),
+        (
+            tenant_id,
+            clean_id,
+            ciphertext,
+            installation_id,
+            account_login,
+            account_type,
+            client_id,
+            secret_ciphertext,
+        ),
     )
     found: list[dict] = []
     warning = ""
@@ -135,9 +167,11 @@ def save_github_app(db: Database, root: Path, *, app_id: str, private_key: str) 
     else:
         current = _row(db, tenant_id)
         if current is not None and not current["installation_id"] and len(found) == 1:
-            select_installation(db, root, found[0]["id"])
+            chosen = select_installation(db, root, found[0]["id"])
+            warning = str(chosen.get("warning") or "")
+    link = "" if warning else install_url(db, root)
     view = github_app_view(db)
-    view["install_url"] = "" if warning else install_url(db, root)
+    view["install_url"] = link
     if warning:
         view["warning"] = warning
     return view
@@ -206,6 +240,14 @@ def select_installation(db: Database, root: Path, installation_id: str) -> dict:
             account["org"]["id"],
         ),
     )
+    from agent_lbw.runtime.store.github_sync import sync_access
+
+    try:
+        sync_access(db, root)
+    except FileNotFoundError:
+        view = github_app_view(db)
+        view["warning"] = "the app is saved; matching a checkout needs git on this service"
+        return view
     return github_app_view(db)
 
 
@@ -241,6 +283,91 @@ def installation_token(db: Database, root: Path) -> str | None:
     return token
 
 
+def begin_user_connect(db: Database, root: Path, *, redirect_uri: str) -> str:
+    """The GitHub page where the current person authorizes this app."""
+    account = require_account(db)
+    tenant_id = account["org"]["id"]
+    client_id, _secret = _user_client(db, root, tenant_id)
+    state = secrets.token_urlsafe(24)
+    verifier = secrets.token_urlsafe(48)
+    _pending[state] = (time.time() + _CONNECT_TTL, "link", account["current_user_id"], verifier)
+    _drop_expired()
+    query = urlencode(
+        {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "state": state,
+            "code_challenge": _pkce(verifier),
+            "code_challenge_method": "S256",
+        }
+    )
+    return f"{_AUTHORIZE}?{query}"
+
+
+def begin_github_login(db: Database, root: Path, *, redirect_uri: str) -> str:
+    """Start GitHub sign-in for a login that is already stored. No session is required."""
+    install = db.fetchone("SELECT tenant_id FROM install WHERE id = 1")
+    if install is None or not install["tenant_id"]:
+        raise ValueError("create the admin account first")
+    client_id, _secret = _user_client(db, root, str(install["tenant_id"]))
+    state = secrets.token_urlsafe(24)
+    verifier = secrets.token_urlsafe(48)
+    _pending[state] = (time.time() + _CONNECT_TTL, "login", "", verifier)
+    _drop_expired()
+    query = urlencode(
+        {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "state": state,
+            "code_challenge": _pkce(verifier),
+            "code_challenge_method": "S256",
+        }
+    )
+    return f"{_AUTHORIZE}?{query}"
+
+
+def finish_user_connect(
+    db: Database, root: Path, *, code: str, state: str, redirect_uri: str
+) -> dict:
+    """Read the GitHub login once. Linking stores it. Signing in opens a session."""
+    from agent_lbw.runtime.store.auth import open_session_for_github_account
+    from agent_lbw.runtime.store.github_sync import link_github_login, refresh_access
+
+    pending = _pending.pop(state, None)
+    if pending is None or pending[0] < time.time() or len(pending) < 4:
+        raise ValueError("that GitHub connection expired. Try again.")
+    _expiry, mode, identity_id, verifier = pending
+    install = db.fetchone("SELECT tenant_id FROM install WHERE id = 1")
+    if install is None or not install["tenant_id"]:
+        raise ValueError("create the admin account first")
+    client_id, secret = _user_client(db, root, str(install["tenant_id"]))
+    token = _exchange_code(
+        client_id=client_id,
+        client_secret=secret,
+        code=code,
+        redirect_uri=redirect_uri,
+        code_verifier=verifier,
+    )
+    try:
+        payload = _request("GET", "/user", auth=f"Bearer {token}")
+        emails = _github_account_emails(token, payload if isinstance(payload, dict) else {})
+    finally:
+        del token
+    if not isinstance(payload, dict) or not payload.get("login"):
+        raise GitHubAppError("GitHub did not complete that sign-in")
+    login = str(payload["login"])
+    if mode == "login":
+        return {
+            "mode": "login",
+            "session": open_session_for_github_account(db, github_login=login, emails=emails),
+        }
+    if not identity_id:
+        raise ValueError("that GitHub connection expired. Try again.")
+    linked = link_github_login(db, user_id=identity_id, github_login=login)
+    refresh_access(db, root)
+    return linked
+
+
 def current_token(root: Path, database_url: str = "") -> str | None:
     from agent_lbw.runtime.db import database
 
@@ -248,12 +375,21 @@ def current_token(root: Path, database_url: str = "") -> str | None:
         return installation_token(db, root)
 
 
-def _view(app_id: str, installation_id: str, account_login: str) -> dict:
+def _view(
+    app_id: str,
+    installation_id: str,
+    account_login: str,
+    *,
+    client_id: str = "",
+    has_client_secret: bool = False,
+) -> dict:
     return {
         "configured": bool(app_id),
         "app_id": app_id,
         "installation_id": installation_id,
         "account_login": account_login,
+        "client_id": client_id,
+        "has_client_secret": has_client_secret,
     }
 
 
@@ -293,7 +429,8 @@ def github_installation(db: Database, tenant_id: str):
 def _row(db: Database, tenant_id: str):
     return db.fetchone(
         """
-        SELECT app_id, private_key_ciphertext, installation_id, account_login, account_type
+        SELECT app_id, private_key_ciphertext, installation_id, account_login, account_type,
+               client_id, client_secret_ciphertext
         FROM github_apps WHERE tenant_id = ?
         """,
         (tenant_id,),
@@ -314,6 +451,90 @@ def _require_manager(db: Database) -> dict:
     if not _is_manager(db):
         raise PermissionError("an owner or admin connects the GitHub App")
     return account
+
+
+def _app_payload(db: Database, root: Path, tenant_id: str) -> dict:
+    creds = _credentials(db, root, tenant_id)
+    payload = _github_json("GET", "/app", jwt=_jwt(creds))
+    if not isinstance(payload, dict):
+        raise GitHubAppError("GitHub did not return the app")
+    client_id = str(payload.get("client_id") or "")
+    if _CLIENT_ID.fullmatch(client_id):
+        db.execute(
+            "UPDATE github_apps SET client_id = ? WHERE tenant_id = ?",
+            (client_id, tenant_id),
+        )
+    return payload
+
+
+def _user_client(db: Database, root: Path, tenant_id: str) -> tuple[str, str]:
+    row = _row(db, tenant_id)
+    if row is None or not row["client_secret_ciphertext"]:
+        raise ValueError("paste the GitHub App client secret before people can connect")
+    client_id = str(row["client_id"] or "")
+    if _CLIENT_ID.fullmatch(client_id) is None:
+        payload = _app_payload(db, root, tenant_id)
+        client_id = str(payload.get("client_id") or "")
+    if _CLIENT_ID.fullmatch(client_id) is None:
+        raise ValueError("GitHub did not return a client id for this app")
+    secret = open_secret(tenant_dek(db, root, tenant_id), row["client_secret_ciphertext"])
+    return client_id, secret
+
+
+def _clean_secret(value: str) -> str:
+    secret = value.strip()
+    if not secret:
+        return ""
+    if "BEGIN" in secret or len(secret) > 200 or any(char.isspace() for char in secret):
+        raise ValueError("paste the client secret from the GitHub App")
+    if len(secret) < 8:
+        raise ValueError("paste the client secret from the GitHub App")
+    return secret
+
+
+def _exchange_code(
+    *,
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+    code_verifier: str,
+) -> str:
+    try:
+        response = httpx.post(
+            _TOKEN_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier,
+            },
+            headers={"Accept": "application/json"},
+            timeout=20,
+        )
+    except httpx.HTTPError as exc:
+        raise GitHubAppError("GitHub could not be reached") from exc
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise GitHubAppError("GitHub did not complete that sign-in") from exc
+    token = str(payload.get("access_token") or "") if isinstance(payload, dict) else ""
+    if not token:
+        raise GitHubAppError("GitHub did not complete that sign-in")
+    return token
+
+
+def _pkce(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def _drop_expired() -> None:
+    now = time.time()
+    for key, pending in list(_pending.items()):
+        if pending[0] < now:
+            _pending.pop(key, None)
 
 
 def _credentials(db: Database, root: Path, tenant_id: str) -> tuple[str, str]:
@@ -344,18 +565,75 @@ def _load_key(private_key: str):
 
 def github_api(method: str, path: str, *, token: str) -> object:
     """Call GitHub with an installation token. The token is not returned."""
-    return _request(method, path, auth=f"Bearer {token}")
+    body, _link = _call(method, path, auth=f"Bearer {token}")
+    return body
+
+
+def github_api_page(method: str, path: str, *, token: str) -> tuple[object, str]:
+    """One GitHub page and its Link header. A next link stays on api.github.com."""
+    return _call(method, path, auth=f"Bearer {token}")
+
+
+def _github_account_emails(token: str, profile: dict) -> list[str]:
+    """Emails GitHub shared for this account. A missing permission leaves the list short."""
+    found: list[str] = []
+    public = str(profile.get("email") or "").strip()
+    if public:
+        found.append(public)
+    try:
+        response = httpx.request(
+            "GET",
+            _api_url("/user/emails"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=20,
+        )
+    except httpx.HTTPError:
+        return found
+    if response.status_code >= 400:
+        return found
+    try:
+        payload = response.json()
+    except ValueError:
+        return found
+    if not isinstance(payload, list):
+        return found
+    primary: list[str] = []
+    rest: list[str] = []
+    for item in payload:
+        if not isinstance(item, dict) or not item.get("verified"):
+            continue
+        email = str(item.get("email") or "").strip()
+        if not email:
+            continue
+        if item.get("primary"):
+            primary.append(email)
+        else:
+            rest.append(email)
+    for email in primary + rest:
+        if email not in found:
+            found.append(email)
+    return found
 
 
 def _github_json(method: str, path: str, *, jwt: str) -> object:
-    return _request(method, path, auth=f"Bearer {jwt}")
+    body, _link = _call(method, path, auth=f"Bearer {jwt}")
+    return body
 
 
 def _request(method: str, path: str, *, auth: str) -> object:
+    body, _link = _call(method, path, auth=auth)
+    return body
+
+
+def _call(method: str, path: str, *, auth: str) -> tuple[object, str]:
     try:
         response = httpx.request(
             method,
-            f"{_API}{path}",
+            _api_url(path),
             headers={
                 "Authorization": auth,
                 "Accept": "application/vnd.github+json",
@@ -373,10 +651,24 @@ def _request(method: str, path: str, *, auth: str) -> object:
         )
     if response.status_code >= 400:
         raise GitHubAppError(f"GitHub returned {response.status_code}")
+    headers = getattr(response, "headers", None)
+    link = ""
+    if headers is not None and hasattr(headers, "get"):
+        link = str(headers.get("link") or headers.get("Link") or "")
     try:
-        return response.json()
+        return response.json(), link
     except ValueError as exc:
         raise GitHubAppError("GitHub returned an unreadable response") from exc
+
+
+def _api_url(path: str) -> str:
+    if path.startswith("https://"):
+        if path != _API and not path.startswith(f"{_API}/"):
+            raise GitHubAppError("GitHub returned an unreadable response")
+        return path
+    if not path.startswith("/"):
+        raise GitHubAppError("GitHub returned an unreadable response")
+    return f"{_API}{path}"
 
 
 def _b64(payload: dict) -> str:

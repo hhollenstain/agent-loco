@@ -68,7 +68,8 @@ class OpenAICompatClient:
         self.model = model
         self.base_url = normalize_model_base_url(base_url)
         self.context_window = context_window if context_window and context_window >= 512 else None
-        self.client = OpenAI(base_url=self.base_url, api_key=api_key)
+        # The SDK rejects a blank key. Ollama, vLLM, and LM Studio do not check one.
+        self.client = OpenAI(base_url=self.base_url, api_key=api_key.strip() or "ollama")
 
     def complete(
         self,

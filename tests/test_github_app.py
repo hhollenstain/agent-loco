@@ -10,9 +10,12 @@ from pathlib import Path
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
+from lbw_crossing.app import create_app as create_crossing_app
 
 from agent_lbw.config import Settings
+from agent_lbw.runtime.account import load_account
 from agent_lbw.runtime.db import database
+from agent_lbw.runtime.store.projects import ensure_project
 from agent_lbw.runtime.tasks import TaskManager
 from agent_lbw.runtime.workspaces import clone_workspace
 from agent_lbw.sandbox import Workspace
@@ -43,6 +46,69 @@ class _Response:
         return self._payload
 
 
+def _empty_sync(method: str, url: str) -> _Response | None:
+    if method == "POST" and url.endswith("/access_tokens"):
+        return _Response(200, {"token": "ghs_secret"})
+    if "/installation/repositories" in url:
+        return _Response(200, {"repositories": []})
+    path = url.split("?", 1)[0]
+    if "/orgs/" in path and (path.endswith("/members") or path.endswith("/teams")):
+        return _Response(200, [])
+    return None
+
+
+def test_save_keeps_the_key_when_git_is_missing(
+    settings: Settings, tmp_path: Path, monkeypatch
+) -> None:
+    def fake_request(method: str, url: str, headers: dict | None = None, timeout: float = 20):
+        if method == "GET" and url.endswith("/app/installations"):
+            return _Response(
+                200,
+                [{"id": 42, "account": {"login": "acme", "type": "Organization"}}],
+            )
+        if method == "GET" and url.endswith("/app"):
+            return _Response(200, {"slug": "lbw-local"})
+        synced = _empty_sync(method, url)
+        if synced is not None:
+            return synced
+        return _Response(404, {})
+
+    def missing_git(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr("agent_lbw.runtime.store.github.httpx.request", fake_request)
+    monkeypatch.setattr("agent_lbw.tools.git.run_git", missing_git)
+    app = create_app(TaskManager(settings), default_workspace=tmp_path)
+    account = load_account(tmp_path)
+    with database(tmp_path) as db:
+        ensure_project(
+            db,
+            account["org"]["id"],
+            name="box",
+            kind="folder",
+            locator=str(tmp_path),
+        )
+    client = TestClient(app)
+    private_key = _pem()
+    saved = client.put(
+        "/api/github/app",
+        json={"app_id": "123", "private_key": private_key, "client_secret": "secret-one"},
+    )
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body["configured"] is True
+    assert body["app_id"] == "123"
+    assert body["account_login"] == "acme"
+    assert "private_key" not in body
+    with database(tmp_path) as db:
+        row = db.fetchone(
+            "SELECT private_key_ciphertext, client_secret_ciphertext FROM github_apps"
+        )
+    assert row is not None
+    assert private_key not in row["private_key_ciphertext"]
+    assert "secret-one" not in (row["client_secret_ciphertext"] or "")
+
+
 def test_github_app_key_stays_sealed_and_a_member_cannot_replace_it(
     settings: Settings, tmp_path: Path, monkeypatch
 ) -> None:
@@ -61,6 +127,9 @@ def test_github_app_key_stays_sealed_and_a_member_cannot_replace_it(
             return _Response(200, {"slug": "lbw-local"})
         if method == "POST" and url.endswith("/access_tokens"):
             return _Response(200, {"token": "ghs_secret"})
+        synced = _empty_sync(method, url)
+        if synced is not None:
+            return synced
         return _Response(404, {})
 
     monkeypatch.setattr("agent_lbw.runtime.store.github.httpx.request", fake_request)
@@ -69,9 +138,15 @@ def test_github_app_key_stays_sealed_and_a_member_cannot_replace_it(
     page = client.get("/")
     assert page.status_code == 200
     assert 'id="github-app"' in page.text
-    assert 'id="save-github-app"' in page.text
+    assert 'id="save-github-app"' not in page.text
+    assert 'id="github-app-key"' not in page.text
     assert 'id="github-app-install"' in page.text
     assert 'id="github-app-install-row"' in page.text
+    ui = app.state.ui
+    guard = TestClient(create_crossing_app(Path(ui.store_root), ui.manager.settings.database_url))
+    guard = guard.get("/crossingguard")
+    assert 'id="crossing-save-github"' in guard.text
+    assert 'id="crossing-github-key"' in guard.text
     assert ">Refresh<" in page.text
 
     missing = client.put("/api/github/app", json={"app_id": "123", "private_key": ""})
@@ -196,6 +271,9 @@ def test_saved_installations_load_without_checking_github_again(
             return _Response(200, listings)
         if method == "GET" and url.endswith("/app"):
             return _Response(200, {"slug": "lbw-local"})
+        synced = _empty_sync(method, url)
+        if synced is not None:
+            return synced
         return _Response(404, {})
 
     monkeypatch.setattr("agent_lbw.runtime.store.github.httpx.request", fake_request)
@@ -245,7 +323,7 @@ def test_push_and_clone_use_the_token_without_putting_it_in_the_url(
     workspace = Workspace(tmp_path)
     calls: list[list[str]] = []
 
-    def fake_run(ws, args, env=None):
+    def fake_run(ws, args, env=None, **_kwargs):
         calls.append(list(args))
         if args[:2] == ["remote", "get-url"]:
             return subprocess.CompletedProcess(
@@ -262,6 +340,7 @@ def test_push_and_clone_use_the_token_without_putting_it_in_the_url(
     assert "https://github.com/acme/demo.git" in push
     assert "ghs_secret" not in " ".join(push)
     assert any(part.startswith("http.extraheader=") for part in push)
+    assert ["branch", "--set-upstream-to=origin/lbw/feature"] in calls
 
     seen: dict[str, object] = {}
 

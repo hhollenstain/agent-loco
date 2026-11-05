@@ -220,6 +220,7 @@ def test_create_pull_request_does_not_pass_unknown_coauthor_flag(
     assert result.ok
     args = captured["args"]
     assert args[:3] == ["gh", "pr", "create"]
+    assert args[args.index("--head") + 1] == "lbw/feature"
     assert "--add-co-author" not in args
     body = args[args.index("--body") + 1]
     assert CO_AUTHORED_BY in body
@@ -500,6 +501,37 @@ def test_prepare_clean_base_checks_out_a_named_branch(tmp_path: Path) -> None:
     assert result.ok
     assert current_branch(workspace) == "feature/login"
     assert (tmp_path / "app.py").read_text(encoding="utf-8") == "print('feature')\n"
+
+
+def test_a_github_commit_uses_the_connected_person(tmp_path: Path) -> None:
+    from agent_lbw.runtime.account import load_account, update_account
+    from agent_lbw.runtime.db import database
+    from agent_lbw.runtime.store.github_sync import link_github_login
+    from agent_lbw.tools.git import CONNECT_GITHUB
+
+    (tmp_path / "app.py").write_text("print('ok')\n", encoding="utf-8")
+    init_git_repo(tmp_path)
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
+    run_git(workspace, ["remote", "add", "origin", "git@github.com:acme/repo.git"])
+    (tmp_path / "app.py").write_text("print('changed')\n", encoding="utf-8")
+    account = load_account(tmp_path)
+    refused = commit_changes(workspace, "update app", store_root=tmp_path)
+    assert not refused.ok
+    assert refused.output == CONNECT_GITHUB
+
+    update_account(tmp_path, user_name="Ada Lovelace", user_email="ada@example.com")
+    with database(tmp_path) as db:
+        link_github_login(db, user_id=account["current_user_id"], github_login="ada")
+    committed = commit_changes(workspace, "update app", store_root=tmp_path)
+    assert committed.ok
+    logged = run_git(workspace, ["log", "-1", "--format=%an%n%ae%n%cn%n%ce"])
+    assert logged.stdout.splitlines() == [
+        "Ada Lovelace",
+        "ada@example.com",
+        "Ada Lovelace",
+        "ada@example.com",
+    ]
 
 
 def test_merge_pull_request_calls_gh_squash(tmp_path: Path, monkeypatch) -> None:

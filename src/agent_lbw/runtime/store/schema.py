@@ -12,6 +12,10 @@ _STATEMENTS = (
         email TEXT,
         display_name TEXT NOT NULL,
         github_login TEXT,
+        password_hash TEXT,
+        crossing INTEGER NOT NULL DEFAULT 0,
+        failed_attempts INTEGER NOT NULL DEFAULT 0,
+        locked INTEGER NOT NULL DEFAULT 0,
         created INTEGER NOT NULL
     )
     """,
@@ -38,6 +42,7 @@ _STATEMENTS = (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL REFERENCES tenants (id),
         name TEXT NOT NULL,
+        github_slug TEXT NOT NULL DEFAULT '',
         UNIQUE (tenant_id, name)
     )
     """,
@@ -140,13 +145,77 @@ _STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS model_endpoints (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN (
+            'openai', 'anthropic', 'google', 'ollama', 'vllm', 'lmstudio', 'openai_compatible'
+        )),
+        base_url TEXT NOT NULL DEFAULT '',
+        api_key_ciphertext TEXT,
+        models_json TEXT NOT NULL DEFAULT '[]',
+        UNIQUE (tenant_id, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS models (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        endpoint_id TEXT REFERENCES model_endpoints (id),
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN (
+            'openai', 'anthropic', 'google', 'ollama', 'vllm', 'lmstudio', 'openai_compatible'
+        )),
+        model_name TEXT NOT NULL,
+        base_url TEXT NOT NULL DEFAULT '',
+        api_key_ciphertext TEXT,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (tenant_id, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS model_grants (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        model_id TEXT NOT NULL REFERENCES models (id),
+        scope_type TEXT NOT NULL CHECK (scope_type IN ('project', 'team', 'identity')),
+        scope_id TEXT NOT NULL,
+        UNIQUE (model_id, scope_type, scope_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('lbw', 'claude_code', 'codex', 'cursor')),
+        model_id TEXT REFERENCES models (id),
+        human_review INTEGER NOT NULL DEFAULT 1 CHECK (human_review = 1),
+        enabled INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (tenant_id, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_grants (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants (id),
+        agent_id TEXT NOT NULL REFERENCES agents (id),
+        scope_type TEXT NOT NULL CHECK (scope_type IN ('project', 'team', 'identity')),
+        scope_id TEXT NOT NULL,
+        UNIQUE (agent_id, scope_type, scope_id)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS github_apps (
         tenant_id TEXT PRIMARY KEY REFERENCES tenants (id),
         app_id TEXT NOT NULL,
         private_key_ciphertext TEXT NOT NULL,
         installation_id TEXT,
         account_login TEXT,
-        account_type TEXT
+        account_type TEXT,
+        client_id TEXT,
+        client_secret_ciphertext TEXT
     )
     """,
     """
@@ -156,6 +225,16 @@ _STATEMENTS = (
         account_login TEXT NOT NULL DEFAULT '',
         account_type TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (tenant_id, installation_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sign_in (
+        tenant_id TEXT PRIMARY KEY REFERENCES tenants (id),
+        provider TEXT NOT NULL CHECK (provider IN ('password', 'entra', 'auth0', 'saml')),
+        issuer TEXT NOT NULL DEFAULT '',
+        metadata_url TEXT NOT NULL DEFAULT '',
+        client_id TEXT NOT NULL DEFAULT '',
+        client_secret_ciphertext TEXT NOT NULL DEFAULT ''
     )
     """,
     """
@@ -175,6 +254,11 @@ _STATEMENTS = (
         pr_url TEXT,
         run_ref TEXT,
         goal_ciphertext TEXT,
+        agent_id TEXT,
+        model_id TEXT,
+        reviewer_id TEXT,
+        fault TEXT,
+        result_ciphertext TEXT,
         created INTEGER NOT NULL
     )
     """,
@@ -196,10 +280,23 @@ _STATEMENTS = (
         current_identity_id TEXT NOT NULL REFERENCES identities (id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        identity_id TEXT NOT NULL REFERENCES identities (id),
+        tenant_id TEXT,
+        expires INTEGER NOT NULL
+    )
+    """,
 )
 
 # Child rows go before the identity and tenant they point at.
 CLEAR_ORDER = (
+    "agent_grants",
+    "model_grants",
+    "agents",
+    "models",
+    "model_endpoints",
     "github_installations",
     "github_apps",
     "skill_repo_files",
@@ -216,7 +313,9 @@ CLEAR_ORDER = (
     "team_memberships",
     "teams",
     "tenant_memberships",
+    "sign_in",
     "tenant_keys",
+    "sessions",
     "install",
     "identities",
     "tenants",
@@ -233,6 +332,11 @@ TASK_COLUMNS = frozenset(
         "pr_url",
         "run_ref",
         "goal_ciphertext",
+        "agent_id",
+        "model_id",
+        "reviewer_id",
+        "fault",
+        "result_ciphertext",
         "created",
     }
 )
@@ -249,7 +353,30 @@ def apply_schema(db: Database) -> None:
     for statement in _STATEMENTS:
         db.execute(statement)
     _add_column(db, "identities", "github_login", "TEXT")
+    _add_column(db, "identities", "password_hash", "TEXT")
+    _add_column(db, "identities", "crossing", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(db, "identities", "failed_attempts", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(db, "identities", "locked", "INTEGER NOT NULL DEFAULT 0")
     _add_column(db, "github_apps", "account_type", "TEXT")
+    _add_column(db, "github_apps", "client_id", "TEXT")
+    _add_column(db, "github_apps", "client_secret_ciphertext", "TEXT")
+    _add_column(db, "tasks", "agent_id", "TEXT")
+    _add_column(db, "tasks", "model_id", "TEXT")
+    _add_column(db, "tasks", "reviewer_id", "TEXT")
+    _add_column(db, "tasks", "fault", "TEXT")
+    _add_column(db, "tasks", "result_ciphertext", "TEXT")
+    _add_column(db, "sessions", "tenant_id", "TEXT")
+    _add_column(db, "models", "endpoint_id", "TEXT")
+    _add_column(db, "models", "enabled", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(db, "agents", "enabled", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(db, "teams", "github_slug", "TEXT NOT NULL DEFAULT ''")
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS teams_github_slug
+        ON teams (tenant_id, github_slug)
+        WHERE github_slug <> ''
+        """
+    )
     db.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS identities_github_login
@@ -257,9 +384,17 @@ def apply_schema(db: Database) -> None:
         WHERE github_login IS NOT NULL
         """
     )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS identities_email
+        ON identities (email)
+        WHERE email IS NOT NULL
+        """
+    )
     _widen_duty_check(db)
     if legacy is not None:
         _write_legacy(db, legacy)
+    _mark_crossing_owner(db)
 
 
 def clear_store(db: Database) -> None:
@@ -282,6 +417,23 @@ def table_columns(db: Database, table: str) -> set[str]:
         (table,),
     )
     return {str(row["name"]) for row in rows}
+
+
+def _mark_crossing_owner(db: Database) -> None:
+    """The install owner is the first LBW engineer when none is marked yet."""
+    if not _has_table(db, "identities"):
+        return
+    marked = db.fetchone("SELECT id FROM identities WHERE crossing = 1 LIMIT 1")
+    if marked is not None:
+        return
+    db.execute(
+        """
+        UPDATE identities SET crossing = 1
+        WHERE id IN (
+            SELECT identity_id FROM tenant_memberships WHERE rank = 'owner'
+        )
+        """
+    )
 
 
 def _add_column(db: Database, table: str, column: str, ddl: str) -> None:

@@ -39,9 +39,12 @@ def update_account(
     *,
     org_name: str | None = None,
     user_name: str | None = None,
+    user_email: str | None = None,
     database_url: str = "",
 ) -> dict:
     """Rename the organization, the current person, or both."""
+    from agent_lbw.runtime.store.auth import assign_email
+
     with database(root, database_url) as db:
         account = _require(db, root)
         if org_name is not None and org_name != account["org"]["name"]:
@@ -50,10 +53,12 @@ def update_account(
         if user_name is not None:
             rename_member(account, _clean_name(user_name, "name"))
         save_account(db, account)
-        return account
+        if user_email is not None:
+            assign_email(db, account["current_user_id"], user_email)
+        return read_account(db) or account
 
 
-def add_user(root: Path, name: str, *, database_url: str = "") -> dict:
+def add_user(root: Path, name: str, *, email: str = "", database_url: str = "") -> dict:
     """Add a person to the organization."""
     with database(root, database_url) as db:
         account = _require(db, root)
@@ -61,9 +66,54 @@ def add_user(root: Path, name: str, *, database_url: str = "") -> dict:
         clean = _clean_name(name, "name")
         if _name_taken(account, clean):
             raise ValueError(f"{clean} is already in this organization")
-        account["users"].append({"id": _new_id("user"), "name": clean, "role": "member"})
+        user_id = _new_id("user")
+        account["users"].append({"id": user_id, "name": clean, "role": "member"})
         save_account(db, account)
+        if email.strip():
+            from agent_lbw.runtime.store.auth import assign_email
+
+            assign_email(db, user_id, email)
         return read_account(db) or account
+
+
+def update_person(
+    root: Path,
+    user_id: str,
+    *,
+    email: str | None = None,
+    role: str | None = None,
+    database_url: str = "",
+) -> dict:
+    """Set a person's email, or their organization rank of admin or member."""
+    from agent_lbw.runtime.store.auth import assign_email
+
+    with database(root, database_url) as db:
+        account = _require(db, root)
+        target = next((user for user in account["users"] if user["id"] == user_id), None)
+        if target is None:
+            raise KeyError(user_id)
+        current_id = account["current_user_id"]
+        manager = _is_manager(account)
+        if email is not None:
+            if user_id != current_id and not manager:
+                raise PermissionError("an owner or admin changes another person's email")
+            assign_email(db, user_id, email)
+        if role is not None:
+            if not manager:
+                raise PermissionError("an owner or admin sets organization rank")
+            if target["role"] == "owner" or role == "owner":
+                raise ValueError("the owner stays the owner")
+            if role not in {"admin", "member"}:
+                raise ValueError("choose admin or member")
+            db.execute(
+                """
+                UPDATE tenant_memberships SET rank = ?
+                WHERE tenant_id = ? AND identity_id = ?
+                """,
+                (role, account["org"]["id"], user_id),
+            )
+        fresh = read_account(db)
+        return fresh or account
 
 
 def remove_user(root: Path, user_id: str, *, database_url: str = "") -> dict:
@@ -128,12 +178,16 @@ def _new_id(kind: str) -> str:
     return f"{kind}_{uuid.uuid4().hex[:12]}"
 
 
-def _require_manager(account: dict) -> None:
+def _is_manager(account: dict) -> bool:
     current = next(
         (user for user in account["users"] if user["id"] == account["current_user_id"]),
         None,
     )
-    if current is None or current["role"] not in {"owner", "admin"}:
+    return current is not None and current["role"] in {"owner", "admin"}
+
+
+def _require_manager(account: dict) -> None:
+    if not _is_manager(account):
         raise PermissionError("an owner or admin manages the organization")
 
 

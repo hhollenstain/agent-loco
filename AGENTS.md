@@ -33,13 +33,17 @@ itself is also in `skills/agent-lbw/SKILL.md`.
 
 ## Web UI
 
+- The organization page stays `templates/index.html` until a section is moved.
+  `docs/frontend-react.md` is the plan for a React client. Do not start that
+  move inside an unrelated change.
 - JavaScript in `index.html` uses double quotes and `function` declarations for
   named behavior. Iterate with `for...of`.
-- Rules, Skills, and Schedules are rail sections beside Proposals, Changes,
- and Releases. Schedules save documents. A project run is not a schedule.
-  The main pane shows the selected section. Roles stays a sidebar overlay.
-  Close the roles overlay from its Close button or a click outside it.
-- UI layout is the bundled `ui` skill. New workspaces enable it with `tdd`.
+- Rules, Skills, Schedules, and Roles are rail sections beside Proposals,
+  Changes, and Releases. Schedules save documents. A project run is not a
+  schedule. The main pane shows the selected section. Builder and QA stay on.
+  An organization admin can enforce a role on every project.
+- UI layout is the bundled `ui` skill. Visual style is the bundled `style`
+  skill. New workspaces enable both with `tdd`.
   After a UI edit, exercise the control in a browser: open it, use it, and
   close it. A template diff is not done. `review_ui` must show the control
   without overlap, unreadable controls, dead buttons, or 404s.
@@ -48,6 +52,9 @@ itself is also in `skills/agent-lbw/SKILL.md`.
 - Extract inline styles from templates into `static/layout.css`.
 - Do not add inline `style=` attributes to HTML elements in templates.
 - Define CSS classes in `layout.css` and apply them to HTML elements.
+- Visual style is the bundled `style` skill. When an engineer asks to change
+  how the site is styled, update that skill in the same change, then make
+  `themes.css` and `layout.css` match it.
 - After CSS changes, run `review_ui` to verify the page renders correctly.
 
 ## Skills and the cycle
@@ -71,7 +78,14 @@ file scheduler call.
   A personal tenant has its owner and no teams. Promote it before adding a team.
   Promotion keeps the tenant id, so projects and tasks stay put.
 - A person is an identity, separate from a membership. Rank is `owner`, `admin`,
-  or `member`, once on the tenant and once on a team. Duties are additive
+  or `member`, once on the tenant and once on a team. The first password is
+  the owner's, created on the setup page when no password exists. Later sign-in
+  uses that email and password. The password is hashed. The session cookie is
+  random and only its hash is stored. Sign-in proves an existing person and
+  opens that session. A later SSO or SAML login, such as Entra or Auth0,
+  matches the same person by email and opens the same session. An organization has members and admins.
+  Teams belong to that organization and have members and admins. An empty team can be removed. A person can create another organization from the sign-in page. A crossing guard is an LBW engineer, marked on the person, and is not an organization admin. The engineer dashboard is its own service, `crossing`, in `services/crossing`. It shares `libs/lbw_shared` with the organization site. Compose publishes both through one port. A host whose first label is `crossing` or `crossing-` reaches that service. Locally the organization site is `https://www-local.lookbothways.dev` and the dashboard is `https://crossing-local.lookbothways.dev`. Nginx terminates the local certificate and sends each host to its service. On `127.0.0.1` the path `/crossingguard` is sent to the dashboard. It lists every organization. A menu there adds another LBW engineer. The page can unlock a person and store SSO settings. It does not remove a team, and it does not show a goal, a diff, or a pull request. A job is listed there only when LBW itself failed. Each person
+  has a name and an email. Duties are additive
   grants, `billing`, `security`, or `rules`, on a tenant or a team. An owner
   already holds every duty, so do not write a duty row for an owner. A new duty
   is a new value, not a new kind of person.
@@ -81,16 +95,25 @@ file scheduler call.
 - Seal task goals and the GitHub App private key with `runtime/store/crypto.py`
   and the tenant key. The master key stays in `.lbw/master.key`. It does not go
   in the database, a prompt, or a commit. Do not add a second cipher. The
-  `github_apps` row stores the app id, the sealed key, and the chosen
-  installation. Do not store an installation token. A connected app can add a
+  `github_apps` row stores the app id, the sealed private key, the sealed
+  client secret, and the chosen installation. Do not store an installation
+  token or a user access token. A connected app can add a
   repository it can see to the organization, a person, or a team. The checkout
-  is the workspace. `identities.github_login` links a person to a GitHub
-  account. Sync copies that account's organization role, team membership, and
-  repository access onto the existing grants. It does not create people.
-- Do not store model context, prompts, tool traces, diffs, or file contents in
-  the database. Those stay in the run directory. A task row is the request:
-  tenant, project, requester, status, branch, pull request, `run_ref`, and
-  `goal_ciphertext`.
+  is the workspace. A person connects GitHub from the GitHub tab on their
+  personal page once the organization has a GitHub App. Personal rules are
+  listed by name. The plus button opens a dialog to add one, and a listed rule
+  can be viewed as markdown, edited, or deleted. LBW
+  reads their login from GitHub and stores it on `identities.github_login`.
+  The client secret is sealed with the tenant key and is not returned. The
+  user token is used once to read the login and is not stored. Sync copies that
+  account's organization role, team membership, and repository access onto the
+  existing grants. It does not create people.
+- Do not store model context, prompts, tool traces, or logs in the database.
+  Those stay in the run directory. A task row is the request and its outcome:
+  tenant, project, requester, status, branch, pull request, `run_ref`,
+  `goal_ciphertext`, and `result_ciphertext`. The result seals the plan, the
+  steps, the outcome, and the final diff so history can show the file changes
+  after the checkout is gone. Logs are not part of it.
 - A schedule row is an index. The instruction stays in the schedule file.
   `change` indexes a file schedule. `scan` indexes a scan. Do not copy the
   instruction into the database.
@@ -110,16 +133,31 @@ file scheduler call.
   rule or skill reaches a project only when it is assigned there: an
   organization rule through `rule_requirements`, a team rule through a project
   grant, a skill through `skill_grants` on the organization, a team, or that
-  project. Organization rules and skills are edited in organization settings.
-  A project page shows the ones assigned to it. Roles are chosen on the
+  project. Organization settings stores skill repositories for the whole
+  organization and resyncs them there. It does not assign a skill to a
+  project. A project turns a loaded skill on. A project page shows the skills
+  assigned to it. Roles are chosen on the
   project. `role_requirements` is the set an organization owner or admin
   enforces on every project.
+- A model is a bring-your-own endpoint on the organization: OpenAI, Anthropic,
+  Google, Ollama, vLLM, LM Studio, or another OpenAI-compatible server. An
+  agent is a worker LBW can hand a change to: LBW's builder, Claude Code,
+  Codex, or Cursor. LBW remains the orchestrator. The API key is sealed with
+  the tenant key and is not returned. Turning a model or an agent on in
+  organization settings makes it available on every project. A grant on a
+  project, a team, or a person, in `model_grants` and `agent_grants`, still
+  allows one that is off. Rank does not include a model or an agent. A team
+  grant applies on a project that team can use.
+  Every agent requires a person to accept the change before the task can
+  succeed. An endpoint stores the model names it returned. Refresh replaces
+  that list. Ids are `ep_`, `model_`, `agent_`, `mgr_`, and `agr_`.
 - Extend these checks when adding access. Do not add a second permission table.
 
 ## Git
 
 - Do not commit, stage, or push `.lbw/` or `history.json`. Config, cloned
   skills, run logs, and screenshots stay local.
+- Publishing commits the project files, pushes that branch, and then opens the pull request. The pull request is not opened while those files are still uncommitted, or before the push succeeds.
 - Do not force-push, skip hooks, or rewrite published history.
 - Do not bind-mount this app's `.lbw` over `/workspaces/.lbw`.
 - `lbw init` needs a directory that already exists. Do not document

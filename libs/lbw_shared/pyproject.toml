@@ -1,0 +1,13 @@
+[project]
+name = "lbw-shared"
+version = "0.1.0"
+description = "Host and directory contract shared by the organization site and the engineer dashboard."
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.115"]
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

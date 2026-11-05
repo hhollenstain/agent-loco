@@ -1,0 +1,26 @@
+[project]
+name = "lbw-crossing"
+version = "0.1.0"
+description = "Engineer dashboard. A separate service from the organization site."
+requires-python = ">=3.12"
+dependencies = [
+    "agent-lbw",
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "lbw-shared",
+    "uvicorn>=0.32",
+]
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lbw_crossing = ["templates/*.html"]
+
+[tool.uv.sources]
+agent-lbw = { workspace = true }
+lbw-shared = { workspace = true }

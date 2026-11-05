@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="/favicon.ico" sizes="any" type="image/svg+xml">
+  <title>Crossing guard — LBW</title>
+  <link rel="stylesheet" href="/static/themes.css">
+  <link rel="stylesheet" href="/static/layout.css">
+  <script>
+    function restoreTheme() {
+      try {
+        if (localStorage.getItem("lbw-theme") === "dark") {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      } catch (_err) {
+        /* ignore private mode */
+      }
+    }
+    restoreTheme();
+  </script>
+</head>
+<body>
+  <main id="crossing-app">
+    <aside class="sidebar">
+      <div class="sidebar-bar">
+        <a href="/" aria-label="LBW, Look both ways" class="sidebar-logo">
+          <svg class="logo-badge" viewBox="0 0 32 32" role="img" aria-hidden="true">
+            <title>LBW</title>
+            <rect class="logo-badge-plate" width="32" height="32" rx="8"/>
+            <path class="logo-badge-eye" d="M13 8.2 6.6 16 13 23.8"/>
+            <path class="logo-badge-eye" d="M19 8.2 25.4 16 19 23.8"/>
+          </svg>
+          <span class="logo-lockup">
+            <span class="logo-name">LBW</span>
+            <span class="logo-tag">Look both ways</span>
+          </span>
+        </a>
+      </div>
+      <div class="sidebar-stack">
+        <nav class="rail-nav" aria-label="Dashboard">
+          <button type="button" class="rail-item" id="open-organizations" aria-pressed="true">Organizations</button>
+          <button type="button" class="rail-item" id="open-integrations" aria-pressed="false">Integrations</button>
+        </nav>
+        <p class="sidebar-title">Organizations</p>
+        <nav class="rail-nav" id="crossing-orgs"></nav>
+      </div>
+      <div class="settings-dock" id="crossing-dock" hidden>
+        <div class="crossing-menu">
+          <button type="button" id="open-guards" aria-expanded="false" aria-controls="guards-menu">Crossing guards</button>
+          <div class="account-menu" id="guards-menu" hidden>
+            <div id="guards-list"></div>
+            <button type="button" id="add-guard">Add crossing guard</button>
+          </div>
+        </div>
+        <button type="button" class="secondary" id="crossing-sign-out">Sign out</button>
+      </div>
+    </aside>
+    <section class="crossing-main">
+      <form class="auth-card" id="crossing-login" hidden>
+        <h1>Sign in</h1>
+        <p class="hint">Use the email and password for an LBW engineer.</p>
+        <label for="crossing-email">Email</label>
+        <input id="crossing-email" type="email" maxlength="200" autocomplete="username" spellcheck="false">
+        <label for="crossing-password">Password</label>
+        <input id="crossing-password" type="password" maxlength="200" autocomplete="current-password">
+        <div class="modal-actions">
+          <button type="submit">Sign in</button>
+        </div>
+      </form>
+      <p class="error" id="crossing-error"></p>
+      <p class="hint" id="crossing-denied" hidden>Crossing guard is for LBW engineers. An organization admin does not open this page.</p>
+      <div id="crossing-integrations" hidden>
+        <h1>Integrations</h1>
+        <p class="hint">Connect a service once. Every organization installs it on its own account. The key stays here.</p>
+        <div class="org-tabs" role="tablist" aria-label="Integrations">
+          <button type="button" class="secondary org-tab" id="integration-tab-github" data-integration="github" aria-pressed="true">GitHub</button>
+        </div>
+        <div data-integration-panel="github">
+          <form class="integration-form" id="crossing-github">
+            <p class="hint" id="crossing-github-status">Not saved yet.</p>
+            <p class="hint">Paste the key here. An organization installs this app on its own GitHub account and does not receive the key.</p>
+            <p class="hint">Callback URL <span class="integration-callback" id="crossing-github-callback" data-url="{{ github_callback }}"></span></p>
+            <label for="crossing-github-id">App ID
+              <input id="crossing-github-id" type="text" inputmode="numeric" maxlength="20" autocomplete="off" spellcheck="false">
+            </label>
+            <label for="crossing-github-key">Private key
+              <textarea id="crossing-github-key" class="github-app-key" spellcheck="false" placeholder="Paste the PEM. It is stored sealed and is not shown again."></textarea>
+            </label>
+            <label for="crossing-github-secret">Client secret
+              <input id="crossing-github-secret" type="password" maxlength="200" autocomplete="off" spellcheck="false" placeholder="Paste the client secret. It is stored sealed and is not shown again.">
+            </label>
+            <div class="modal-actions">
+              <button type="submit" id="crossing-save-github">Save GitHub App</button>
+            </div>
+            <p class="error" id="crossing-github-error"></p>
+          </form>
+        </div>
+      </div>
+      <div id="crossing-board" hidden>
+        <h1 id="crossing-org-name">Organization</h1>
+        <p class="hint">LBW engineers restore access and check sign-in. This page does not open a repository, a diff, or a pull request.</p>
+        <div class="org-tabs" id="crossing-tabs">
+          <button type="button" class="secondary org-tab" data-crossing-tab="people" aria-pressed="true">People</button>
+          <button type="button" class="secondary org-tab" data-crossing-tab="teams" aria-pressed="false">Teams</button>
+          <button type="button" class="secondary org-tab" data-crossing-tab="failures" aria-pressed="false">Failures</button>
+          <button type="button" class="secondary org-tab" data-crossing-tab="sign-in" aria-pressed="false">Sign-in</button>
+        </div>
+        <div class="org-panel" data-crossing-panel="people" id="crossing-people"></div>
+        <div class="org-panel" data-crossing-panel="teams" id="crossing-teams" hidden></div>
+        <div class="org-panel" data-crossing-panel="failures" id="crossing-faults" hidden></div>
+        <form class="org-form org-panel" data-crossing-panel="sign-in" id="crossing-sign-in-form" hidden>
+          <label for="crossing-provider">Provider
+            <select id="crossing-provider">
+              <option value="password">Password</option>
+              <option value="entra">Entra</option>
+              <option value="auth0">Auth0</option>
+              <option value="saml">SAML</option>
+            </select>
+          </label>
+          <label for="crossing-issuer">Issuer
+            <input id="crossing-issuer" type="url" maxlength="300" spellcheck="false" placeholder="https://login.example.com/tenant">
+          </label>
+          <label for="crossing-metadata">Metadata URL
+            <input id="crossing-metadata" type="url" maxlength="300" spellcheck="false" placeholder="https://login.example.com/metadata">
+          </label>
+          <label for="crossing-client">Client id
+            <input id="crossing-client" type="text" maxlength="200" spellcheck="false">
+          </label>
+          <label for="crossing-secret">Client secret
+            <input id="crossing-secret" type="password" maxlength="500" autocomplete="new-password">
+          </label>
+          <div class="modal-actions">
+            <button type="submit">Save</button>
+            <button type="button" class="secondary" id="crossing-validate">Validate</button>
+          </div>
+        </form>
+        <p class="hint" id="crossing-notice"></p>
+      </div>
+    </section>
+  </main>
+  <div class="modal-backdrop" id="guard-dialog" hidden>
+    <div class="modal" role="dialog" aria-labelledby="guard-title">
+      <h2 id="guard-title">Add crossing guard</h2>
+      <p class="hint">An LBW engineer can open this page. This does not make them an organization admin.</p>
+      <form class="org-form" id="guard-form">
+        <label for="guard-name">Name
+          <input id="guard-name" type="text" maxlength="80" spellcheck="false">
+        </label>
+        <label for="guard-email">Email
+          <input id="guard-email" type="email" maxlength="200" spellcheck="false">
+        </label>
+        <label for="guard-password">Password
+          <input id="guard-password" type="password" maxlength="200" autocomplete="new-password">
+        </label>
+        <div class="modal-actions">
+          <button type="submit">Add</button>
+          <button type="button" class="secondary" id="guard-cancel">Cancel</button>
+        </div>
+      </form>
+      <p class="error" id="guard-error"></p>
+    </div>
+  </div>
+  <script>
+    let crossingBoard = null;
+    let selectedOrgId = "";
+    let crossingTab = "people";
+    let crossingSection = "organizations";
+
+    function crossingSend(path, options) {
+      return fetch(path, options || {}).then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          showCrossingLogin();
+          throw new Error("sign in");
+        }
+        if (res.status === 403) {
+          showCrossingDenied();
+          throw new Error("crossing guard is for LBW engineers");
+        }
+        if (!res.ok) throw new Error(body.error || "request failed");
+        return body;
+      });
+    }
+
+    function showCrossingLogin() {
+      document.getElementById("crossing-login").hidden = false;
+      document.getElementById("crossing-board").hidden = true;
+      document.getElementById("crossing-integrations").hidden = true;
+      document.getElementById("crossing-denied").hidden = true;
+      document.getElementById("crossing-dock").hidden = true;
+    }
+
+    function showCrossingDenied() {
+      document.getElementById("crossing-login").hidden = true;
+      document.getElementById("crossing-board").hidden = true;
+      document.getElementById("crossing-integrations").hidden = true;
+      document.getElementById("crossing-denied").hidden = false;
+      document.getElementById("crossing-dock").hidden = false;
+    }
+
+    function selectedOrg() {
+      if (!crossingBoard || !crossingBoard.orgs.length) return null;
+      return crossingBoard.orgs.find((org) => org.id === selectedOrgId) || crossingBoard.orgs[0];
+    }
+
+    function closeGuardsMenu() {
+      document.getElementById("guards-menu").hidden = true;
+      document.getElementById("open-guards").setAttribute("aria-expanded", "false");
+    }
+
+    function openGuardDialog() {
+      closeGuardsMenu();
+      const dialog = document.getElementById("guard-dialog");
+      dialog.hidden = false;
+      dialog.classList.add("open");
+      document.getElementById("guard-error").textContent = "";
+      document.getElementById("guard-name").focus();
+    }
+
+    function closeGuardDialog() {
+      const dialog = document.getElementById("guard-dialog");
+      dialog.classList.remove("open");
+      dialog.hidden = true;
+    }
+
+    function showCrossingTab(name) {
+      crossingTab = name;
+      for (const button of document.querySelectorAll("[data-crossing-tab]")) {
+        button.setAttribute("aria-pressed", button.dataset.crossingTab === name ? "true" : "false");
+      }
+      for (const panel of document.querySelectorAll("[data-crossing-panel]")) {
+        panel.hidden = panel.dataset.crossingPanel !== name;
+      }
+    }
+
+    function renderOrgs() {
+      const nav = document.getElementById("crossing-orgs");
+      nav.replaceChildren();
+      const current = selectedOrg();
+      for (const org of crossingBoard.orgs) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "rail-item";
+        button.textContent = org.name;
+        const selected = crossingSection === "organizations" && current && current.id === org.id;
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+        button.addEventListener("click", () => {
+          selectedOrgId = org.id;
+          crossingSection = "organizations";
+          document.getElementById("crossing-notice").textContent = "";
+          renderCrossing();
+        });
+        nav.appendChild(button);
+      }
+    }
+
+    function renderGuards() {
+      const list = document.getElementById("guards-list");
+      list.replaceChildren();
+      if (!crossingBoard.guards.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No LBW engineers yet.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const guard of crossingBoard.guards) {
+        const row = document.createElement("p");
+        row.className = "hint";
+        row.textContent = guard.email ? guard.name + " · " + guard.email : guard.name;
+        list.appendChild(row);
+      }
+    }
+
+    function renderPeople(org) {
+      const slot = document.getElementById("crossing-people");
+      slot.replaceChildren();
+      if (!org.people.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No people in this organization.";
+        slot.appendChild(empty);
+        return;
+      }
+      const list = document.createElement("div");
+      list.className = "account-users";
+      for (const person of org.people) {
+        const row = document.createElement("div");
+        row.className = "account-user";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = person.name;
+        const role = document.createElement("span");
+        role.className = "role";
+        role.textContent = person.role + (person.email ? " · " + person.email : "");
+        row.append(name, role);
+        if (person.locked) {
+          const unlock = document.createElement("button");
+          unlock.type = "button";
+          unlock.className = "secondary";
+          unlock.textContent = "Unlock";
+          unlock.addEventListener("click", () => {
+            crossingSend("/api/crossingguard/people/" + encodeURIComponent(person.id) + "/unlock", {
+              method: "POST",
+            }).then((body) => {
+              crossingBoard = body;
+              renderCrossing();
+            }).catch(showCrossingError);
+          });
+          row.appendChild(unlock);
+        }
+        list.appendChild(row);
+      }
+      slot.appendChild(list);
+    }
+
+    function renderTeams(org) {
+      const slot = document.getElementById("crossing-teams");
+      slot.replaceChildren();
+      if (!org.teams.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No teams yet.";
+        slot.appendChild(empty);
+        return;
+      }
+      const list = document.createElement("div");
+      list.className = "account-users";
+      for (const team of org.teams) {
+        const row = document.createElement("div");
+        row.className = "account-user";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = team.name;
+        const members = document.createElement("span");
+        members.className = "role";
+        members.textContent = team.members.length
+          ? team.members.map((member) => member.name + " (" + member.rank + ")").join(", ")
+          : "No one is on this team yet.";
+        row.append(name, members);
+        list.appendChild(row);
+      }
+      slot.appendChild(list);
+    }
+
+    function renderFaults(org) {
+      const slot = document.getElementById("crossing-faults");
+      slot.replaceChildren();
+      if (!org.faults.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "No LBW failures.";
+        slot.appendChild(empty);
+        return;
+      }
+      for (const fault of org.faults) {
+        const card = document.createElement("article");
+        card.className = "crossing-fault";
+        const title = document.createElement("strong");
+        title.textContent = fault.status;
+        const text = document.createElement("p");
+        text.textContent = fault.fault;
+        card.append(title, text);
+        slot.appendChild(card);
+      }
+    }
+
+    function renderSignIn(org) {
+      const signIn = org.sign_in;
+      document.getElementById("crossing-provider").value = signIn.provider;
+      document.getElementById("crossing-issuer").value = signIn.issuer;
+      document.getElementById("crossing-metadata").value = signIn.metadata_url;
+      document.getElementById("crossing-client").value = signIn.client_id;
+      document.getElementById("crossing-secret").value = "";
+    }
+
+    function showCrossingSection(section) {
+      if (!crossingBoard) return;
+      crossingSection = section;
+      renderCrossing();
+    }
+
+    function renderCrossing() {
+      const org = selectedOrg();
+      const organizations = crossingSection === "organizations";
+      document.getElementById("crossing-login").hidden = true;
+      document.getElementById("crossing-denied").hidden = true;
+      document.getElementById("crossing-dock").hidden = false;
+      document.getElementById("crossing-board").hidden = !organizations || org === null;
+      document.getElementById("crossing-integrations").hidden = organizations;
+      document.getElementById("open-organizations").setAttribute(
+        "aria-pressed",
+        organizations ? "true" : "false",
+      );
+      document.getElementById("open-integrations").setAttribute(
+        "aria-pressed",
+        organizations ? "false" : "true",
+      );
+      renderOrgs();
+      renderGuards();
+      if (!org) return;
+      selectedOrgId = org.id;
+      const kind = org.kind === "organization" ? "Organization" : "Personal";
+      document.getElementById("crossing-org-name").textContent = org.name + " · " + kind;
+      renderPeople(org);
+      renderTeams(org);
+      renderFaults(org);
+      renderSignIn(org);
+      showCrossingTab(crossingTab);
+    }
+
+    function showCrossingError(err) {
+      const slot = document.getElementById("crossing-error");
+      if (!err || err.message === "sign in" || err.message === "crossing guard is for LBW engineers") {
+        return;
+      }
+      if (slot) slot.textContent = err.message;
+    }
+
+    function signInFields() {
+      const org = selectedOrg();
+      return {
+        tenant_id: org ? org.id : "",
+        provider: document.getElementById("crossing-provider").value,
+        issuer: document.getElementById("crossing-issuer").value,
+        metadata_url: document.getElementById("crossing-metadata").value,
+        client_id: document.getElementById("crossing-client").value,
+        client_secret: document.getElementById("crossing-secret").value,
+      };
+    }
+
+    document.getElementById("crossing-login").addEventListener("submit", (event) => {
+      event.preventDefault();
+      document.getElementById("crossing-error").textContent = "";
+      crossingSend("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: document.getElementById("crossing-email").value,
+          password: document.getElementById("crossing-password").value,
+        }),
+      }).then(() => loadCrossing()).catch(showCrossingError);
+    });
+
+    document.getElementById("crossing-sign-out").addEventListener("click", () => {
+      fetch("/api/auth/logout", { method: "POST" }).then(() => {
+        crossingBoard = null;
+        showCrossingLogin();
+      });
+    });
+
+    document.getElementById("open-guards").addEventListener("click", (event) => {
+      event.stopPropagation();
+      const menu = document.getElementById("guards-menu");
+      const open = menu.hidden;
+      menu.hidden = !open;
+      document.getElementById("open-guards").setAttribute("aria-expanded", open ? "true" : "false");
+    });
+
+    document.addEventListener("click", (event) => {
+      const menu = document.getElementById("guards-menu");
+      if (menu.hidden) return;
+      if (event.target.closest("#open-guards") || event.target.closest("#guards-menu")) return;
+      closeGuardsMenu();
+    });
+
+    document.getElementById("add-guard").addEventListener("click", openGuardDialog);
+    document.getElementById("guard-cancel").addEventListener("click", closeGuardDialog);
+    document.getElementById("guard-dialog").addEventListener("click", (event) => {
+      if (event.target.id === "guard-dialog") closeGuardDialog();
+    });
+
+    document.getElementById("guard-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      document.getElementById("guard-error").textContent = "";
+      crossingSend("/api/crossingguard/guards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: document.getElementById("guard-name").value,
+          email: document.getElementById("guard-email").value,
+          password: document.getElementById("guard-password").value,
+        }),
+      }).then((body) => {
+        crossingBoard = body;
+        document.getElementById("guard-form").reset();
+        closeGuardDialog();
+        renderCrossing();
+      }).catch((err) => {
+        if (err.message === "sign in" || err.message === "crossing guard is for LBW engineers") return;
+        document.getElementById("guard-error").textContent = err.message;
+      });
+    });
+
+    for (const button of document.querySelectorAll("[data-crossing-tab]")) {
+      button.addEventListener("click", () => showCrossingTab(button.dataset.crossingTab));
+    }
+
+    document.getElementById("crossing-sign-in-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      document.getElementById("crossing-error").textContent = "";
+      document.getElementById("crossing-notice").textContent = "";
+      crossingSend("/api/crossingguard/sign-in", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signInFields()),
+      }).then((body) => {
+        crossingBoard = body;
+        renderCrossing();
+        document.getElementById("crossing-notice").textContent = "Sign-in settings saved.";
+      }).catch(showCrossingError);
+    });
+
+    document.getElementById("crossing-validate").addEventListener("click", () => {
+      const org = selectedOrg();
+      if (!org) return;
+      document.getElementById("crossing-error").textContent = "";
+      crossingSend("/api/crossingguard/sign-in", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signInFields()),
+      }).then(() => crossingSend("/api/crossingguard/sign-in/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: org.id }),
+      })).then((body) => {
+        crossingBoard = body;
+        renderCrossing();
+        document.getElementById("crossing-notice").textContent = body.notice || "";
+      }).catch(showCrossingError);
+    });
+
+    function loadCrossingGitHub() {
+      const callback = document.getElementById("crossing-github-callback");
+      if (callback) callback.textContent = callback.dataset.url || "";
+      return fetch("/api/github/app").then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || "failed to load the GitHub App");
+        const status = document.getElementById("crossing-github-status");
+        const idEl = document.getElementById("crossing-github-id");
+        if (status) {
+          status.textContent = body.configured
+            ? "Saved. Organizations install this app on their GitHub account."
+            : "Not saved yet.";
+        }
+        if (idEl && document.activeElement !== idEl) idEl.value = body.app_id || "";
+        const secret = document.getElementById("crossing-github-secret");
+        if (secret && document.activeElement !== secret) {
+          secret.placeholder = body.has_client_secret
+            ? "Client secret saved. Paste a new one to replace it."
+            : "Paste the client secret. It is stored sealed and is not shown again.";
+        }
+      }).catch((err) => {
+        const slot = document.getElementById("crossing-github-error");
+        if (slot) slot.textContent = err.message || "Could not load the GitHub App";
+      });
+    }
+
+    function saveCrossingGitHub(event) {
+      event.preventDefault();
+      const slot = document.getElementById("crossing-github-error");
+      if (slot) slot.textContent = "";
+      const keyEl = document.getElementById("crossing-github-key");
+      const secretEl = document.getElementById("crossing-github-secret");
+      return fetch("/api/github/app", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          app_id: document.getElementById("crossing-github-id").value,
+          private_key: keyEl ? keyEl.value : "",
+          client_secret: secretEl ? secretEl.value : "",
+        }),
+      }).then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || "failed to save the GitHub App");
+        if (keyEl) keyEl.value = "";
+        if (secretEl) secretEl.value = "";
+        if (slot && body.warning) slot.textContent = body.warning;
+        return loadCrossingGitHub();
+      }).catch((err) => {
+        if (slot) slot.textContent = err.message || "Could not save the GitHub App";
+      });
+    }
+
+    function loadCrossing() {
+      document.getElementById("crossing-error").textContent = "";
+      return crossingSend("/api/crossingguard").then((body) => {
+        crossingBoard = body;
+        renderCrossing();
+        return loadCrossingGitHub();
+      }).catch(showCrossingError);
+    }
+
+    function showIntegration(name) {
+      for (const button of document.querySelectorAll("[data-integration]")) {
+        button.setAttribute("aria-pressed", button.dataset.integration === name ? "true" : "false");
+      }
+      for (const panel of document.querySelectorAll("[data-integration-panel]")) {
+        panel.hidden = panel.dataset.integrationPanel !== name;
+      }
+    }
+
+    document.getElementById("open-organizations").addEventListener("click", () => {
+      showCrossingSection("organizations");
+    });
+    document.getElementById("open-integrations").addEventListener("click", () => {
+      showCrossingSection("integrations");
+    });
+    for (const button of document.querySelectorAll("[data-integration]")) {
+      button.addEventListener("click", () => showIntegration(button.dataset.integration));
+    }
+    document.getElementById("crossing-github").addEventListener("submit", saveCrossingGitHub);
+    loadCrossing();
+  </script>
+</body>
+</html>

@@ -388,11 +388,12 @@ def test_web_ui_queues_and_lists_tasks(settings: Settings, tmp_path: Path) -> No
         assert b"function rememberContextWindow(" in home.content
         assert b"percentLabel + " in home.content
         assert b'winFmt + " tokens"' in home.content
-        assert b'id="llm-server-toggle"' in home.content
-        assert b"llm-toggle-icon" in home.content
-        assert b"Show server" not in home.content
-        assert b"Hide server" not in home.content
-        assert b'aria-label="Server settings"' in home.content
+        assert b'id="model-hint"' in home.content
+        assert b"function loadGrantedModels(" in home.content
+        assert b"/api/org/models?workspace=" in home.content
+        assert b'id="llm-server-toggle"' not in home.content
+        assert b'id="base-url"' not in home.content
+        assert b'id="load-models"' not in home.content
         assert b".task-pane {\n      display: none;" not in home.content
         assert b"function taskPaneFromTab(" in home.content
         assert b"/api/ui-screenshot" in home.content
@@ -638,11 +639,10 @@ def test_web_ui_lists_models_and_queues_with_selection(settings: Settings, tmp_p
         home = client.get("/")
         assert home.status_code == 200
         assert b'id="model"' in home.content
-        assert b'id="base-url"' in home.content
         assert b'id="base-branch"' in home.content
         assert b"function loadBranches(" in home.content
-        assert b'id="server-history"' in home.content
-        assert b"Load models" in home.content
+        assert b'id="server-history"' not in home.content
+        assert b"Load models" not in home.content
 
         models = client.get("/api/models")
         assert models.status_code == 200
@@ -713,8 +713,8 @@ def test_web_ui_lists_models_from_requested_host(settings: Settings, tmp_path: P
         assert saved["last_model"] == "remote-coder"
 
         home = client.get("/")
-        assert b"http://10.0.0.8:8000/v1" in home.content
-        assert b"remote-coder" in home.content
+        assert b"http://10.0.0.8:8000/v1" not in home.content
+        assert b'id="base-url"' not in home.content
 
         created = client.post(
             "/api/tasks",
@@ -776,6 +776,57 @@ def test_history_endpoint_reads_run_logs(settings: Settings, tmp_path: Path) -> 
         assert body["page_size"] == 10
         assert body["total"] == 1
         assert body["total_pages"] == 1
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_history_lists_a_run_log_and_its_stored_job_once(
+    settings: Settings, tmp_path: Path
+) -> None:
+    created = "2026-11-04T20:01:47Z"
+    runs = tmp_path / ".lbw" / "runs"
+    runs.mkdir(parents=True)
+    (runs / "20261104T200512Z.json").write_text(
+        json.dumps(
+            {
+                "id": "20261104T200512Z",
+                "status": "success",
+                "goal": "Update the docs",
+                "summary": "docs now match the app",
+                "created_at": created,
+                "pr_url": "https://github.com/acme/repo/pull/4",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "history.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "task-docs",
+                    "status": "success",
+                    "goal": "Update the docs",
+                    "summary": "docs now match the app",
+                    "created_at": created,
+                    "pr_url": "https://github.com/acme/repo/pull/4",
+                },
+                {
+                    "id": "task-earlier",
+                    "status": "success",
+                    "goal": "Update the docs",
+                    "summary": "first pass",
+                    "created_at": "2026-11-03T15:00:00Z",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        items = client.get("/api/history", params={"page_size": 100}).json()["items"]
+        assert [item["id"] for item in items] == ["task-docs", "task-earlier"]
     finally:
         manager.shutdown(wait=False)
 
@@ -1060,6 +1111,8 @@ def test_web_ui_workspace_picker_browse_select_create(settings: Settings, tmp_pa
         assert b'data-rail="skills"' in home.content
         assert b'id="skills-panel"' in home.content
         assert b'id="skills-search"' in home.content
+        assert b"data-skill-repo" in home.content
+        assert b"function filterSkills(" in home.content
         assert b'data-rail="rules"' in home.content
         assert b'id="rules-view"' in home.content
         assert b'id="skills-popup"' not in home.content
@@ -1274,6 +1327,42 @@ def test_web_ui_archives_and_forgets_workspaces(settings: Settings, tmp_path: Pa
         assert [item["path"] for item in forgotten.json()["workspaces"]] == [
             str(tmp_path.resolve())
         ]
+    finally:
+        manager.shutdown(wait=False)
+
+
+def test_web_ui_clones_away_from_the_container_home(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.support import init_git_repo
+
+    home = tmp_path / "home"
+    store = tmp_path / "workspaces"
+    store.mkdir()
+    monkeypatch.setattr(
+        "agent_lbw.runtime.workspaces.Path.home",
+        classmethod(lambda cls: home),
+    )
+    source = tmp_path / "upstream"
+    source.mkdir()
+    (source / "readme.txt").write_text("hello\n", encoding="utf-8")
+    init_git_repo(source)
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=store)
+    client = TestClient(app)
+    try:
+        listed = client.get("/api/workspaces")
+        assert listed.status_code == 200
+        assert listed.json()["checkout_root"] == str(store.resolve())
+        cloned = client.post(
+            "/api/workspaces/clone",
+            json={"url": str(source), "parent": str(home / "projects"), "name": "checkout"},
+        )
+        assert cloned.status_code == 200
+        dest = store / "projects" / "checkout"
+        assert cloned.json()["current"] == str(dest.resolve())
+        assert (dest / "readme.txt").read_text(encoding="utf-8") == "hello\n"
+        assert not (home / "projects" / "checkout").exists()
     finally:
         manager.shutdown(wait=False)
 
@@ -1496,6 +1585,79 @@ def _github_workspace(root: Path) -> None:
     (root / "readme.txt").write_text("hello\n", encoding="utf-8")
     init_git_repo(root)
     run_git(Workspace(root), ["remote", "add", "origin", "git@github.com:acme/demo.git"])
+
+
+def test_approve_on_github_requires_a_connected_user(settings: Settings, tmp_path: Path) -> None:
+    from agent_lbw.runtime.account import update_account
+    from agent_lbw.runtime.db import database
+    from agent_lbw.runtime.store.github_sync import link_github_login
+    from agent_lbw.tools.git import APPROVE_GITHUB
+
+    def runner(task: Task) -> CycleResult:
+        if task.decision == "approve":
+            return CycleResult(
+                status="success",
+                goal=task.goal,
+                summary="approved",
+                tests_passed=True,
+                committed=False,
+                published=False,
+                commit_sha=None,
+                reason="approved",
+                stage="done",
+            )
+        return CycleResult(
+            status="waiting",
+            goal=task.goal,
+            summary="ready",
+            tests_passed=True,
+            committed=False,
+            published=False,
+            commit_sha=None,
+            reason="waiting for approval",
+            stage="approval",
+        )
+
+    _github_workspace(tmp_path)
+    manager = TaskManager(settings, runner=runner)
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/tasks",
+            json={"workspace": str(tmp_path), "goal": "Ship it", "approval_gate": "ask"},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        waiting = None
+        for _ in range(50):
+            body = client.get(f"/api/tasks/{task_id}").json()
+            if body["status"] == "waiting":
+                waiting = body
+                break
+            time.sleep(0.05)
+        assert waiting is not None
+        refused = client.post(f"/api/tasks/{task_id}/decide", json={"decision": "approve"})
+        assert refused.status_code == 409
+        assert refused.json()["error"] == APPROVE_GITHUB
+        assert client.get(f"/api/tasks/{task_id}").json()["status"] == "waiting"
+
+        account = update_account(tmp_path, user_name="Ada Lovelace", user_email="ada@example.com")
+        with database(tmp_path) as db:
+            link_github_login(db, user_id=account["current_user_id"], github_login="ada")
+        approved = client.post(f"/api/tasks/{task_id}/decide", json={"decision": "approve"})
+        assert approved.status_code == 200
+        done = None
+        for _ in range(50):
+            body = client.get(f"/api/tasks/{task_id}").json()
+            if body["status"] == "success":
+                done = body
+                break
+            time.sleep(0.05)
+        assert done is not None
+        assert done["stage"] == "done"
+    finally:
+        manager.shutdown(wait=True)
 
 
 def test_web_ui_hides_github_issues_for_local_folders(settings: Settings, tmp_path: Path) -> None:
@@ -1914,6 +2076,51 @@ def test_pull_status_caches_closed_and_merged_until_forced(
         manager.shutdown(wait=False)
 
 
+def test_merge_an_open_pull_request(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent_lbw.tools.base import ToolResult
+
+    (tmp_path / ".git").mkdir()
+    seen: dict[str, str] = {}
+
+    def fake_merge(workspace, url, squash=True, token=None):
+        seen["url"] = url
+        return ToolResult(True, "merged")
+
+    monkeypatch.setattr("agent_lbw.web_ui.merge_pull_request", fake_merge)
+    monkeypatch.setattr(
+        "agent_lbw.web_ui.lookup_pull_state",
+        lambda url, force=False, token=None: "open",
+    )
+    manager = TaskManager(settings, runner=lambda task: _ok_result(task.goal))
+    app = create_app(manager, default_workspace=tmp_path)
+    client = TestClient(app)
+    try:
+        missing = client.post("/api/pulls/merge", json={"url": "not a pull request"})
+        assert missing.status_code == 400
+        merged = client.post(
+            "/api/pulls/merge",
+            json={"url": "https://github.com/acme/demo/pull/4", "workspace": str(tmp_path)},
+        )
+        assert merged.status_code == 200
+        assert merged.json()["state"] == "merged"
+        assert seen["url"] == "https://github.com/acme/demo/pull/4"
+        monkeypatch.setattr(
+            "agent_lbw.web_ui.lookup_pull_state",
+            lambda url, force=False, token=None: "merged",
+        )
+        again = client.post(
+            "/api/pulls/merge",
+            json={"url": "https://github.com/acme/demo/pull/4", "workspace": str(tmp_path)},
+        )
+        assert again.status_code == 409
+        assert again.json()["error"] == "pull request is not open"
+    finally:
+        _clear_pr_state_cache()
+        manager.shutdown(wait=False)
+
+
 def test_submit_accepts_resume_branch(settings: Settings, tmp_path: Path) -> None:
     seen: list[str | None] = []
 
@@ -1997,8 +2204,12 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
     client = TestClient(app)
     try:
         home = client.get("/")
-        assert b'id="open-roles"' in home.content
-        assert b'id="roles-panel"' in home.content
+        assert b'data-rail="roles"' in home.content
+        assert b'id="roles-view"' in home.content
+        assert b'data-section="roles"' in home.content
+        assert b'id="workspace-roles"' in home.content
+        assert b'id="open-roles"' not in home.content
+        assert b'id="roles-panel"' not in home.content
         assert b"function changeBoardHtml(" in home.content
         assert b'class="step-list"' in home.content
         assert b"Open one for its verdict" in home.content
@@ -2023,6 +2234,23 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b"function toggleTheme(" in home.content
         assert b"Waiting for you" in home.content
         assert b"In progress" in home.content
+        assert b"function jobSection(" in home.content
+        assert b"function inboxFolded(" in home.content
+        assert f'id="workspace-summary-repo">{tmp_path.name}<'.encode() in home.content
+        assert b'id="workspace-summary-repo"' in home.content
+        assert b'id="workspace-summary-branch"' in home.content
+        assert b"function repoLabel(" in home.content
+        assert b"function paintWorkspaceSummary(" in home.content
+        assert b"function paintViewedBranch(" in home.content
+        assert b"data-inbox-fold=" in home.content
+        assert b"Pull requests" in home.content
+        assert b"No pull request is waiting." in home.content
+        assert b"Can't retry" in home.content
+        assert b"No failed job is stuck." in home.content
+        assert b"data-merge-url=" in home.content
+        assert b"data-request-changes=" in home.content
+        assert b"/api/pulls/merge" in home.content
+        assert b"Request changes" in home.content
         assert b'id="gate-triage" type="checkbox" checked' in home.content
         assert b'id="gate-approval" type="checkbox" checked' in home.content
         assert b'id="bypass-gates"' in home.content
@@ -2039,6 +2267,11 @@ def test_home_lists_roles_and_the_change_gates(settings: Settings, tmp_path: Pat
         assert b"Why it was sent back" in home.content
         layout = client.get("/static/layout.css")
         assert b".inbox" in layout.content
+        assert b".inbox-actions" in layout.content
+        assert b"button.inbox-fold" in layout.content
+        assert b"button.skill-repo-fold" in layout.content
+        assert b".inbox-pull" in layout.content
+        assert b".inbox-stuck" in layout.content
         assert b".step-card" in layout.content
         assert b".reply-box" in layout.content
         assert b".step-card > summary .step-usage" in layout.content

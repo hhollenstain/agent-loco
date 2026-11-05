@@ -1,15 +1,18 @@
-"""Throwaway environments for a test runner the project could not start.
+"""Throwaway environments for a tool the project could not start.
 
 The project's own virtualenv, node_modules, and vendor directory stay as they
-are. Dependencies are installed beside the checkout, then the suite runs with
-that interpreter. When the language tool is not on the machine, the same
-install happens inside a short-lived container.
+are. Dependencies are installed beside the checkout, then the suite or linter
+runs with that tool. When the language tool is not on the machine, the same
+install happens inside a short-lived container. A missing ruff binary is
+installed the same way, and the container that already contains ruff has no
+network.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shlex
 import shutil
@@ -44,6 +47,17 @@ _IMAGES = {
     "maven": "maven:3-eclipse-temurin-21",
     "gradle": "gradle:8-jdk21",
 }
+_RUFF_IMAGE = "ghcr.io/astral-sh/ruff:0.16.10"
+_RUFF_SUBCOMMANDS = frozenset({"format", "check", "version", "rule", "config", "clean"})
+_RUFF_SPEC = re.compile(r"^ruff(?:\[[A-Za-z0-9_,.-]+\])?(?:[><=!~]=?[A-Za-z0-9.*+!,]+)*$")
+_RUFF_STEP = re.compile(
+    r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+    r"(?:uv\s+run\s+(?:--\S+\s+)*)?"
+    r"(?:pipenv\s+run\s+)?"
+    r"(?:python\d*(?:\.\d+)?\s+-m\s+)?"
+    r"ruff\b(?P<args>.*)$"
+)
+_UNSAFE_SHELL = re.compile(r"[\n\r\x00`;<>]|\$\(")
 
 
 def run_in_testbed(
@@ -149,6 +163,164 @@ def run_in_testbed(
             timeout_seconds=timeout_seconds,
         )
     return None
+
+
+def ruff_unavailable(output: str) -> bool:
+    """The lint command never started ruff. That is not a lint finding."""
+    return _ruff_missing(output)
+
+
+def run_lint_in_testbed(
+    workspace: Workspace,
+    command: str,
+    output: str,
+    timeout_seconds: int,
+) -> ToolResult | None:
+    """Install ruff outside the checkout when the lint command could not start it."""
+    if not ruff_unavailable(output):
+        return None
+    return run_with_throwaway_ruff(workspace, command, timeout_seconds)
+
+
+def run_with_throwaway_ruff(
+    workspace: Workspace,
+    command: str,
+    timeout_seconds: int,
+) -> ToolResult | None:
+    """Run a lint command with a ruff binary that is not the project's."""
+    bindir = _ensure_ruff(workspace, timeout_seconds)
+    if bindir is not None:
+        record_event(kind="step", message="Running lint with the throwaway ruff.")
+        return run_command(workspace, _ruff_rerun(bindir, command), timeout_seconds)
+    steps = _ruff_steps(command)
+    if steps and _docker_available():
+        return _ruff_docker(workspace, steps, timeout_seconds)
+    record_event(kind="step", message="Could not build a throwaway environment for ruff.")
+    return None
+
+
+def _ensure_ruff(workspace: Workspace, timeout_seconds: int) -> Path | None:
+    bed = _bed(workspace.root, "ruff")
+    binary = bed / "bin" / "ruff"
+    stamp = _stamp(_python_inputs(workspace.root))
+    if _reusable(bed, stamp, binary):
+        record_event(kind="step", message="Reusing the throwaway ruff environment.")
+        return binary.parent
+    record_event(kind="step", message="Building a throwaway environment for ruff.")
+    if _ruff_local(workspace, bed, timeout_seconds):
+        _write_stamp(bed, stamp)
+        return binary.parent
+    _discard(bed)
+    return None
+
+
+def _ruff_local(workspace: Workspace, bed: Path, timeout_seconds: int) -> bool:
+    root = workspace.root
+    spec = _q(_ruff_requirement(root))
+    python = _q(bed / "bin" / "python")
+    if shutil.which("uv"):
+        _discard(bed)
+        command = (
+            f"env -u VIRTUAL_ENV UV_NO_CACHE=1 uv venv {_q(bed)} && "
+            f"env -u VIRTUAL_ENV UV_NO_CACHE=1 uv pip install --python {python} "
+            f"--only-binary=:all: {spec}"
+        )
+        if run_command(workspace, command, timeout_seconds).ok and (bed / "bin" / "ruff").is_file():
+            return True
+        _discard(bed)
+    if shutil.which("python3"):
+        _discard(bed)
+        command = (
+            f"env -u VIRTUAL_ENV python3 -m venv {_q(bed)} && "
+            f"env -u VIRTUAL_ENV {python} -m pip install --no-input --no-cache-dir "
+            f"--disable-pip-version-check --only-binary=:all: {spec}"
+        )
+        if run_command(workspace, command, timeout_seconds).ok and (bed / "bin" / "ruff").is_file():
+            return True
+        _discard(bed)
+    return False
+
+
+def _ruff_docker(
+    workspace: Workspace,
+    steps: list[list[str]],
+    timeout_seconds: int,
+) -> ToolResult:
+    """Run ruff from a pinned image. The container has no network and no extra capabilities."""
+    image = _RUFF_IMAGE
+    root = workspace.root.resolve()
+    user = f"{os.getuid()}:{os.getgid()}"
+    record_event(kind="step", message="Running lint in a throwaway ruff container.")
+    last = ToolResult(False, "ruff did not run")
+    for args in steps:
+        command = (
+            "docker run --rm --network none --read-only --cap-drop=ALL "
+            "--security-opt=no-new-privileges "
+            "--tmpfs /tmp:rw,noexec,nosuid,size=64m "
+            f"--user {user} "
+            f"-v {_q(root)}:/workspace -w /workspace "
+            f"--entrypoint ruff {image} {shlex.join(args)}"
+        )
+        last = run_command(workspace, command, timeout_seconds)
+        if not last.ok:
+            return last
+    return last
+
+
+def _ruff_rerun(bindir: Path, command: str) -> str:
+    return f"export PATH={_q(bindir)}:$PATH && {command}"
+
+
+def _ruff_missing(output: str) -> bool:
+    text = output or ""
+    if re.search(r"No module named ['\"]?ruff\b", text, re.IGNORECASE):
+        return True
+    return (
+        re.search(r"\bruff\b[^\n]{0,80}(?:not found|command not found)", text, re.IGNORECASE)
+        is not None
+    )
+
+
+def _ruff_requirement(root: Path) -> str:
+    for name in ("pyproject.toml", "requirements-dev.txt", "requirements.txt"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in re.finditer(
+            r"[\"'](ruff(?:\[[A-Za-z0-9_,.-]+\])?(?:[><=!~]=?[A-Za-z0-9.*+!,]+)*)[\"']",
+            text,
+        ):
+            spec = match.group(1)
+            if _RUFF_SPEC.fullmatch(spec):
+                return spec
+        for line in text.splitlines():
+            spec = line.strip()
+            if _RUFF_SPEC.fullmatch(spec):
+                return spec
+    return "ruff"
+
+
+def _ruff_steps(command: str) -> list[list[str]] | None:
+    text = (command or "").strip()
+    if not text or _UNSAFE_SHELL.search(text):
+        return None
+    steps: list[list[str]] = []
+    for part in text.split("&&"):
+        piece = part.strip()
+        match = _RUFF_STEP.fullmatch(piece)
+        if match is None:
+            return None
+        args = match.group("args").split()
+        if not args or args[0] not in _RUFF_SUBCOMMANDS:
+            return None
+        if not all(_SAFE_ARG.fullmatch(token) for token in args):
+            return None
+        steps.append(args)
+    return steps or None
 
 
 def _python_bed(
@@ -364,7 +536,8 @@ def _docker(workspace: Workspace, kind: str, inner: str, timeout_seconds: int) -
     image = _IMAGES[kind]
     record_event(kind="step", message=f"Running tests in a throwaway {kind} container.")
     command = (
-        "docker run --rm --network bridge "
+        "docker run --rm --network bridge --cap-drop=ALL "
+        "--security-opt=no-new-privileges "
         f"-v {_q(workspace.root.resolve())}:/workspace -w /workspace "
         f"{image} bash -lc {_q(inner)}"
     )

@@ -1,8 +1,8 @@
-"""Seal tenant keys and task goals.
+"""Seal tenant keys, task goals, and job results.
 
 The master key lives in `.lbw/master.key` on the install. The database holds
-only a wrapped copy of each tenant key, and ciphertext for a goal. A dump of
-the database does not include the master key.
+only a wrapped copy of each tenant key, and ciphertext for a goal or a job
+result. A dump of the database does not include the master key.
 """
 
 from __future__ import annotations
@@ -89,7 +89,9 @@ def _expand(prk: bytes, info: bytes, length: int) -> bytes:
     block = b""
     counter = 1
     while len(out) < length:
-        block = hmac.new(prk, block + info + bytes([counter]), hashlib.sha256).digest()
+        # The first 255 blocks stay one byte so secrets sealed before this still open.
+        suffix = bytes([counter]) if counter < 256 else counter.to_bytes(4, "big")
+        block = hmac.new(prk, block + info + suffix, hashlib.sha256).digest()
         out += block
         counter += 1
     return out[:length]

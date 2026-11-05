@@ -115,6 +115,78 @@ def _markdown_renderer():
     return _MARKDOWN
 
 
+_PLAIN_VALUE = re.compile(r"^(\s*)([A-Za-z_][\w-]*):(.*)$")
+
+
+def skill_markdown_for_kiwi(text: str) -> str:
+    """Skill markdown whose frontmatter KiwiFS will store.
+
+    An unquoted value containing a colon is read as a mapping. Quote that
+    value and write the frontmatter back. The body stays as it was.
+    """
+    raw = (text or "").replace("\r\n", "\n")
+    match = _FRONTMATTER_RE.match(raw.strip())
+    if match is None:
+        return text
+    block = match.group(1) or ""
+    if _frontmatter_mapping(block) is not None:
+        return text
+    loaded = _frontmatter_mapping(_quote_plain_colons(block))
+    if loaded is None:
+        problem = "could not be parsed"
+        try:
+            yaml.safe_load(_quote_plain_colons(block))
+        except yaml.YAMLError as exc:
+            problem = _yaml_problem(exc)
+        raise ValueError(f"skill frontmatter is not valid YAML ({problem})")
+    dumped = yaml.safe_dump(loaded, sort_keys=False, allow_unicode=True, width=10**6).strip()
+    body = (match.group(2) or "").strip("\n")
+    if body:
+        return f"---\n{dumped}\n---\n\n{body}\n"
+    return f"---\n{dumped}\n---\n"
+
+
+def _frontmatter_mapping(text: str) -> dict | None:
+    try:
+        loaded = yaml.safe_load(text) if text.strip() else {}
+    except yaml.YAMLError:
+        return None
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        return None
+    return loaded
+
+
+def _quote_plain_colons(text: str) -> str:
+    """Quote an unquoted value that contains a colon, which YAML reads as a mapping."""
+    lines: list[str] = []
+    for line in text.splitlines():
+        match = _PLAIN_VALUE.match(line)
+        if match is None:
+            lines.append(line)
+            continue
+        indent, key, rest = match.group(1), match.group(2), match.group(3)
+        value = rest.strip()
+        if not value or value[0] in "\"'|>[{&*!%#":
+            lines.append(line)
+            continue
+        if ": " not in value:
+            lines.append(line)
+            continue
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'{indent}{key}: "{escaped}"')
+    return "\n".join(lines)
+
+
+def _yaml_problem(exc: yaml.YAMLError) -> str:
+    problem = getattr(exc, "problem", None) or "could not be parsed"
+    mark = getattr(exc, "problem_mark", None)
+    if mark is None:
+        return str(problem)
+    return f"{problem} (line {mark.line + 1})"
+
+
 def parse_skill_markdown(text: str, *, fallback_name: str) -> tuple[str, str, str]:
     raw = (text or "").replace("\r\n", "\n")
     match = _FRONTMATTER_RE.match(raw.strip())
@@ -396,21 +468,20 @@ def _parse_source(item: object) -> SkillSource | None:
 
 
 def _load_raw_config(root: Path) -> dict:
-    path = Path(root).expanduser().resolve() / ".lbw" / "config.yaml"
-    if not path.exists():
-        return {}
+    from agent_lbw.runtime.project import read_project_config
+
     try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+        return read_project_config(root)
+    except (OSError, ValueError):
         return {}
-    return loaded if isinstance(loaded, dict) else {}
 
 
 def _write_raw_config(root: Path, raw: dict) -> None:
+    from agent_lbw.runtime.project import dump_project_config
+
     path = Path(root).expanduser().resolve() / ".lbw" / "config.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    dumped = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
-    path.write_text(dumped, encoding="utf-8")
+    path.write_text(dump_project_config(raw), encoding="utf-8")
 
 
 def _update_skills_config(
@@ -474,6 +545,10 @@ def skill_documents(checkout: Path) -> list[tuple[str, str]]:
             continue
         if len(text) > 100_000:
             raise ValueError(f"{relative} is too large")
+        try:
+            text = skill_markdown_for_kiwi(text)
+        except ValueError as exc:
+            raise ValueError(f"{relative}: {exc}") from exc
         found.append((relative, text))
     if len(found) > 200:
         raise ValueError("that repository has too many skills")

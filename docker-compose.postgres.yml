@@ -27,6 +27,12 @@ services:
         condition: service_healthy
       kiwifs:
         condition: service_started
+  crossing:
+    environment:
+      LBW_DATABASE_URL: postgresql://lbw:lbw@postgres:5432/lbw
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   lbw-postgres:

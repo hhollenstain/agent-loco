@@ -20,6 +20,23 @@ from agent_lbw.runtime.store.assignments import (
     set_skill_grant,
     skills_for_project,
 )
+from agent_lbw.runtime.store.catalog import accept_review as accept_agent_review
+from agent_lbw.runtime.store.catalog import (
+    attach_builder,
+    catalog_for_settings,
+    delete_agent,
+    delete_endpoint,
+    delete_model,
+    models_for_workspace,
+    save_agent,
+    save_endpoint,
+    save_model,
+    set_agent_enabled,
+    set_agent_grant,
+    set_model_enabled,
+    set_model_grant,
+    sync_endpoint,
+)
 from agent_lbw.runtime.store.install import require_account
 from agent_lbw.runtime.store.rules import project_for_workspace
 
@@ -34,6 +51,39 @@ class SkillGrantBody(BaseModel):
 class EnforcedRoleBody(BaseModel):
     role_name: str
     enforced: bool = True
+
+
+class EndpointBody(BaseModel):
+    name: str
+    provider: str
+    base_url: str = ""
+    api_key: str = ""
+
+
+class ModelBody(BaseModel):
+    endpoint_id: str
+    model_name: str
+    name: str = ""
+
+
+class AgentBody(BaseModel):
+    name: str
+    kind: str
+    model_id: str = ""
+
+
+class EnabledBody(BaseModel):
+    enabled: bool = False
+
+
+class CatalogGrantBody(BaseModel):
+    scope_type: str
+    scope_id: str
+    granted: bool = True
+
+
+class BuilderBody(BaseModel):
+    agent_id: str
 
 
 class SkillRepoBody(BaseModel):
@@ -104,6 +154,145 @@ def register_org(app: FastAPI) -> None:
 
         return _act_kiwi(request, apply)
 
+    @app.post("/api/org/endpoints", response_model=None)
+    def add_endpoint(request: Request, payload: EndpointBody) -> object:
+        def apply(db, root: Path) -> dict:
+            warning = save_endpoint(
+                db,
+                root,
+                name=payload.name,
+                provider=payload.provider,
+                base_url=payload.base_url,
+                api_key=payload.api_key,
+            )
+            body = _settings(db, root)
+            if warning:
+                body["endpoint_warning"] = warning
+            return body
+
+        return _act(request, apply)
+
+    @app.post("/api/org/endpoints/{endpoint_id}/sync", response_model=None)
+    def refresh_endpoint(request: Request, endpoint_id: str) -> object:
+        def apply(db, root: Path) -> dict:
+            warning = sync_endpoint(db, root, endpoint_id)
+            body = _settings(db, root)
+            if warning:
+                body["endpoint_warning"] = warning
+            return body
+
+        return _act(request, apply)
+
+    @app.delete("/api/org/endpoints/{endpoint_id}", response_model=None)
+    def remove_endpoint(request: Request, endpoint_id: str) -> object:
+        def apply(db, root: Path) -> dict:
+            delete_endpoint(db, endpoint_id)
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.get("/api/org/models", response_model=None)
+    def list_granted_models(request: Request, workspace: str | None = None) -> object:
+        ui = request.app.state.ui
+        path = Path(workspace or ui.default_workspace)
+
+        def apply(db, _root: Path) -> dict:
+            return {"models": models_for_workspace(db, path)}
+
+        return _act(request, apply)
+
+    @app.post("/api/org/models", response_model=None)
+    def add_model(request: Request, payload: ModelBody) -> object:
+        def apply(db, root: Path) -> dict:
+            save_model(
+                db,
+                root,
+                endpoint_id=payload.endpoint_id,
+                model_name=payload.model_name,
+                name=payload.name,
+            )
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.delete("/api/org/models/{model_id}", response_model=None)
+    def remove_model(request: Request, model_id: str) -> object:
+        def apply(db, root: Path) -> dict:
+            delete_model(db, model_id)
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.put("/api/org/models/{model_id}/enabled", response_model=None)
+    def enable_model(request: Request, model_id: str, payload: EnabledBody) -> object:
+        def apply(db, root: Path) -> dict:
+            set_model_enabled(db, model_id, enabled=payload.enabled)
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.put("/api/org/models/{model_id}/grants", response_model=None)
+    def grant_model(request: Request, model_id: str, payload: CatalogGrantBody) -> object:
+        def apply(db, root: Path) -> dict:
+            set_model_grant(
+                db,
+                model_id=model_id,
+                scope_type=payload.scope_type,
+                scope_id=payload.scope_id,
+                granted=payload.granted,
+            )
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.post("/api/org/agents", response_model=None)
+    def add_agent(request: Request, payload: AgentBody) -> object:
+        def apply(db, root: Path) -> dict:
+            save_agent(db, name=payload.name, kind=payload.kind, model_id=payload.model_id)
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.delete("/api/org/agents/{agent_id}", response_model=None)
+    def remove_agent(request: Request, agent_id: str) -> object:
+        def apply(db, root: Path) -> dict:
+            delete_agent(db, agent_id)
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.put("/api/org/agents/{agent_id}/enabled", response_model=None)
+    def enable_agent(request: Request, agent_id: str, payload: EnabledBody) -> object:
+        def apply(db, root: Path) -> dict:
+            set_agent_enabled(db, agent_id, enabled=payload.enabled)
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.put("/api/org/agents/{agent_id}/grants", response_model=None)
+    def grant_agent(request: Request, agent_id: str, payload: CatalogGrantBody) -> object:
+        def apply(db, root: Path) -> dict:
+            set_agent_grant(
+                db,
+                agent_id=agent_id,
+                scope_type=payload.scope_type,
+                scope_id=payload.scope_id,
+                granted=payload.granted,
+            )
+            return _settings(db, root)
+
+        return _act(request, apply)
+
+    @app.post("/api/tasks/{task_id}/builder", response_model=None)
+    def write_builder(request: Request, task_id: str, payload: BuilderBody) -> object:
+        return _act(
+            request, lambda db, _root: attach_builder(db, task_id, agent_id=payload.agent_id)
+        )
+
+    @app.post("/api/tasks/{task_id}/review", response_model=None)
+    def write_review(request: Request, task_id: str) -> object:
+        return _act(request, lambda db, _root: accept_agent_review(db, task_id))
+
 
 def assigned_skill_names(root: Path, workspace: Path, database_url: str = "") -> list[str]:
     """Skills the organization assigned to the project at this workspace."""
@@ -154,6 +343,7 @@ def _settings(db, root: Path) -> dict:
             )
         ],
         "skill_repos": _skill_repos(db, account),
+        **catalog_for_settings(db),
     }
 
 
@@ -187,6 +377,8 @@ def _act(request: Request, fn):
             return fn(db, root)
     except PermissionError as exc:
         return JSONResponse({"error": str(exc)}, status_code=403)
+    except KeyError:
+        return JSONResponse({"error": "not found"}, status_code=404)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 

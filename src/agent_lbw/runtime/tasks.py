@@ -34,6 +34,31 @@ PROTECTED_BRANCHES = frozenset({"", "main", "master", "trunk", "HEAD"})
 Runner = Callable[["Task"], CycleResult]
 
 
+def _task_fault(task: Task) -> str:
+    from agent_lbw.runtime.store.tasks import fault_for
+
+    return fault_for(
+        status=task.status,
+        reason=str(task.reason or ""),
+        error=str(task.error or ""),
+    )
+
+
+def _workspace_is_github(path: str) -> bool:
+    if not path:
+        return False
+    from agent_lbw.sandbox import SandboxError, Workspace
+    from agent_lbw.tools.git import github_owner_repo
+
+    try:
+        workspace = Workspace(Path(path))
+    except (OSError, SandboxError):
+        return False
+    if not (workspace.root / ".git").exists():
+        return False
+    return github_owner_repo(workspace) is not None
+
+
 def _gate_value(value: str | None, default: str) -> str:
     picked = (value or "").strip()
     if not picked:
@@ -153,6 +178,8 @@ class Task:
     criteria: list[str] = field(default_factory=list)
     evidence: list[dict] = field(default_factory=list)
     review_notes: str = ""
+    committer_name: str = ""
+    committer_email: str = ""
 
     def to_dict(self, *, include_logs: bool = True) -> dict:
         payload = {
@@ -175,6 +202,7 @@ class Task:
             "commit_sha": self.commit_sha,
             "pr_url": self.pr_url,
             "error": self.error,
+            "fault": _task_fault(self),
             "sha_before": self.sha_before,
             "branch": self.branch,
             "base_branch": self.base_branch,
@@ -308,6 +336,7 @@ class TaskManager:
         )
         with self._lock:
             self._tasks[task.id] = task
+        self._stamp_committer(task)
         if self.store_root is not None:
             try:
                 from agent_lbw.runtime.store.recording import record_task
@@ -406,10 +435,45 @@ class TaskManager:
             approval_gate=old_task.approval_gate,
         )
 
+    def adopt_open_jobs(self) -> None:
+        """Put stored queued, running, and waiting jobs back after a restart."""
+        if self.store_root is None:
+            return
+        try:
+            from agent_lbw.runtime.store.recording import open_jobs
+
+            records = open_jobs(self.store_root, self.settings.database_url)
+        except Exception as exc:
+            log.warning("open jobs were not restored: %s", exc)
+            return
+        for record in records:
+            self._adopt(record, start=str(record.get("status") or "") in {"queued", "running"})
+
+    def adopt_job(self, task_id: str) -> Task | None:
+        """Load one stored job without starting it. A click decides whether it runs."""
+        with self._lock:
+            current = self._tasks.get(task_id)
+        if current is not None:
+            return current
+        if self.store_root is None:
+            return None
+        try:
+            from agent_lbw.runtime.store.recording import open_job
+
+            record = open_job(self.store_root, self.settings.database_url, task_id)
+        except Exception as exc:
+            log.warning("task %s was not restored: %s", task_id, exc)
+            return None
+        if record is None:
+            return None
+        return self._adopt(record, start=False)
+
     def decide(self, task_id: str, decision: str, note: str = "") -> Task | None:
         """Resume a change that is waiting, or continue one that was sent back."""
         choice = (decision or "").strip()
         reply = " ".join((note or "").split())
+        if self.get(task_id) is None:
+            self.adopt_job(task_id)
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -431,6 +495,12 @@ class TaskManager:
                 return None
             if choice in {"send_back", "continue"} and not reply:
                 return None
+            if choice == "approve" and self._approval_needs_github(task):
+                from agent_lbw.tools.git import APPROVE_GITHUB
+
+                raise ValueError(APPROVE_GITHUB)
+            if choice == "approve":
+                self._stamp_committer(task)
             task.decision = choice
             if choice == "send_back":
                 task.review_notes = _join_notes(_review_notes(task.evidence), f"From you: {reply}")
@@ -443,7 +513,7 @@ class TaskManager:
             task.status = "queued"
             task.finished_at = None
             task.error = None
-        self._executor.submit(self._run, task)
+        self._start(task)
         return task
 
     def stop_continuous(self, workspace: str | Path) -> None:
@@ -489,6 +559,102 @@ class TaskManager:
     def shutdown(self, wait: bool = False, *, cancel_futures: bool = True) -> None:
         self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
 
+    def _approval_needs_github(self, task: Task) -> bool:
+        if self.store_root is None:
+            return False
+        from agent_lbw.runtime.db import database_configured
+
+        if not database_configured(self.store_root, self.settings.database_url):
+            return False
+        if not _workspace_is_github(task.workspace):
+            return False
+        return self._connected_identity() is None
+
+    def _stamp_committer(self, task: Task) -> None:
+        """A GitHub commit is authored by the connected person."""
+        if not _workspace_is_github(task.workspace):
+            return
+        identity = self._connected_identity()
+        if identity is None:
+            return
+        task.committer_name, task.committer_email = identity
+
+    def _connected_identity(self) -> tuple[str, str] | None:
+        if self.store_root is None:
+            return None
+        from agent_lbw.runtime.store.install import commit_identity_for
+
+        return commit_identity_for(self.store_root, self.settings.database_url)
+
+    def _adopt(self, record: dict, *, start: bool) -> Task:
+        with self._lock:
+            current = self._tasks.get(str(record.get("id") or ""))
+            if current is not None:
+                return current
+            task = self._task_from_record(record)
+            if start:
+                task.status = "queued"
+                task.finished_at = None
+                task.error = None
+            self._tasks[task.id] = task
+        if start:
+            self._start(task)
+        return task
+
+    def _start(self, task: Task) -> None:
+        """Remember the decision, then run. A restart can pick the job up from the row."""
+        self._sync_stored_task(task)
+        try:
+            self._executor.submit(self._run, task)
+        except RuntimeError as exc:
+            log.warning("task %s was not started: %s", task.id, exc)
+
+    def _task_from_record(self, record: dict) -> Task:
+        stage = str(record.get("stage") or "")
+        triage = "ask" if stage == "triage" else "auto"
+        approval = "ask" if stage == "approval" else "auto"
+        asking = triage == "ask" or approval == "ask" or stage in {"ask", "reply"}
+        gate = "ask" if asking else "auto"
+        goal = record.get("goal")
+        if isinstance(goal, str):
+            goal = goal.strip() or None
+        raw_url = str(record.get("model_base_url") or "")
+        model_url = normalize_model_base_url(raw_url) if raw_url else self.settings.model_base_url
+        criteria = [
+            str(item)
+            for item in (record.get("criteria") or [])
+            if isinstance(item, str) and item.strip()
+        ]
+        evidence = [item for item in (record.get("evidence") or []) if isinstance(item, dict)]
+        decision = str(record.get("decision") or "") or None
+        return Task(
+            id=str(record["id"]),
+            workspace=str(record.get("workspace") or ""),
+            goal=goal,
+            auto_commit=self.settings.auto_commit,
+            create_pr=None,
+            model_name=str(record.get("model_name") or "") or self.settings.model_name,
+            model_base_url=model_url,
+            model_api_key=self.settings.model_api_key,
+            status=str(record.get("status") or "waiting"),
+            created_at=str(record.get("created_at") or "") or _utcnow(),
+            summary=record.get("summary") or None,
+            reason=record.get("reason") or None,
+            tests_passed=record.get("tests_passed"),
+            committed=bool(record.get("committed")),
+            published=bool(record.get("published")),
+            pr_url=record.get("pr_url") or None,
+            branch=record.get("branch") or None,
+            gate=gate,
+            triage_gate=triage,
+            approval_gate=approval,
+            decision=decision,
+            stage=stage,
+            plan=str(record.get("plan") or ""),
+            criteria=criteria,
+            evidence=evidence,
+        )
+
     def _run(self, task: Task) -> None:
         task.status = "running"
         task.started_at = _utcnow()
@@ -496,6 +662,10 @@ class TaskManager:
             task.stage = "building"
         elif task.decision == "approve":
             task.stage = "approval"
+            if self.store_root is not None:
+                from agent_lbw.runtime.store.recording import accept_recorded_review
+
+                accept_recorded_review(self.store_root, self.settings.database_url, task.id)
         if self._runner is None and task.context_window is None:
             task.context_window = lookup_context_window(
                 task.model_base_url,
@@ -562,30 +732,36 @@ class TaskManager:
             updates["context_window"] = task.context_window
         settings = self.settings.model_copy(update=updates)
         llm = self._llm_factory(settings)
-        return run_cycle(
-            Path(task.workspace),
-            settings,
-            llm,
-            task.goal,
-            cli_create_pr=task.create_pr,
-            continuous=task.continuous,
-            sibling_tasks=sibling_task_records(self, task),
-            context_window=task.context_window,
-            task_id=task.id,
-            base_branch=task.base_branch,
-            keep_branch=bool(
-                task.resume_branch
-                or task.resume_sha
-                or task.decision in {"approve", "send_back", "continue"}
-            ),
-            gate=task.gate,
-            triage_gate=task.triage_gate,
-            approval_gate=task.approval_gate,
-            decision=task.decision,
-            review_notes=task.review_notes,
-            held_summary=task.summary or "",
-            store_root=self.store_root,
-        )
+        from agent_lbw.tools.git import reset_committer, use_committer
+
+        committer = use_committer(task.committer_name, task.committer_email)
+        try:
+            return run_cycle(
+                Path(task.workspace),
+                settings,
+                llm,
+                task.goal,
+                cli_create_pr=task.create_pr,
+                continuous=task.continuous,
+                sibling_tasks=sibling_task_records(self, task),
+                context_window=task.context_window,
+                task_id=task.id,
+                base_branch=task.base_branch,
+                keep_branch=bool(
+                    task.resume_branch
+                    or task.resume_sha
+                    or task.decision in {"approve", "send_back", "continue"}
+                ),
+                gate=task.gate,
+                triage_gate=task.triage_gate,
+                approval_gate=task.approval_gate,
+                decision=task.decision,
+                review_notes=task.review_notes,
+                held_summary=task.summary or "",
+                store_root=self.store_root,
+            )
+        finally:
+            reset_committer(committer)
 
     def _sync_stored_task(self, task: Task) -> None:
         if self.store_root is None:

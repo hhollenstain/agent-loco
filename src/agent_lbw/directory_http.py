@@ -32,6 +32,8 @@ from agent_lbw.runtime.store.teams import (
     create_team,
     list_teams,
     promote_to_organization,
+    remove_team,
+    remove_team_member,
 )
 
 
@@ -94,7 +96,18 @@ def register_directory(app: FastAPI) -> None:
 
     @app.post("/api/directory/teams/{team_id}/members", response_model=None)
     def team_member(request: Request, team_id: str, body: TeamMemberBody) -> object:
-        return _act(request, lambda db, account, root: _team_member(db, team_id, body))
+        return _act(request, lambda db, account, root: _team_member(db, account, team_id, body))
+
+    @app.delete("/api/directory/teams/{team_id}", response_model=None)
+    def drop_team(request: Request, team_id: str) -> object:
+        return _act(request, lambda db, account, root: _drop_team(db, account, team_id))
+
+    @app.delete("/api/directory/teams/{team_id}/members/{identity_id}", response_model=None)
+    def drop_team_member(request: Request, team_id: str, identity_id: str) -> object:
+        return _act(
+            request,
+            lambda db, account, root: _drop_team_member(db, account, team_id, identity_id),
+        )
 
     @app.post("/api/directory/duties", response_model=None)
     def duties(request: Request, body: DutyBody) -> object:
@@ -150,12 +163,37 @@ def _promote(db, account: dict, root: Path) -> dict:
 
 
 def _team(db, account: dict, body: TeamBody) -> dict:
+    _require_manager(account)
     return create_team(db, account["org"]["id"], body.name)
 
 
-def _team_member(db, team_id: str, body: TeamMemberBody) -> dict:
+def _team_member(db, account: dict, team_id: str, body: TeamMemberBody) -> dict:
+    _require_manager(account)
+    if body.rank not in {"admin", "member"}:
+        raise ValueError("a team person is an admin or a member")
     add_team_member(db, team_id, body.identity_id, body.rank)
-    return {"team_id": team_id, "identity_id": body.identity_id, "rank": body.rank}
+    return {"teams": list_teams(db, account["org"]["id"])}
+
+
+def _drop_team(db, account: dict, team_id: str) -> dict:
+    _require_manager(account)
+    remove_team(db, account["org"]["id"], team_id)
+    return {"teams": list_teams(db, account["org"]["id"])}
+
+
+def _drop_team_member(db, account: dict, team_id: str, identity_id: str) -> dict:
+    _require_manager(account)
+    remove_team_member(db, team_id, identity_id)
+    return {"teams": list_teams(db, account["org"]["id"])}
+
+
+def _require_manager(account: dict) -> None:
+    current = next(
+        (user for user in account["users"] if user["id"] == account["current_user_id"]),
+        None,
+    )
+    if current is None or current["role"] not in {"owner", "admin"}:
+        raise PermissionError("an owner or admin manages teams")
 
 
 def _duty(db, body: DutyBody) -> dict:

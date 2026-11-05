@@ -1,7 +1,11 @@
-"""Task requests. The goal is ciphertext. The run directory holds the context."""
+"""Task requests and outcomes. The goal and the result are ciphertext.
+
+Logs, prompts, and tool traces stay in the run directory.
+"""
 
 from __future__ import annotations
 
+import json
 import secrets
 import time
 from pathlib import Path
@@ -11,6 +15,32 @@ from agent_lbw.runtime.store.crypto import master_key, open_secret, seal, unwrap
 from agent_lbw.runtime.store.projects import can_access
 
 _KEY_BYTES = 32
+_CODE_FAILURE = (
+    "tests failed",
+    "lint",
+    "review",
+    "send back",
+    "handed to a person",
+    "waiting for",
+    "no open goals",
+    "approved",
+    "empty diff",
+    "criteria",
+    "refusing to push",
+)
+_INFRA_PREFIXES = (
+    "could not leave main:",
+    "commit failed:",
+    "push failed:",
+    "pr failed:",
+)
+
+
+def _clip(text: str) -> str:
+    clean = " ".join(str(text or "").split())
+    if not clean:
+        return "LBW crashed while running this job"
+    return clean[:200]
 
 
 def save_task_request(
@@ -54,6 +84,24 @@ def save_task_request(
     )
 
 
+def fault_for(*, status: str, reason: str = "", error: str = "") -> str:
+    """A short LBW fault. A test, review, or other code failure stays blank."""
+    if status == "error":
+        return _clip(error or reason or "LBW crashed while running this job")
+    if status != "failed":
+        return ""
+    text = (reason or error or "").strip()
+    lowered = text.casefold()
+    if any(mark in lowered for mark in _CODE_FAILURE):
+        return ""
+    if lowered.startswith(_INFRA_PREFIXES):
+        label = text.split(":", 1)[0].strip()
+        return _clip(f"{label}: LBW could not finish this job")
+    if "fatal:" in lowered or "not a git" in lowered or lowered.startswith("unable to"):
+        return "LBW could not prepare the workspace for this job"
+    return ""
+
+
 def touch_task(
     db: Database,
     *,
@@ -63,15 +111,22 @@ def touch_task(
     branch: str | None,
     pr_url: str | None,
     run_ref: str | None,
+    fault: str = "",
 ) -> None:
     """Update status and publish fields. The goal ciphertext stays as first written."""
+    row = db.fetchone(
+        "SELECT agent_id, reviewer_id FROM tasks WHERE id = ? AND tenant_id = ?",
+        (task_id, tenant_id),
+    )
+    if row is not None and row["agent_id"] and status == "success" and not row["reviewer_id"]:
+        raise PermissionError("a person must accept work an agent built")
     db.execute(
         """
         UPDATE tasks
-        SET status = ?, branch = ?, pr_url = ?, run_ref = ?
+        SET status = ?, branch = ?, pr_url = ?, run_ref = ?, fault = ?
         WHERE id = ? AND tenant_id = ?
         """,
-        (status, branch, pr_url, run_ref, task_id, tenant_id),
+        (status, branch, pr_url, run_ref, fault or None, task_id, tenant_id),
     )
 
 
@@ -79,7 +134,7 @@ def read_task(db: Database, root: Path, *, task_id: str, identity_id: str) -> di
     row = db.fetchone(
         """
         SELECT id, tenant_id, project_id, requester_id, status, branch, pr_url,
-               run_ref, goal_ciphertext, created
+               run_ref, goal_ciphertext, agent_id, model_id, reviewer_id, created
         FROM tasks WHERE id = ?
         """,
         (task_id,),
@@ -100,8 +155,47 @@ def read_task(db: Database, root: Path, *, task_id: str, identity_id: str) -> di
         "pr_url": row["pr_url"],
         "run_ref": row["run_ref"],
         "goal": goal,
+        "agent_id": row["agent_id"] or "",
+        "model_id": row["model_id"] or "",
+        "reviewer_id": row["reviewer_id"] or "",
         "created": row["created"],
     }
+
+
+def save_task_result(
+    db: Database,
+    root: Path,
+    *,
+    task_id: str,
+    tenant_id: str,
+    payload: dict,
+) -> None:
+    """Seal the plan, steps, outcome, and final diff. An empty new diff keeps the last one."""
+    stored = _stored_result(db, root, tenant_id, task_id)
+    if not str(payload.get("diff") or "").strip() and stored.get("diff"):
+        payload = {**payload, "diff": stored["diff"]}
+    token = seal(tenant_dek(db, root, tenant_id), json.dumps(payload, ensure_ascii=False))
+    db.execute(
+        """
+        UPDATE tasks SET result_ciphertext = ?
+        WHERE id = ? AND tenant_id = ?
+        """,
+        (token, task_id, tenant_id),
+    )
+
+
+def _stored_result(db: Database, root: Path, tenant_id: str, task_id: str) -> dict:
+    row = db.fetchone(
+        "SELECT result_ciphertext FROM tasks WHERE id = ? AND tenant_id = ?",
+        (task_id, tenant_id),
+    )
+    if row is None or not row["result_ciphertext"]:
+        return {}
+    try:
+        data = json.loads(open_secret(tenant_dek(db, root, tenant_id), row["result_ciphertext"]))
+    except (ValueError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def tenant_dek(db: Database, root: Path, tenant_id: str) -> bytes:

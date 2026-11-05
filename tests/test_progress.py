@@ -117,3 +117,14 @@ def test_public_event_drops_llm_transcript() -> None:
     item = public_run_item({"goal": "keep the UI alive", "events": [event]})
     assert isinstance(item, dict)
     assert "messages" not in item["events"][0]
+
+
+def test_public_run_item_marks_a_stuck_job() -> None:
+    stuck = public_run_item({"status": "failed", "reason": "push failed: 403", "events": []})
+    assert isinstance(stuck, dict)
+    assert stuck["fault"].startswith("push failed")
+    retryable = public_run_item(
+        {"status": "failed", "reason": "tests failed; commit skipped", "events": []}
+    )
+    assert isinstance(retryable, dict)
+    assert retryable["fault"] == ""

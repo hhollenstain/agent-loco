@@ -7,6 +7,13 @@ resolution-markers = [
     "python_full_version < '3.13'",
 ]
 
+[manifest]
+members = [
+    "agent-lbw",
+    "lbw-crossing",
+    "lbw-shared",
+]
+
 [[package]]
 name = "agent-lbw"
 version = "0.1.0"
@@ -17,6 +24,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jinja2" },
+    { name = "lbw-shared" },
     { name = "markdown-it-py" },
     { name = "mempalace" },
     { name = "openai" },
@@ -47,6 +55,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "jinja2", specifier = ">=3.1" },
+    { name = "lbw-shared", editable = "libs/lbw_shared" },
     { name = "markdown-it-py", specifier = ">=3.0" },
     { name = "mempalace", specifier = ">=3.10" },
     { name = "openai", specifier = ">=1.60" },
@@ -1319,6 +1328,38 @@ sdist = { url = "https://files.pythonhosted.org/packages/ca/57/b07b96353f902aa1b
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5b/30/a96d47df739689ac0001ade0afefc16e3b477fc2fb426b568515fdc8afce/kubernetes-36.0.3-py2.py3-none-any.whl", hash = "sha256:8fde9241c4b298e6374a069dcf728359b4e72c2fb29489a975ba4e1c047cf10f", size = 4618066, upload-time = "2026-07-13T20:38:10.172Z" },
 ]
+
+[[package]]
+name = "lbw-crossing"
+version = "0.1.0"
+source = { editable = "services/crossing" }
+dependencies = [
+    { name = "agent-lbw" },
+    { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "lbw-shared" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-lbw", editable = "." },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "lbw-shared", editable = "libs/lbw_shared" },
+    { name = "uvicorn", specifier = ">=0.32" },
+]
+
+[[package]]
+name = "lbw-shared"
+version = "0.1.0"
+source = { editable = "libs/lbw_shared" }
+dependencies = [
+    { name = "fastapi" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "fastapi", specifier = ">=0.115" }]
 
 [[package]]
 name = "markdown-it-py"

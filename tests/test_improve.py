@@ -1781,3 +1781,89 @@ def test_cycle_already_done_notes_when_head_matches_upstream(
     assert "no changes needed" in (result.reason or "")
     assert "pushed" in (result.reason or "")
     assert "not pushed" not in (result.reason or "")
+
+
+def test_an_approved_change_publishes_with_the_github_token(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent_lbw.runtime.improve import _publish_held
+    from agent_lbw.runtime.project import load_project
+
+    _broken_project(tmp_path)
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
+    (tmp_path / "app.py").write_text(
+        "def add(left, right):\n    return left + right\n",
+        encoding="utf-8",
+    )
+    seen: dict[str, str | None] = {}
+
+    def fake_publish(*_args, **kwargs):
+        seen["token"] = kwargs.get("token")
+        return True, "https://github.com/acme/repo/pull/1", None, True
+
+    monkeypatch.setattr("agent_lbw.runtime.improve._publish_pull_request", fake_publish)
+    monkeypatch.setattr("agent_lbw.runtime.improve._github_token", lambda *_args: "ghs_test")
+    monkeypatch.setattr("agent_lbw.runtime.improve._maybe_test", lambda *_args, **_kwargs: None)
+    result = _publish_held(
+        workspace,
+        settings,
+        load_project(tmp_path),
+        "Make the adder work",
+        "The adder returns the sum.",
+        allow_create_pr=True,
+        mark_checkbox=False,
+        store_root=tmp_path,
+    )
+    assert seen["token"] == "ghs_test"
+    assert result.published is True
+    assert result.pr_url == "https://github.com/acme/repo/pull/1"
+
+
+def test_publish_commits_the_change_before_it_pushes(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent_lbw.runtime.improve import _publish_pull_request
+
+    _broken_project(tmp_path)
+    workspace = Workspace(tmp_path)
+    run_git(workspace, ["checkout", "-b", "lbw/feature"])
+    (tmp_path / "app.py").write_text(
+        "def add(left, right):\n    return left + right\n",
+        encoding="utf-8",
+    )
+    order: list[str] = []
+
+    def fake_push(workspace, remote, branch, token):
+        order.append("push")
+        from agent_lbw.tools.git import has_changes
+
+        assert has_changes(workspace) is False
+        assert branch == "lbw/feature"
+        return ToolResult(True, "pushed")
+
+    def fake_pr(*_args, **_kwargs):
+        order.append("pr")
+        return ToolResult(True, "https://github.com/acme/repo/pull/3")
+
+    monkeypatch.setattr("agent_lbw.runtime.improve.existing_pull_request", lambda *_a, **_k: None)
+    monkeypatch.setattr("agent_lbw.runtime.improve.push_changes", fake_push)
+    monkeypatch.setattr("agent_lbw.runtime.improve.create_pull_request", fake_pr)
+    published, pr_url, failed, committed = _publish_pull_request(
+        workspace,
+        load_project(tmp_path),
+        "Make the adder work",
+        "The adder returns the sum.",
+        tests_passed=True,
+        sha=None,
+        committed=False,
+        screenshot_files=[],
+        token="ghs_test",
+        settings=settings,
+        store_root=tmp_path,
+    )
+    assert order == ["push", "pr"]
+    assert failed is None
+    assert committed is True
+    assert published is True
+    assert pr_url == "https://github.com/acme/repo/pull/3"

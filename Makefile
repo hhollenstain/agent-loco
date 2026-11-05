@@ -1,4 +1,4 @@
-.PHONY: sync test lint doctor run watch up-local restart-local up-mac up-nvidia pull-model
+.PHONY: sync test lint doctor run watch certs up-local restart-local restart-agent restart-crossing wipe up-mac up-nvidia pull-model
 
 WORKSPACE ?= examples/demo-project
 GOAL ?= Make the test suite pass.
@@ -15,8 +15,8 @@ test:
 	uv run pytest -q
 
 lint:
-	uv run ruff format src tests
-	uv run ruff check src tests
+	uv run ruff format src tests libs services
+	uv run ruff check src tests libs services
 
 doctor:
 	uv run lbw doctor
@@ -27,14 +27,31 @@ run:
 watch:
 	uv run lbw watch --workspace $(WORKSPACE)
 
+certs:
+	bash scripts/local-certs.sh
+
 up-local:
-	$(COMPOSE_ENV) $(COMPOSE) build agent
+	test -f .lbw/certs/server.crt || $(MAKE) certs
+	$(COMPOSE_ENV) $(COMPOSE) build agent crossing
 	$(COMPOSE_ENV) $(COMPOSE) up -d --wait postgres
 	$(COMPOSE_ENV) $(COMPOSE) up -d kiwifs
-	$(COMPOSE_ENV) $(COMPOSE) up -d --no-deps agent
+	$(COMPOSE_ENV) $(COMPOSE) up -d --no-deps agent crossing ingress
 
 restart-local:
+	$(COMPOSE_ENV) $(COMPOSE) up -d --build --no-deps --force-recreate agent crossing
+	$(COMPOSE_ENV) $(COMPOSE) up -d --no-deps ingress
+
+restart-agent:
 	$(COMPOSE_ENV) $(COMPOSE) up -d --build --no-deps --force-recreate agent
+	$(COMPOSE_ENV) $(COMPOSE) up -d --no-deps ingress
+
+restart-crossing:
+	$(COMPOSE_ENV) $(COMPOSE) up -d --build --no-deps --force-recreate crossing
+	$(COMPOSE_ENV) $(COMPOSE) up -d --no-deps ingress
+
+wipe:
+	$(COMPOSE_ENV) $(COMPOSE) down --volumes --remove-orphans
+	$(COMPOSE_ENV) docker compose -f docker-compose.yml -f docker-compose.nvidia.yml down --volumes --remove-orphans
 
 up-mac:
 	docker compose -f docker-compose.yml -f docker-compose.mac.yml up --build

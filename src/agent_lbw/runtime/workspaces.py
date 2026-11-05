@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 from agent_lbw.runtime.project import (
     ensure_run_gitignore,
@@ -23,6 +24,49 @@ _SKIP_BROWSE = SKIP_DIR_NAMES | {".DS_Store"}
 
 def workspaces_path(root: Path) -> Path:
     return Path(root) / ".lbw" / WORKSPACES_FILENAME
+
+
+def default_checkout_parent(store_root: Path, *, home: Path | None = None) -> Path:
+    """Where a new checkout should live so a container rebuild keeps it.
+
+    The workspace volume is outside the container home. A checkout under that
+    home is discarded with the container, while the project row stays.
+    """
+    root = Path(store_root).expanduser().resolve()
+    home_dir = (home or Path.home()).expanduser().resolve()
+    if root == home_dir or home_dir in root.parents:
+        return home_dir / "projects"
+    return root
+
+
+def durable_checkout_parent(
+    store_root: Path,
+    requested: str = "",
+    *,
+    home: Path | None = None,
+) -> Path:
+    """Use the requested folder unless it would disappear on the next rebuild."""
+    root = Path(store_root).expanduser().resolve()
+    text = (requested or "").strip()
+    if not text:
+        return default_checkout_parent(root, home=home)
+    candidate = Path(text).expanduser()
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return default_checkout_parent(root, home=home)
+    if resolved == root or root in resolved.parents or resolved in root.parents:
+        return resolved
+    home_dir = (home or Path.home()).expanduser().resolve()
+    if resolved == home_dir or home_dir in resolved.parents:
+        if root == home_dir or home_dir in root.parents:
+            return resolved
+        try:
+            relative = resolved.relative_to(home_dir)
+        except ValueError:
+            return root
+        return root / relative
+    return resolved
 
 
 def _read_payload(root: Path) -> dict:
@@ -70,6 +114,23 @@ def _raw_paths(items: object) -> list[str]:
     return result
 
 
+def repo_label(remote: str, name: str = "") -> str:
+    """owner/repo from a remote URL, or the project name when there is no remote."""
+    text = (remote or "").strip()
+    if text.endswith(".git"):
+        text = text[:-4]
+    if text.startswith("git@") and ":" in text:
+        return text.split(":", 1)[1]
+    parsed = urlparse(text)
+    if parsed.scheme and parsed.netloc:
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) >= 2:
+            return f"{parts[0]}/{parts[1]}"
+        if parts:
+            return parts[0]
+    return text or name
+
+
 def _git_remote_url(path: Path) -> str:
     if not (path / ".git").exists():
         return ""
@@ -86,6 +147,11 @@ def _git_remote_url(path: Path) -> str:
     if result.returncode != 0:
         return ""
     return (result.stdout or "").strip()
+
+
+def describe_workspace(path: str | Path) -> dict[str, str | bool]:
+    """One workspace entry. The path has to be a directory."""
+    return _entry(_normalize_dir(path))
 
 
 def _entry(path: Path) -> dict[str, str | bool]:

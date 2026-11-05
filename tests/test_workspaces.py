@@ -6,18 +6,32 @@ from pathlib import Path
 import pytest
 from tests.support import init_git_repo
 
+from agent_lbw.runtime.account import load_account
+from agent_lbw.runtime.db import database
+from agent_lbw.runtime.store.github_sync import restore_checkouts
+from agent_lbw.runtime.store.projects import ensure_project
 from agent_lbw.runtime.workspaces import (
     archive_workspace,
     browse_directory,
     clone_workspace,
     create_workspace,
+    default_checkout_parent,
+    durable_checkout_parent,
     forget_workspace,
     last_workspace,
     load_archived_workspaces,
     load_workspaces,
     remember_workspace,
+    repo_label,
     repo_name_from_url,
 )
+
+
+def test_repo_label_uses_the_owner_and_name() -> None:
+    assert repo_label("https://github.com/org/demo.git") == "org/demo"
+    assert repo_label("git@github.com:org/foo-bar.git") == "org/foo-bar"
+    assert repo_label("ssh://git@github.com/org/demo.git") == "org/demo"
+    assert repo_label("", "local-folder") == "local-folder"
 
 
 def test_repo_name_from_url() -> None:
@@ -148,3 +162,86 @@ def test_clone_workspace_from_local_repo(tmp_path: Path) -> None:
         clone_workspace(str(source), parent, name="checkout")
     with pytest.raises(ValueError, match="repository URL"):
         clone_workspace("  ", parent)
+
+
+def test_a_container_home_is_not_a_durable_checkout(tmp_path: Path) -> None:
+    store = tmp_path / "workspaces"
+    home = tmp_path / "home"
+    assert default_checkout_parent(store, home=home) == store.resolve()
+    assert (
+        durable_checkout_parent(store, str(home / "projects"), home=home)
+        == (store / "projects").resolve()
+    )
+    local = home / "work"
+    assert default_checkout_parent(local, home=home) == (home / "projects").resolve()
+    assert (
+        durable_checkout_parent(local, str(home / "projects"), home=home)
+        == (home / "projects").resolve()
+    )
+
+
+def test_a_missing_github_checkout_is_restored_onto_the_volume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = tmp_path / "workspaces"
+    store.mkdir()
+    home = tmp_path / "home"
+    monkeypatch.setattr(
+        "agent_lbw.runtime.workspaces.Path.home",
+        classmethod(lambda cls: home),
+    )
+    account = load_account(store)
+    kept = store / "kept"
+    kept.mkdir()
+    with database(store) as db:
+        ensure_project(
+            db,
+            account["org"]["id"],
+            name="kept",
+            kind="folder",
+            locator=str(kept),
+        )
+        ensure_project(
+            db,
+            account["org"]["id"],
+            name="demo",
+            kind="github",
+            locator=str(home / "projects" / "demo"),
+        )
+
+    def fake_repos(_db, _root):
+        return [
+            {"full_name": "acme/demo", "private": False},
+            {"full_name": "other/demo", "private": False},
+        ]
+
+    monkeypatch.setattr("agent_lbw.runtime.store.github_sync.list_repos", fake_repos)
+    restore_checkouts(store)
+    with database(store) as db:
+        row = db.fetchone("SELECT locator FROM projects WHERE name = ?", ("demo",))
+    assert row is not None
+    assert row["locator"] == str(home / "projects" / "demo")
+    paths = {item["path"] for item in load_workspaces(store)}
+    assert str(kept.resolve()) in paths
+
+    def one_repo(_db, _root):
+        return [{"full_name": "acme/demo", "private": True}]
+
+    def fake_clone(url, parent, *, name=None, git_config=None):
+        assert url == "https://github.com/acme/demo.git"
+        assert Path(parent) == store.resolve()
+        assert git_config is None
+        dest = Path(parent) / (name or "demo")
+        dest.mkdir(parents=True)
+        return {"path": str(dest)}
+
+    monkeypatch.setattr("agent_lbw.runtime.store.github_sync.list_repos", one_repo)
+    monkeypatch.setattr("agent_lbw.runtime.workspaces.clone_workspace", fake_clone)
+    restore_checkouts(store)
+    with database(store) as db:
+        row = db.fetchone("SELECT locator FROM projects WHERE name = ?", ("demo",))
+    assert row is not None
+    assert row["locator"] == str((store / "demo").resolve())
+    paths = {item["path"] for item in load_workspaces(store)}
+    assert str((store / "demo").resolve()) in paths
+    assert str(kept.resolve()) in paths

@@ -183,6 +183,8 @@ def test_missing_pytest_uses_a_container_when_uv_is_missing(tmp_path: Path, monk
     assert result.ok
     docker = calls[1]
     assert docker.startswith("docker run --rm --network bridge ")
+    assert "--cap-drop=ALL" in docker
+    assert "--security-opt=no-new-privileges" in docker
     assert "ghcr.io/astral-sh/uv:python3.12-bookworm-slim" in docker
     assert f"{tmp_path}:/workspace" in docker or f"{tmp_path.resolve()}:/workspace" in docker
     assert "UV_PROJECT_ENVIRONMENT=/tmp/lbw-testbed" in docker

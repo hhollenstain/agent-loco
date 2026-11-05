@@ -199,6 +199,9 @@ def _write_file(workspace: Workspace, path: str, content: str) -> ToolResult:
     if len(encoded) > MAX_WRITE_BYTES:
         return ToolResult(False, f"refusing to write more than {MAX_WRITE_BYTES} bytes")
     rel = workspace.relative(file_path)
+    refused = _config_write_error(file_path, content)
+    if refused:
+        return ToolResult(False, refused)
     created = not file_path.exists()
     before: str | None = ""
     if not created:
@@ -263,6 +266,9 @@ def _str_replace(
     encoded = after.encode("utf-8")
     if len(encoded) > MAX_WRITE_BYTES:
         return ToolResult(False, f"refusing to write more than {MAX_WRITE_BYTES} bytes")
+    refused = _config_write_error(file_path, after)
+    if refused:
+        return ToolResult(False, refused)
     try:
         file_path.write_text(after, encoding="utf-8")
     except OSError as exc:
@@ -275,6 +281,17 @@ def _str_replace(
         True,
         f"updated {rel} ({replaced} replacement{'s' if replaced != 1 else ''}){note}",
     )
+
+
+def _config_write_error(path: Path, content: str) -> str | None:
+    if path.name != "config.yaml" or path.parent.name != ".lbw":
+        return None
+    from agent_lbw.runtime.project import project_config_error
+
+    message = project_config_error(content)
+    if message is None:
+        return None
+    return f"refusing to write .lbw/config.yaml: {message}"
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:

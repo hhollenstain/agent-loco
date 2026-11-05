@@ -27,6 +27,12 @@ _GOAL = "north-star-goal-9f3c"
 _INSTRUCTION = "schedule-instruction-stays-in-the-file"
 
 
+def test_seal_roundtrips_a_result_longer_than_one_counter_byte() -> None:
+    key = b"k" * 32
+    text = "diff " + ("x" * 9000)
+    assert open_secret(key, seal(key, text)) == text
+
+
 def test_seal_fails_closed_on_the_wrong_key() -> None:
     key = b"k" * 32
     token = seal(key, _GOAL)

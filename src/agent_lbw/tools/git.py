@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,9 @@ from agent_lbw.tools.files import is_probably_secret_path
 
 SECRET_REFUSAL = "refusing to commit likely secrets: {paths}"
 PROTECTED_COMMIT_REFUSAL = "refusing to commit on {branch}; the cycle commits after review passes"
+CONNECT_GITHUB = "Connect GitHub before committing to this repository."
+APPROVE_GITHUB = "Connect GitHub before approving a commit."
+_COMMITTER: ContextVar[tuple[str, str] | None] = ContextVar("lbw_committer", default=None)
 PROTECTED_BRANCHES = frozenset({"main", "master", "trunk"})
 LBW_COAUTHOR_NAME = "agent-lbw"
 LBW_COAUTHOR_EMAIL = "agent-lbw@users.noreply.github.com"
@@ -104,6 +108,17 @@ def github_auth_args(token: str) -> list[str]:
     """Ask git to send the installation token without putting it in the remote URL."""
     basic = base64.b64encode(f"x-access-token:{token}".encode()).decode("ascii")
     return ["-c", f"http.extraheader=AUTHORIZATION: basic {basic}"]
+
+
+def use_committer(name: str | None, email: str | None) -> Token[tuple[str, str] | None]:
+    """Remember who approved this run. The worker thread commits as that person."""
+    if name and email:
+        return _COMMITTER.set((name, email))
+    return _COMMITTER.set(None)
+
+
+def reset_committer(token: Token[tuple[str, str] | None]) -> None:
+    _COMMITTER.reset(token)
 
 
 def github_owner_repo(
@@ -204,7 +219,13 @@ def git_tools(
                 },
                 ["message"],
             ),
-            handler=lambda message: agent_commit(workspace, message, env_extras),
+            handler=lambda message: agent_commit(
+                workspace,
+                message,
+                env_extras,
+                store_root=store_root,
+                database_url=database_url,
+            ),
         ),
     ]
     if allow_publish:
@@ -235,6 +256,32 @@ def git_tools(
     return tools
 
 
+def _commit_author_env(
+    workspace: Workspace,
+    env: dict[str, str] | None,
+    *,
+    store_root: Path | None,
+    database_url: str,
+) -> dict[str, str] | None:
+    """Author env for this commit. None when a GitHub repo has no connected person."""
+    provided = dict(env or {})
+    if github_owner_repo(workspace) is None:
+        return provided
+    stamped = _COMMITTER.get()
+    if stamped and stamped[0] and stamped[1]:
+        return {**provided, **_git_identity_env(stamped[0], stamped[1])}
+    if store_root is not None:
+        from agent_lbw.runtime.db import database_configured
+        from agent_lbw.runtime.store.install import commit_identity_for
+
+        if database_configured(Path(store_root), database_url):
+            identity = commit_identity_for(Path(store_root), database_url)
+            if identity is None:
+                return None
+            return {**provided, **_git_identity_env(identity[0], identity[1])}
+    return provided
+
+
 def _git_identity_env(name: str | None, email: str | None) -> dict[str, str]:
     env: dict[str, str] = {}
     if name:
@@ -254,12 +301,13 @@ def _publish_token(store_root: Path | None, database_url: str) -> str | None:
     return current_token(Path(store_root), database_url)
 
 
-def _gh_env(token: str | None) -> dict[str, str] | None:
-    if not token:
-        return None
+def _gh_env(token: str | None) -> dict[str, str]:
     env = os.environ.copy()
-    env["GH_TOKEN"] = token
-    env["GITHUB_TOKEN"] = token
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GH_PROMPT_DISABLED"] = "1"
+    if token:
+        env["GH_TOKEN"] = token
+        env["GITHUB_TOKEN"] = token
     return env
 
 
@@ -268,39 +316,66 @@ def _gh(
     args: list[str],
     token: str | None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args,
-        cwd=workspace.root,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=_gh_env(token),
-    )
+    try:
+        return subprocess.run(
+            args,
+            cwd=workspace.root,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=_gh_env(token),
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            args,
+            124,
+            stdout=_timeout_text(exc.stdout),
+            stderr=_timeout_text(exc.stderr) or "timed out",
+        )
 
 
 def run_git(
     workspace: Workspace,
     args: list[str],
     env: dict[str, str] | None = None,
+    *,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=workspace.root,
-        check=False,
-        capture_output=True,
-        text=True,
-        env=_merged_env(env),
-    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=workspace.root,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=_merged_env(env),
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            ["git", *args],
+            124,
+            stdout=_timeout_text(exc.stdout),
+            stderr=_timeout_text(exc.stderr) or "git timed out",
+        )
 
 
-def _merged_env(extra: dict[str, str] | None) -> dict[str, str] | None:
-    if not extra:
-        return None
-    import os
-
+def _merged_env(extra: dict[str, str] | None) -> dict[str, str]:
     merged = os.environ.copy()
-    merged.update(extra)
+    merged["GIT_TERMINAL_PROMPT"] = "0"
+    merged["GCM_INTERACTIVE"] = "Never"
+    if extra:
+        merged.update(extra)
     return merged
+
+
+def _timeout_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace").strip()
+    return value.strip()
 
 
 def _output(result: subprocess.CompletedProcess[str]) -> str:
@@ -711,6 +786,9 @@ def agent_commit(
     workspace: Workspace,
     message: str,
     env: dict[str, str] | None = None,
+    *,
+    store_root: Path | None = None,
+    database_url: str = "",
 ) -> ToolResult:
     """Commit from the coding agent. Refuses protected branches until cycle review."""
     branch = current_branch(workspace)
@@ -719,7 +797,13 @@ def agent_commit(
             False,
             PROTECTED_COMMIT_REFUSAL.format(branch=branch or "HEAD"),
         )
-    return commit_changes(workspace, message, env)
+    return commit_changes(
+        workspace,
+        message,
+        env,
+        store_root=store_root,
+        database_url=database_url,
+    )
 
 
 def commit_changes(
@@ -727,6 +811,9 @@ def commit_changes(
     message: str,
     env: dict[str, str] | None = None,
     extra_paths: list[Path | str] | None = None,
+    *,
+    store_root: Path | None = None,
+    database_url: str = "",
 ) -> ToolResult:
     message = with_lbw_coauthor(message)
     if not message:
@@ -749,7 +836,15 @@ def commit_changes(
         run_git(workspace, ["reset", "HEAD", "--", *leftover_secrets])
         return ToolResult(False, SECRET_REFUSAL.format(paths=", ".join(leftover_secrets)))
 
-    commit = run_git(workspace, ["commit", "-m", message], env=env)
+    author_env = _commit_author_env(
+        workspace,
+        env,
+        store_root=store_root,
+        database_url=database_url,
+    )
+    if author_env is None:
+        return ToolResult(False, CONNECT_GITHUB)
+    commit = run_git(workspace, ["commit", "-m", message], env=author_env)
     if commit.returncode != 0:
         return ToolResult(False, _output(commit))
     sha = current_sha(workspace) or ""
@@ -777,10 +872,28 @@ def push_changes(
         result = run_git(
             workspace,
             [*github_auth_args(token), "push", url, f"HEAD:{target}"],
+            timeout=120,
         )
     else:
-        result = run_git(workspace, ["push", "-u", remote, f"HEAD:{target}"])
-    return ToolResult(result.returncode == 0, _output(result))
+        result = run_git(
+            workspace,
+            ["push", "-u", remote, f"HEAD:{target}"],
+            timeout=120,
+        )
+    if result.returncode != 0:
+        return ToolResult(False, _output(result))
+    _remember_pushed_branch(workspace, remote, target)
+    return ToolResult(True, _output(result))
+
+
+def _remember_pushed_branch(workspace: Workspace, remote: str, branch: str) -> None:
+    """Record the branch that was just pushed so the pull request can use it."""
+    tracking = f"{remote}/{branch}"
+    ref = f"refs/remotes/{tracking}"
+    exists = run_git(workspace, ["show-ref", "--verify", "--quiet", ref])
+    if exists.returncode != 0:
+        run_git(workspace, ["update-ref", ref, "HEAD"])
+    run_git(workspace, ["branch", f"--set-upstream-to={tracking}"])
 
 
 def create_pull_request(
@@ -791,14 +904,21 @@ def create_pull_request(
     base: str | None = None,
     token: str | None = None,
 ) -> ToolResult:
+    """Open a pull request for a branch that has already been pushed.
+
+    ``--head`` names that branch. Without it, ``gh`` stops when the local
+    branch has no upstream, even after a successful push.
+    """
     title = " ".join(title.split()).strip() or "lbw changes"
     head = current_branch(workspace)
     if is_protected_branch(head):
         return ToolResult(False, f"refusing to open a PR from {head}")
+    if not head:
+        return ToolResult(False, "no branch to publish")
     body = (body or title).rstrip()
     if "co-authored-by: agent-lbw" not in body.lower():
         body = f"{body}\n\n{CO_AUTHORED_BY}"
-    args = ["gh", "pr", "create", "--title", title, "--body", body]
+    args = ["gh", "pr", "create", "--head", head, "--title", title, "--body", body]
     if base:
         args.extend(["--base", base])
     result = _gh(workspace, args, token)

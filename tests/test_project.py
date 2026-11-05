@@ -106,6 +106,8 @@ def test_init_ignores_run_logs(tmp_path: Path) -> None:
     assert "max_repair_attempts: 4" in config
     assert "enabled: false" in config
     assert "create_pr: false" in config
+    assert "- style\n" in config
+    assert "- ui\n" in config
 
 
 def test_init_enables_publish_for_a_git_repo(tmp_path: Path) -> None:
@@ -138,6 +140,23 @@ def test_save_project_commands_keeps_other_settings(tmp_path: Path) -> None:
     assert project.preview_command == "python3 -m http.server {port}"
     assert project.setup_command == "python3 -m pip install -r requirements.txt"
     assert project.publish_enabled is False
+
+
+def test_load_project_quotes_a_command_that_contains_a_colon(tmp_path: Path) -> None:
+    lbw = tmp_path / ".lbw"
+    lbw.mkdir()
+    command = (
+        "python3 -c \"with Server(('', PORT), Handler) as httpd: print(f'Serving at port {port}')\""
+    )
+    (lbw / "config.yaml").write_text(
+        f"name: demo\npreview_command: {command}\n",
+        encoding="utf-8",
+    )
+    project = load_project(tmp_path)
+    assert project.preview_command == command
+    assert "preview_command:" in (lbw / "config.yaml").read_text(encoding="utf-8")
+    again = load_project(tmp_path)
+    assert again.preview_command == command
 
 
 def test_save_project_commands_rejects_a_preview_without_a_port(tmp_path: Path) -> None:

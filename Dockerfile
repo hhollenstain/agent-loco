@@ -13,9 +13,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /opt/agent-lbw
 
 COPY pyproject.toml README.md ./
+COPY libs/lbw_shared ./libs/lbw_shared
 COPY src ./src
 
-RUN pip install --no-cache-dir . \
+RUN pip install --no-cache-dir ./libs/lbw_shared . \
     && useradd --create-home --uid 10001 lbw \
     && mkdir -p /workspaces \
     && chown -R lbw:lbw /opt/agent-lbw /workspaces

@@ -52,13 +52,7 @@ def _kiwifs_prefix(raw: dict) -> str | None:
 
 def load_project(root: Path) -> ProjectConfig:
     root = root.resolve()
-    raw: dict = {}
-    config_path = root / ".lbw" / "config.yaml"
-    if config_path.exists():
-        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(loaded, dict):
-            raise ValueError(f"invalid project config: {config_path}")
-        raw = loaded
+    raw = read_project_config(root)
 
     publish = raw.get("publish") or {}
     if not isinstance(publish, dict):
@@ -100,10 +94,10 @@ def configured_value(root: Path, key: str) -> tuple[bool, str | None]:
     if not path.exists():
         return False, None
     try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
+        loaded = read_project_config(root)
+    except (OSError, ValueError):
         return False, None
-    if not isinstance(loaded, dict) or key not in loaded:
+    if key not in loaded:
         return False, None
     value = loaded[key]
     if value is None or value is False or value == "":
@@ -125,19 +119,86 @@ def save_project_commands(root: Path, **commands: str | None) -> list[str]:
     if preview is not None and "{port}" not in preview:
         raise ValueError("preview_command must include {port}")
     path = Path(root) / ".lbw" / "config.yaml"
-    raw: dict = {}
-    if path.exists():
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        if not isinstance(loaded, dict):
-            raise ValueError(f"invalid project config: {path}")
-        raw = loaded
+    raw = read_project_config(root)
     raw.update(updates)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(raw, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    path.write_text(dump_project_config(raw), encoding="utf-8")
     return list(updates)
+
+
+_PLAIN_VALUE = re.compile(r"^(\s*)([A-Za-z_][\w-]*):(.*)$")
+
+
+def read_project_config(root: Path) -> dict:
+    """Load `.lbw/config.yaml`. A plain value with a colon is quoted and saved."""
+    path = Path(root) / ".lbw" / "config.yaml"
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    try:
+        loaded = yaml.safe_load(text) or {}
+    except yaml.YAMLError:
+        repaired = _quote_plain_colons(text)
+        try:
+            loaded = yaml.safe_load(repaired) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError(f"invalid project config: {path}: {_yaml_problem(exc)}") from exc
+        if not isinstance(loaded, dict):
+            raise ValueError(f"invalid project config: {path}") from None
+        path.write_text(dump_project_config(loaded), encoding="utf-8")
+        return loaded
+    if not isinstance(loaded, dict):
+        raise ValueError(f"invalid project config: {path}")
+    return loaded
+
+
+def dump_project_config(raw: dict) -> str:
+    """Write config YAML without folding a long command onto a bare colon."""
+    return yaml.safe_dump(raw, sort_keys=False, allow_unicode=True, width=10**6)
+
+
+def project_config_error(text: str) -> str | None:
+    """Why this text cannot be `.lbw/config.yaml`, or None when it can."""
+    try:
+        loaded = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        return (
+            "that is not valid YAML "
+            f"({_yaml_problem(exc)}). Use configure_project for commands, "
+            "and quote any value that contains a colon."
+        )
+    if not isinstance(loaded, dict):
+        return "it must be a mapping"
+    return None
+
+
+def _quote_plain_colons(text: str) -> str:
+    """Quote an unquoted value that contains a colon, which YAML reads as a mapping."""
+    lines: list[str] = []
+    for line in text.splitlines():
+        match = _PLAIN_VALUE.match(line)
+        if match is None:
+            lines.append(line)
+            continue
+        indent, key, rest = match.group(1), match.group(2), match.group(3)
+        value = rest.strip()
+        if not value or value[0] in "\"'|>[{&*!%#":
+            lines.append(line)
+            continue
+        if ": " not in value:
+            lines.append(line)
+            continue
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'{indent}{key}: "{escaped}"')
+    return "\n".join(lines) + "\n"
+
+
+def _yaml_problem(exc: yaml.YAMLError) -> str:
+    problem = getattr(exc, "problem", None) or "could not be parsed"
+    mark = getattr(exc, "problem_mark", None)
+    if mark is None:
+        return str(problem)
+    return f"{problem} (line {mark.line + 1}, column {mark.column + 1})"
 
 
 def _max_repair_attempts(value: object) -> int:
@@ -297,6 +358,7 @@ def write_default_project_files(root: Path) -> list[Path]:
                 "    - polloco\n"
                 "    - tdd\n"
                 "    - ui\n"
+                "    - style\n"
                 "    - kiwi\n"
                 "    - rules\n"
                 "roles:\n"

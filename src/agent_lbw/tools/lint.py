@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from agent_lbw.progress import record_lint_run
 from agent_lbw.runtime.project import configured_value, load_project
+from agent_lbw.runtime.testbed import ruff_unavailable, run_lint_in_testbed, run_with_throwaway_ruff
 from agent_lbw.sandbox import Workspace
 from agent_lbw.tools.base import ToolResult, ToolSpec, object_schema
 from agent_lbw.tools.codechange import code_fingerprint, reused_check_result
@@ -73,7 +75,20 @@ def apply_ruff_autofix(
     else:
         fix_command = lint_command.replace("ruff check", "ruff check --fix")
     started = time.perf_counter()
-    result = run_command(workspace, fix_command, timeout_seconds)
+    command = fix_command
+    if shutil.which("ruff") is None:
+        prepared = run_with_throwaway_ruff(workspace, fix_command, timeout_seconds)
+        if prepared is not None:
+            elapsed_ms = int(round((time.perf_counter() - started) * 1000))
+            record_lint_run(
+                command=fix_command,
+                ok=prepared.ok,
+                output=prepared.output,
+                phase="autofix",
+                elapsed_ms=elapsed_ms,
+            )
+            return True
+    result = run_command(workspace, command, timeout_seconds)
     record_lint_run(
         command=fix_command,
         ok=result.ok,
@@ -98,8 +113,10 @@ def lint_tools(
                 "changes in another project in this workspace. If no code file "
                 "has changed since the last run, returns that result without "
                 "running the linter again. Do not call it again until you edit "
-                "code. If no command is configured, look up the official "
-                "linter and call configure_project, then call this again."
+                "code. If ruff is not installed, this builds a throwaway "
+                "environment outside the project and runs it there. If no "
+                "command is configured, look up the official linter and call "
+                "configure_project, then call this again."
             ),
             parameters=object_schema({}),
             handler=lambda: run_project_lint(
@@ -140,6 +157,18 @@ def run_project_lint(
         return reused_check_result("run_lint", cached.result)
     started = time.perf_counter()
     result = run_command(workspace, command, timeout_seconds)
+    if not result.ok and ruff_unavailable(result.output or ""):
+        prepared = run_lint_in_testbed(workspace, command, result.output or "", timeout_seconds)
+        if prepared is not None:
+            result = prepared
+        else:
+            note = (
+                "Ruff is not installed. A throwaway environment could not be "
+                "built outside the project. This is not a lint finding. Do not "
+                "change product code to hide it."
+            )
+            body = (result.output or "").strip()
+            result = ToolResult(False, f"{body}\n{note}".strip() if body else note)
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
     record_lint_run(
         command=command,

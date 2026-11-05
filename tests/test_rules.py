@@ -150,10 +150,13 @@ def test_rules_stay_inside_one_scope(settings: Settings, tmp_path: Path, monkeyp
             "scope_type": "identity",
             "scope_id": owner["id"],
             "name": "Mine",
-            "body": "owner-only-body",
+            "body": "# Quiet\n\nowner-only-body\n\n<script>alert(1)</script>",
         },
     )
     assert personal.status_code == 200
+    assert "<h1>" in personal.json()["html"]
+    assert "owner-only-body" in personal.json()["html"]
+    assert "&lt;script&gt;" in personal.json()["html"]
 
     with database(tmp_path) as db:
         db.execute(
@@ -188,6 +191,10 @@ def test_rules_stay_inside_one_scope(settings: Settings, tmp_path: Path, monkeyp
     assert owner["id"] not in scopes
     assert scopes[tenant_id]["can_write"] is False
     assert scopes[grace["id"]]["name"] == "Your rules"
+    standup = next(rule for rule in scopes[tenant_id]["rules"] if rule["name"] == "Standup")
+    assert "<p>" in standup["html"]
+    assert _SECRET in standup["html"]
+    assert "<script>" not in standup["html"]
     before = len(memory.seen)
     refused = client.post(
         "/api/rules",

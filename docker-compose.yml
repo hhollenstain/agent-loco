@@ -13,20 +13,51 @@ services:
       LBW_AUTO_COMMIT: ${LBW_AUTO_COMMIT:-true}
       LBW_REQUIRE_TESTS: ${LBW_REQUIRE_TESTS:-true}
       LBW_PUBLISH: ${LBW_PUBLISH:-false}
+      FORWARDED_ALLOW_IPS: "*"
     volumes:
       # Host folder at /workspaces. Cloned repos and each project's .lbw/runs live here.
       - ${LBW_WORKSPACE:-./workspaces}:/workspaces
       # Uncomment to clone private repos from the container:
       # - ${HOME}/.ssh:/home/lbw/.ssh:ro
     working_dir: /workspaces
-    ports:
-      - "${LBW_UI_PORT:-8080}:8080"
+    expose:
+      - "8080"
     command: ["ui", "--host", "0.0.0.0", "--port", "8080", "--workspace", "/workspaces"]
     depends_on:
       kiwifs:
         condition: service_started
     stdin_open: true
     tty: true
+
+  crossing:
+    build:
+      context: .
+      dockerfile: services/crossing/Dockerfile
+    image: lbw-crossing:local
+    environment:
+      LBW_STORE_ROOT: /workspaces
+      LBW_KIWIFS_URL: ${LBW_KIWIFS_URL:-http://kiwifs:3333}
+      LBW_KIWIFS_API_KEY: ${LBW_KIWIFS_API_KEY:-}
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - ${LBW_WORKSPACE:-./workspaces}:/workspaces
+    expose:
+      - "8080"
+    depends_on:
+      kiwifs:
+        condition: service_started
+
+  ingress:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.lbw/certs:/certs:ro
+    depends_on:
+      - agent
+      - crossing
 
   kiwifs:
     image: ameliaanhlam/kiwifs:latest

@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -17,17 +19,27 @@ from fastapi.responses import (
     FileResponse,
     HTMLResponse,
     JSONResponse,
+    RedirectResponse,
     Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from lbw_shared.directory import bind_directory
+from lbw_shared.hosts import crossing_url
 from pydantic import BaseModel
 
+from agent_lbw.auth_http import register_auth
 from agent_lbw.config import Settings
 from agent_lbw.llm.client import effective_context_window, normalize_model_base_url
 from agent_lbw.progress import attach_token_usage, clip_text, llm_turn_snippets, public_run_item
-from agent_lbw.runtime.account import add_user, load_account, remove_user, update_account
+from agent_lbw.runtime.account import (
+    add_user,
+    load_account,
+    remove_user,
+    update_account,
+    update_person,
+)
 from agent_lbw.runtime.importer import load_goals_from_workspace
 from agent_lbw.runtime.project import (
     default_guidelines,
@@ -68,19 +80,25 @@ from agent_lbw.runtime.workspaces import (
     browse_directory,
     clone_workspace,
     create_workspace,
+    default_checkout_parent,
+    durable_checkout_parent,
     forget_workspace,
     last_workspace,
     load_archived_workspaces,
     load_workspaces,
     remember_workspace,
+    repo_label,
 )
 from agent_lbw.tools.git import (
     extract_pr_url,
     list_branches,
+    merge_pull_request,
     pull_request_state,
     valid_branch_name,
 )
 from agent_lbw.tools.kiwi import KiwiError
+
+log = logging.getLogger("lbw")
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -180,6 +198,7 @@ class TaskCreate(BaseModel):
     workspace: str | None = None
     goal: str | None = None
     model: str | None = None
+    model_id: str | None = None
     base_url: str | None = None
     api_key: str | None = None
     auto_commit: bool | None = None
@@ -217,6 +236,11 @@ class WorkspaceRolesUpdate(BaseModel):
 class PullStatusQuery(BaseModel):
     urls: list[str] = []
     force: bool = False
+
+
+class MergePull(BaseModel):
+    url: str = ""
+    workspace: str | None = None
 
 
 class ModelsQuery(BaseModel):
@@ -272,10 +296,17 @@ class WorkspaceSkillSync(BaseModel):
 class AccountWrite(BaseModel):
     org_name: str | None = None
     user_name: str | None = None
+    user_email: str | None = None
 
 
 class AccountUserWrite(BaseModel):
     name: str
+    email: str = ""
+
+
+class AccountPersonWrite(BaseModel):
+    email: str | None = None
+    role: str | None = None
 
 
 class WorkspaceClone(BaseModel):
@@ -316,11 +347,14 @@ class UiState:
         self.store_root = str(default_workspace.expanduser().resolve())
         if manager.store_root is None:
             manager.store_root = Path(self.store_root)
+        manager.adopt_open_jobs()
         self.default_workspace = last_workspace(Path(self.store_root), default=self.store_root)
         self.default_goal = default_goal or ""
         self.default_auto_commit = manager.settings.auto_commit
         self._history_lock = threading.Lock()
         self._history_cache: dict[str, tuple[object, list[dict[str, Any]]]] = {}
+        self._checkouts_restored = False
+        self.pending_workspace: str | None = None
         if default_create_pr is not None:
             self.default_create_pr = bool(default_create_pr)
         else:
@@ -345,7 +379,34 @@ class UiState:
     def remember_current_workspace(self) -> list[dict[str, str | bool]]:
         return remember_workspace(Path(self.store_root), self.default_workspace)
 
+    def shown_workspace(self) -> str:
+        if self.pending_workspace:
+            return self.pending_workspace
+        return self.default_workspace
+
+    def visible_workspaces(self) -> list[dict[str, Any]]:
+        """Filesystem checkouts plus every recorded project, even with no checkout."""
+        self.ensure_recorded_checkouts()
+        merged: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        if Path(self.default_workspace).is_dir():
+            current = self.remember_current_workspace()
+        else:
+            current = load_workspaces(Path(self.store_root), default=self.store_root)
+        for item in current:
+            seen.add(str(item["path"]))
+            merged.append(item)
+        from agent_lbw.runtime.store.github_sync import recorded_workspaces
+
+        for item in recorded_workspaces(Path(self.store_root), self.manager.settings.database_url):
+            if str(item["path"]) in seen:
+                continue
+            seen.add(str(item["path"]))
+            merged.append(item)
+        return merged
+
     def set_workspace(self, path: str) -> list[dict[str, str | bool]]:
+        self.pending_workspace = None
         remembered = remember_workspace(Path(self.store_root), path)
         self.default_workspace = last_workspace(Path(self.store_root), default=path)
         return remembered
@@ -381,18 +442,34 @@ class UiState:
             timeout=0.5,
         )
 
+    def ensure_recorded_checkouts(self) -> None:
+        if self._checkouts_restored:
+            return
+        self._checkouts_restored = True
+        from agent_lbw.runtime.store.github_sync import restore_checkouts
+
+        try:
+            restore_checkouts(Path(self.store_root), self.manager.settings.database_url)
+        except Exception as exc:
+            log.warning("could not restore recorded checkouts: %s", exc)
+
     def template_vars(self) -> dict[str, Any]:
         selected = self.selection()
-        workspaces = self.remember_current_workspace()
+        workspaces = self.visible_workspaces()
+        shown = self.shown_workspace()
         current = next(
-            (item for item in workspaces if item["path"] == self.default_workspace),
+            (item for item in workspaces if item["path"] == shown),
             None,
         )
         return {
-            "default_workspace": self.default_workspace,
+            "default_workspace": shown,
             "known_workspaces": workspaces,
             "workspace_is_git": bool((current or {}).get("is_git")),
             "workspace_git_remote": (current or {}).get("git_remote") or "",
+            "workspace_repo_label": repo_label(
+                str((current or {}).get("git_remote") or ""),
+                str((current or {}).get("name") or Path(shown).name),
+            ),
             "guidelines": (current or {}).get("guidelines") or default_guidelines(),
             "custom_guidelines": bool((current or {}).get("custom_guidelines")),
             "default_guidelines": default_guidelines(),
@@ -410,10 +487,8 @@ class UiState:
     def meta(self) -> dict[str, Any]:
         selected = self.selection()
         return {
-            "default_workspace": self.default_workspace,
-            "known_workspaces": load_workspaces(
-                Path(self.store_root), default=self.default_workspace
-            ),
+            "default_workspace": self.shown_workspace(),
+            "known_workspaces": self.visible_workspaces(),
             "default_goal": self.default_goal,
             "default_auto_commit": self.default_auto_commit,
             "default_create_pr": self.default_create_pr,
@@ -426,15 +501,28 @@ class UiState:
         }
 
     def load_history(self, workspace_root: Path) -> list[dict[str, Any]]:
-        """Load cycle logs from `.lbw/runs/` and history.json, newest first."""
-        root = Path(workspace_root).expanduser().resolve()
+        """Load cycle logs and stored jobs, newest first. Logs stay in the run files."""
+        root = Path(workspace_root).expanduser()
+        try:
+            root = root.resolve()
+        except OSError:
+            pass
         key = str(root)
-        fingerprint = _history_fingerprint(root)
+        store = Path(self.store_root)
+        database_url = self.manager.settings.database_url
+        fingerprint = _history_fingerprint(root, store_root=store, database_url=database_url)
         with self._history_lock:
             cached = self._history_cache.get(key)
             if cached is not None and cached[0] == fingerprint:
                 return cached[1]
-            items = [public_run_item(item) for item in self._read_history(root)]
+            from agent_lbw.runtime.store.recording import recorded_history
+
+            merged = _collapse_history(
+                _merge_history(
+                    self._read_history(root), recorded_history(store, database_url, root)
+                )
+            )
+            items = [public_run_item(item) for item in merged]
             self._history_cache[key] = (fingerprint, items)
             return items
 
@@ -559,8 +647,11 @@ _CONSOLE_SNIPPET = 400
 
 def _history_fingerprint(
     root: Path,
-) -> tuple[tuple[tuple[str, int, int], ...], tuple[int, int]]:
-    """Cheap mtime/size signature so history polls can reuse a parsed cache."""
+    *,
+    store_root: Path | None = None,
+    database_url: str = "",
+) -> tuple:
+    """Cheap signature so history polls can reuse a parsed cache."""
     runs_dir = root / ".lbw" / "runs"
     entries: list[tuple[str, int, int]] = []
     if runs_dir.is_dir():
@@ -578,13 +669,125 @@ def _history_fingerprint(
             hist = (stat.st_mtime_ns, stat.st_size)
     except OSError:
         pass
-    return (tuple(entries), hist)
+    stamp: tuple = ()
+    if store_root is not None:
+        from agent_lbw.runtime.store.recording import recorded_job_stamp
+
+        stamp = recorded_job_stamp(store_root, database_url, root)
+    return (tuple(entries), hist, stamp)
 
 
-def history_token(root: Path) -> str:
-    """Short signature of the run logs and history file, without reading them."""
-    resolved = Path(root).expanduser().resolve()
-    payload = f"{resolved}\n{repr(_history_fingerprint(resolved))}"
+def _has_file_diff(item: dict[str, Any]) -> bool:
+    for event in item.get("events") or []:
+        if not isinstance(event, dict) or event.get("kind") != "file":
+            continue
+        if event.get("net_diff") or event.get("diff"):
+            return True
+    return False
+
+
+_RUN_STAMP = re.compile(r"^\d{8}T\d{6}Z$")
+
+
+def _same_recorded_job(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """A run log and the stored job are one change when they share an id or a cycle."""
+    left_id = str(left.get("id") or "")
+    right_id = str(right.get("id") or "")
+    if left_id and left_id == right_id:
+        return True
+    goal = str(left.get("goal") or "")
+    if not goal or goal != str(right.get("goal") or ""):
+        return False
+    created = str(left.get("created_at") or "")
+    if created and created == str(right.get("created_at") or ""):
+        return True
+    sha = str(left.get("commit_sha") or "")
+    return bool(sha and sha == str(right.get("commit_sha") or ""))
+
+
+def _prefer_history_id(current: str, incoming: str) -> str:
+    if not current:
+        return incoming
+    if _RUN_STAMP.match(current) and incoming and not _RUN_STAMP.match(incoming):
+        return incoming
+    return current
+
+
+def _fold_history_item(current: dict[str, Any], extra: dict[str, Any]) -> None:
+    current["id"] = _prefer_history_id(str(current.get("id") or ""), str(extra.get("id") or ""))
+    if _has_file_diff(extra) and not _has_file_diff(current):
+        events = list(current.get("events") or [])
+        events.extend(
+            event
+            for event in extra.get("events") or []
+            if isinstance(event, dict) and event.get("kind") == "file"
+        )
+        current["events"] = events
+    for key in ("plan", "summary", "reason", "pr_url", "branch", "commit_sha", "workspace"):
+        if not current.get(key) and extra.get(key):
+            current[key] = extra[key]
+
+
+def _collapse_history(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per job. A run log and history.json otherwise both describe it."""
+    kept: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        match = next((current for current in kept if _same_recorded_job(current, item)), None)
+        if match is None:
+            kept.append(item)
+            continue
+        _fold_history_item(match, item)
+    return kept
+
+
+def _merge_history(
+    file_items: list[dict[str, Any]], stored: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Keep run files when they exist, and add stored jobs once the files are gone."""
+    merged = [item for item in file_items if isinstance(item, dict)]
+    by_id = {str(item.get("id")): item for item in merged if item.get("id")}
+    for item in stored:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("id") or "")
+        current = by_id.get(key) if key else None
+        if current is None:
+            merged.append(item)
+            if key:
+                by_id[key] = item
+            continue
+        if _has_file_diff(current) or not _has_file_diff(item):
+            continue
+        events = list(current.get("events") or [])
+        events.extend(
+            event
+            for event in item.get("events") or []
+            if isinstance(event, dict) and event.get("kind") == "file"
+        )
+        current["events"] = events
+        if not current.get("plan") and item.get("plan"):
+            current["plan"] = item["plan"]
+    return merged
+
+
+def history_token(
+    root: Path,
+    *,
+    store_root: Path | None = None,
+    database_url: str = "",
+) -> str:
+    """Short signature of the run logs, history file, and stored jobs."""
+    resolved = Path(root).expanduser()
+    try:
+        resolved = resolved.resolve()
+    except OSError:
+        pass
+    payload = (
+        f"{resolved}\n"
+        f"{repr(_history_fingerprint(resolved, store_root=store_root, database_url=database_url))}"
+    )
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
@@ -770,12 +973,33 @@ def create_app(
         default_goal=default_goal,
         default_create_pr=default_create_pr,
     )
+    register_auth(app)
+    bind_directory(
+        app,
+        Path(app.state.ui.store_root),
+        app.state.ui.manager.settings.database_url,
+    )
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
         ui: UiState = request.app.state.ui
-        return templates.TemplateResponse(request, "index.html", ui.template_vars())
+        body = ui.template_vars()
+        body["crossing_url"] = crossing_url(
+            request.headers.get("host", ""),
+            scheme=request.url.scheme,
+        )
+        return templates.TemplateResponse(request, "index.html", body)
+
+    @app.get("/crossingguard", response_model=None)
+    def crossing_guard(request: Request) -> JSONResponse | RedirectResponse:
+        target = crossing_url(request.headers.get("host", ""), scheme=request.url.scheme)
+        if target.startswith("/"):
+            return JSONResponse(
+                {"error": "the engineer dashboard is its own service"},
+                status_code=404,
+            )
+        return RedirectResponse(target, status_code=303)
 
     @app.get("/favicon.ico")
     def favicon() -> Response:
@@ -989,11 +1213,13 @@ def create_app(
                 {"error": "write what should change so the work can continue"},
                 status_code=400,
             )
-        task = ui.manager.get(task_id)
-        if task is None:
-            return JSONResponse({"error": "task not found"}, status_code=404)
-        updated = ui.manager.decide(task_id, choice, body.note)
+        try:
+            updated = ui.manager.decide(task_id, choice, body.note)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=409)
         if updated is None:
+            if ui.manager.get(task_id) is None:
+                return JSONResponse({"error": "task not found"}, status_code=404)
             return JSONResponse(
                 {"error": "this change is not waiting for that decision"},
                 status_code=409,
@@ -1034,16 +1260,48 @@ def create_app(
                 {"error": "context_window must be between 512 and 1048576 tokens"},
                 status_code=400,
             )
-        workspace_raw = body.workspace or ui.default_workspace
+        workspace_raw = body.workspace or ui.shown_workspace()
+        try:
+            from agent_lbw.runtime.store.github_sync import materialize_checkout
+
+            workspace_raw = materialize_checkout(
+                Path(ui.store_root),
+                ui.manager.settings.database_url,
+                workspace_raw,
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        model_name = body.model
+        model_base_url = body.base_url
+        model_api_key = body.api_key
+        chosen_id = (body.model_id or "").strip()
+        if chosen_id:
+            from agent_lbw.runtime.db import database
+            from agent_lbw.runtime.store.catalog import use_model
+
+            root = Path(ui.store_root)
+            try:
+                load_account(root, database_url=ui.manager.settings.database_url)
+                with database(root, ui.manager.settings.database_url) as db:
+                    creds = use_model(db, root, Path(workspace_raw), chosen_id)
+            except PermissionError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=403)
+            except KeyError:
+                return JSONResponse({"error": "not found"}, status_code=404)
+            except ValueError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+            model_name = creds["model_name"]
+            model_base_url = creds["base_url"]
+            model_api_key = creds["api_key"]
         try:
             task = ui.manager.submit(
                 Path(workspace_raw),
                 body.goal,
                 auto_commit=body.auto_commit,
                 create_pr=body.create_pr,
-                model_name=body.model,
-                model_base_url=body.base_url,
-                model_api_key=body.api_key,
+                model_name=model_name,
+                model_base_url=model_base_url,
+                model_api_key=model_api_key,
                 resume_branch=body.resume_branch,
                 resume_sha=body.resume_sha,
                 base_branch=body.base_branch,
@@ -1053,7 +1311,8 @@ def create_app(
                 triage_gate=body.triage_gate or "",
                 approval_gate=body.approval_gate or "",
             )
-            ui.remember_server(task.model_base_url, model=task.model_name)
+            if not chosen_id:
+                ui.remember_server(task.model_base_url, model=task.model_name)
             ui.set_workspace(task.workspace)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
@@ -1099,6 +1358,29 @@ def create_app(
         store_pr_states(root, states)
         return {"states": states}
 
+    @app.post("/api/pulls/merge")
+    def merge_pull(request: Request, payload: MergePull | None = None) -> Any:
+        ui: UiState = request.app.state.ui
+        body = payload or MergePull()
+        url = extract_pr_url(body.url or "") or ""
+        if not url:
+            return JSONResponse({"error": "that is not a pull request"}, status_code=400)
+        root = Path(body.workspace or ui.shown_workspace()).expanduser()
+        if not root.is_dir() or not (root / ".git").exists():
+            return JSONResponse({"error": "that checkout is not a git repository"}, status_code=400)
+        token = _ui_github_token(ui)
+        if lookup_pull_state(url, force=True, token=token) != "open":
+            return JSONResponse({"error": "pull request is not open"}, status_code=409)
+        from agent_lbw.sandbox import Workspace
+
+        merged = merge_pull_request(Workspace(root), url, token=token)
+        if not merged.ok:
+            return JSONResponse({"error": merged.output or "could not merge"}, status_code=400)
+        with _PR_STATE_LOCK:
+            _PR_STATE_CACHE[url] = (time.monotonic(), "merged")
+        store_pr_states(Path(ui.store_root), {url: "merged"})
+        return {"ok": True, "url": url, "state": "merged"}
+
     @app.get("/api/history")
     def get_history(
         request: Request,
@@ -1108,8 +1390,12 @@ def create_app(
         token: str | None = None,
     ) -> dict[str, Any]:
         ui: UiState = request.app.state.ui
-        root = Path(ui.default_workspace)
-        current = history_token(root)
+        root = Path(ui.shown_workspace())
+        current = history_token(
+            root,
+            store_root=Path(ui.store_root),
+            database_url=ui.manager.settings.database_url,
+        )
         if token and token == current and not (search and search.strip()):
             return {
                 "unchanged": True,
@@ -1189,14 +1475,16 @@ def create_app(
         }
 
     def _workspace_payload(ui: UiState) -> dict[str, Any]:
-        workspaces = load_workspaces(Path(ui.store_root), default=ui.default_workspace)
+        workspaces = ui.visible_workspaces()
+        shown = ui.shown_workspace()
         current = next(
-            (item for item in workspaces if item["path"] == ui.default_workspace),
+            (item for item in workspaces if item["path"] == shown),
             None,
         )
         return {
-            "current": ui.default_workspace,
+            "current": shown,
             "home": str(Path.home()),
+            "checkout_root": str(default_checkout_parent(Path(ui.store_root))),
             "default_guidelines": default_guidelines(),
             "guidelines": (current or {}).get("guidelines") or default_guidelines(),
             "custom_guidelines": bool((current or {}).get("custom_guidelines")),
@@ -1230,6 +1518,7 @@ def create_app(
                 root,
                 org_name=payload.org_name,
                 user_name=payload.user_name,
+                user_email=payload.user_email,
                 database_url=url,
             )
         except PermissionError as exc:
@@ -1242,9 +1531,28 @@ def create_app(
         ui: UiState = request.app.state.ui
         root, url = _account_store(ui)
         try:
-            return add_user(root, payload.name, database_url=url)
+            return add_user(root, payload.name, email=payload.email, database_url=url)
         except PermissionError as exc:
             return JSONResponse({"error": str(exc)}, status_code=403)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.put("/api/account/users/{user_id}")
+    def change_account_user(request: Request, user_id: str, payload: AccountPersonWrite) -> Any:
+        ui: UiState = request.app.state.ui
+        root, url = _account_store(ui)
+        try:
+            return update_person(
+                root,
+                user_id,
+                email=payload.email,
+                role=payload.role,
+                database_url=url,
+            )
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=403)
+        except KeyError:
+            return JSONResponse({"error": "person not found"}, status_code=404)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1275,9 +1583,22 @@ def create_app(
     @app.post("/api/workspaces/select")
     def select_workspace(request: Request, payload: WorkspaceSelect) -> Any:
         ui: UiState = request.app.state.ui
+        from agent_lbw.runtime.store.github_sync import CheckoutMissing, materialize_checkout
+
         try:
-            _seed_guidelines(payload.path, payload.guidelines)
-            ui.set_workspace(payload.path)
+            place = materialize_checkout(
+                Path(ui.store_root),
+                ui.manager.settings.database_url,
+                payload.path,
+            )
+        except CheckoutMissing as exc:
+            ui.pending_workspace = exc.path
+            return _workspace_payload(ui)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        try:
+            _seed_guidelines(place, payload.guidelines)
+            ui.set_workspace(place)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return _workspace_payload(ui)
@@ -1296,7 +1617,7 @@ def create_app(
     @app.post("/api/workspaces/clone")
     def clone_repo(request: Request, payload: WorkspaceClone) -> Any:
         ui: UiState = request.app.state.ui
-        parent = payload.parent or str(Path.home() / "projects")
+        parent = durable_checkout_parent(Path(ui.store_root), payload.parent or "")
         try:
             cloned = clone_workspace(
                 payload.url,
@@ -1427,6 +1748,29 @@ def create_app(
                 raise ValueError(f"workspace is not a directory: {root}")
             synced = _sync_workspace_repo(ui, root, payload.slug, payload.ref)
             return {**_skills_for_workspace(ui, root), "synced": synced}
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=403)
+        except KeyError:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except KiwiError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=502)
+
+    @app.post("/api/workspaces/skills/sources/remove")
+    def remove_workspace_skill_source(request: Request, payload: WorkspaceSkillSync) -> Any:
+        ui: UiState = request.app.state.ui
+        try:
+            root = _workspace_root(ui, payload.path)
+            if not root.is_dir():
+                raise ValueError(f"workspace is not a directory: {root}")
+            _mutate_skill_repo(
+                ui,
+                lambda db, account, kiwi, _cache: _remove_workspace_repo(
+                    db, kiwi, account, root, payload.slug
+                ),
+            )
+            return _skills_for_workspace(ui, root)
         except PermissionError as exc:
             return JSONResponse({"error": str(exc)}, status_code=403)
         except KeyError:
@@ -1676,6 +2020,12 @@ def _add_workspace_repo(
         team_id=payload.team_id or "",
         ref=payload.ref or "",
     )
+
+
+def _remove_workspace_repo(db, kiwi, account, workspace: Path, slug: str) -> None:
+    from agent_lbw.runtime.store.skill_repos import remove_workspace_repo
+
+    remove_workspace_repo(db, kiwi, account, workspace, repo_id=(slug or "").strip())
 
 
 def _sync_workspace_repo(ui: UiState, workspace: Path, slug: str, ref: str | None) -> dict:

@@ -109,6 +109,44 @@ def sync_repo(
     return _public(db, _row(db, tenant_id, str(row["id"])), account)
 
 
+def remove_repo(
+    db: Database,
+    kiwi: Any,
+    account: dict,
+    *,
+    repo_id: str,
+) -> None:
+    """Drop one skill repository and the files stored for it."""
+    tenant_id = account["org"]["id"]
+    row = _row(db, tenant_id, repo_id)
+    _require_write(db, account, row)
+    space = _required_space(row)
+    for item in _files(db, str(row["id"])):
+        _delete_file(kiwi, space, str(item["path"]))
+    db.execute("DELETE FROM skill_repo_files WHERE repo_id = ?", (row["id"],))
+    db.execute(
+        "DELETE FROM skill_repos WHERE id = ? AND tenant_id = ?",
+        (row["id"], tenant_id),
+    )
+
+
+def remove_workspace_repo(
+    db: Database,
+    kiwi: Any,
+    account: dict,
+    workspace: Path,
+    *,
+    repo_id: str,
+) -> None:
+    """Remove a repository stored on this project. An organization source stays."""
+    project, _teams = project_repo_context(db, account, workspace)
+    tenant_id = account["org"]["id"]
+    row = _row(db, tenant_id, repo_id)
+    if str(row["scope_type"]) != "project" or str(row["scope_id"]) != str(project["id"]):
+        raise PermissionError("that repository belongs to the organization")
+    remove_repo(db, kiwi, account, repo_id=str(row["id"]))
+
+
 def repos_for_settings(db: Database, account: dict) -> list[dict]:
     """Organization and team repositories an owner can resync."""
     tenant_id = account["org"]["id"]
@@ -434,6 +472,18 @@ def _row(db: Database, tenant_id: str, repo_id: str) -> dict:
     return row
 
 
+def _loaded_names(db: Database, repo_id: str) -> list[str]:
+    """Skill folder names stored for this repository."""
+    names: list[str] = []
+    for item in _files(db, repo_id):
+        parent = Path(str(item["path"])).parent.name
+        if not parent or parent == repo_id or parent.startswith("src_"):
+            continue
+        if parent not in names:
+            names.append(parent)
+    return names
+
+
 def _public(db: Database, row: dict, account: dict) -> dict:
     space = _required_space(row)
     try:
@@ -451,6 +501,7 @@ def _public(db: Database, row: dict, account: dict) -> dict:
         "team_id": row["team_id"],
         "space": space,
         "can_sync": can_sync,
+        "skills": _loaded_names(db, str(row["id"])),
     }
 
 

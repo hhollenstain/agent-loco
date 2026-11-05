@@ -44,6 +44,8 @@ in the run directory.
 
 - Commit, stage, or push `.lbw/` or `history.json`. Config, cloned skills,
   run logs, and screenshots stay local.
+- Open a pull request before the project change is committed and that branch
+  is pushed. The publish path commits, pushes, then opens the pull request.
 - Force-push, skip hooks, or rewrite published history.
 - Bind-mount this app's `.lbw` over `/workspaces/.lbw`.
 - Document `docker clone`. `lbw init` needs a directory that already exists.
